@@ -1,11 +1,13 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { setRollPreset, listPresets, createPreset, updatePreset, deletePreset as deletePresetApi } from '../../api';
 import { getCurveLUT, parseCubeLUT, sampleLUT } from './utils';
 import FilmLabControls from './FilmLabControls';
 import FilmLabCanvas from './FilmLabCanvas';
 import { isWebGLAvailable, processImageWebGL } from './FilmLabWebGL';
 
-export default function FilmLab({ imageUrl, onClose, onSave }) {
+export default function FilmLab({ imageUrl, onClose, onSave, rollId }) {
   const canvasRef = useRef(null);
+  const origCanvasRef = useRef(null); // Original (unprocessed) canvas for compare mode
   const [image, setImage] = useState(null);
   
   // Parameters
@@ -66,6 +68,127 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
   const [lut2, setLut2] = useState(null);
   const [lutExportSize, setLutExportSize] = useState(33); // 33 or 65
   const [useGPU, setUseGPU] = useState(isWebGLAvailable());
+
+  // Compare Mode
+  // compareMode: 'off' | 'original' | 'split'
+  const [compareMode, setCompareMode] = useState('off');
+  const [compareSlider, setCompareSlider] = useState(0.5); // 0-1 split position for 'split' mode
+
+  // Presets (stored in backend DB, mirrored to local state)
+  const [presets, setPresets] = useState([]); // [{ id?, name, params: { ... } }]
+  const processRafRef = useRef(null);
+
+  // Load presets from backend on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await listPresets();
+        if (res && Array.isArray(res.presets)) {
+          // Normalize shape: keep id, name, params
+          setPresets(res.presets.map(p => ({ id: p.id, name: p.name, params: p.params })));
+        }
+      } catch (e) {
+        console.warn('Failed to load presets from backend', e);
+        // Fallback: try localStorage if backend unreachable
+        try {
+          const raw = localStorage.getItem('filmLabPresets');
+          if (raw) setPresets(JSON.parse(raw));
+        } catch (e2) {
+          console.warn('Failed to load presets from localStorage', e2);
+        }
+      }
+    })();
+  }, []);
+
+  // Keep localStorage as a lightweight cache/backup
+  const persistPresets = (next) => {
+    setPresets(next);
+    try { localStorage.setItem('filmLabPresets', JSON.stringify(next)); } catch(e){ console.warn('Persist presets failed', e); }
+  };
+
+  const savePreset = async (name) => {
+    if (!name) return;
+    const params = {
+      inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
+      temp, tint, red, green, blue, curves: JSON.parse(JSON.stringify(curves))
+    };
+
+    const existing = presets.find(p => p.name === name);
+    try {
+      if (existing && existing.id) {
+        await updatePreset(existing.id, { name, category: 'filmlab', description: '', params });
+        const next = presets.map(p => p.name === name ? { ...p, params } : p);
+        persistPresets(next);
+      } else {
+        const created = await createPreset({ name, category: 'filmlab', description: '', params });
+        const withId = existing && existing.id ? presets : presets.filter(p => p.name !== name);
+        const next = [...withId, { id: created.id, name, params }];
+        persistPresets(next);
+      }
+    } catch (e) {
+      console.error('Failed to save preset to backend, falling back to local only', e);
+      const exists = presets.some(p => p.name === name);
+      let next;
+      if (exists) {
+        next = presets.map(p => p.name === name ? { ...p, params } : p);
+      } else {
+        next = [...presets, { name, params }];
+      }
+      persistPresets(next);
+    }
+  };
+
+  const applyPreset = (preset) => {
+    if (!preset) return;
+    const { params } = preset;
+    pushToHistory();
+    setInverted(params.inverted);
+    setInversionMode(params.inversionMode);
+    setExposure(params.exposure);
+    setContrast(params.contrast);
+    setHighlights(params.highlights);
+    setShadows(params.shadows);
+    setWhites(params.whites);
+    setBlacks(params.blacks);
+    setTemp(params.temp);
+    setTint(params.tint);
+    setRed(params.red);
+    setGreen(params.green);
+    setBlue(params.blue);
+    setCurves(JSON.parse(JSON.stringify(params.curves)));
+  };
+
+  const deletePreset = async (name) => {
+    const target = presets.find(p => p.name === name);
+    if (target && target.id) {
+      try {
+        await deletePresetApi(target.id);
+      } catch (e) {
+        console.warn('Failed to delete preset in backend, still removing locally', e);
+      }
+    }
+    persistPresets(presets.filter(p => p.name !== name));
+  };
+
+  // Placeholder for applying preset to entire roll (requires parent context)
+  const applyPresetToRoll = async (preset) => {
+    if (!preset) return;
+    if (!rollId) {
+      applyPreset(preset);
+      if (typeof window !== 'undefined') alert('未提供 rollId，已仅对当前图像应用预设。');
+      return;
+    }
+    try {
+      const res = await setRollPreset(rollId, { name: preset.name, params: preset.params });
+      applyPreset(preset);
+      if (res && res.ok && typeof window !== 'undefined') {
+        alert(`预设 "${preset.name}" 已保存到整卷（roll ${rollId}）。后续可在访问该卷时默认加载。`);
+      }
+    } catch (e) {
+      console.error('Set roll preset failed', e);
+      if (typeof window !== 'undefined') alert('保存整卷预设失败: ' + e.message);
+    }
+  };
 
   // History
   const [history, setHistory] = useState([]);
@@ -170,8 +293,29 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
 
   useEffect(() => {
     if (!image || !canvasRef.current) return;
-    processImage();
+
+    if (processRafRef.current) {
+      cancelAnimationFrame(processRafRef.current);
+    }
+
+    processRafRef.current = requestAnimationFrame(() => {
+      processImage();
+    });
+
+    return () => {
+      if (processRafRef.current) {
+        cancelAnimationFrame(processRafRef.current);
+        processRafRef.current = null;
+      }
+    };
   }, [image, inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, curves, rotation, orientation, cropRect, isCropping, lut1, lut2]);
+
+  // Render original (unprocessed) image for compare modes when geometry changes or image loads
+  useEffect(() => {
+    if (!image || !origCanvasRef.current) return;
+    if (compareMode === 'off') return;
+    renderOriginal();
+  }, [image, rotation, orientation, cropRect, isCropping, compareMode]);
 
   const handleCanvasClick = (e) => {
     if ((!isPicking && !isPickingBase && !isPickingWB) || !image || !canvasRef.current) return;
@@ -406,7 +550,8 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
   const processImage = () => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    // If GPU requested and available, try WebGL fast path (basic pipeline)
+    // If GPU requested and available, try WebGL fast path (basic pipeline).
+    // We still run the CPU path afterwards to keep histograms in sync.
     if (useGPU && isWebGLAvailable()) {
       try {
         const rBal = red + (temp / 200) + (tint / 200);
@@ -434,18 +579,20 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
           }
         });
         
-        // Copy WebGL result to main 2D canvas
+        // Copy WebGL result to main 2D canvas first for visual speed,
+        // but DO NOT return so CPU path can compute histograms.
         canvas.width = webglCanvas.width;
         canvas.height = webglCanvas.height;
         ctx.drawImage(webglCanvas, 0, 0);
-        return;
+        // fall through intentionally
       } catch (err) {
         console.warn('WebGL processing failed, falling back to CPU pipeline', err);
       }
     }
     
     // Resize canvas to match image (or limit size for performance)
-    const maxWidth = 1200;
+    // Downscale a bit and use histogram subsampling to improve realtime FPS.
+    const maxWidth = 1000;
     const scale = Math.min(1, maxWidth / image.width);
     
     // Calculate rotated dimensions
@@ -512,13 +659,23 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
     const histB = new Array(256).fill(0);
     let maxCount = 0;
 
-    for (let i = 0; i < data.length; i += 4) {
-      // Skip transparent pixels (from rotation)
-      if (data[i+3] === 0) continue;
+    // Downsample histogram & processing for speed: skip every other pixel in X/Y.
+    const stride = 2; // samples every 2 pixels (approx 1/4 of total)
+    const width = canvas.width;
+    const height = canvas.height;
 
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        // Skip transparent pixels (from rotation)
+        if (data[idx + 3] === 0) continue;
+
+        // For histograms, only sample every `stride` pixels in both directions
+        const shouldSampleHist = (x % stride === 0) && (y % stride === 0);
+
+        let r = data[idx];
+        let g = data[idx + 1];
+        let b = data[idx + 2];
 
       // 1. Invert (if enabled)
       if (inverted) {
@@ -576,22 +733,29 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
       gC = Math.min(255, Math.max(0, gC));
       bC = Math.min(255, Math.max(0, bC));
 
-      // Update Histograms
-      histR[Math.round(rC)]++;
-      histG[Math.round(gC)]++;
-      histB[Math.round(bC)]++;
-      
-      // Calculate luminance for RGB histogram
-      const lum = Math.round(0.299 * rC + 0.587 * gC + 0.114 * bC);
-      histRGB[lum]++;
-      
-      // Track max for normalization (using RGB histogram max)
-      if (histRGB[lum] > maxCount) maxCount = histRGB[lum];
+      // Update Histograms only for subsampled pixels
+      if (shouldSampleHist) {
+        const rIdx = Math.round(rC);
+        const gIdx = Math.round(gC);
+        const bIdx = Math.round(bC);
 
-      // Final Clamp
-      data[i] = rC;
-      data[i + 1] = gC;
-      data[i + 2] = bC;
+        histR[rIdx]++;
+        histG[gIdx]++;
+        histB[bIdx]++;
+
+        // Calculate luminance for RGB histogram
+        const lum = Math.round(0.299 * rC + 0.587 * gC + 0.114 * bC);
+        histRGB[lum]++;
+
+        // Track max for normalization across all channels
+        maxCount = Math.max(maxCount, histR[rIdx], histG[gIdx], histB[bIdx], histRGB[lum]);
+      }
+
+      // Final Clamp and write back full-resolution pixel
+      data[idx] = rC;
+      data[idx + 1] = gC;
+      data[idx + 2] = bC;
+    }
     }
 
     // Normalize histograms
@@ -607,6 +771,46 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
 
 	ctx.putImageData(imageData, 0, 0);
   } // <-- Close processImage function
+
+  const renderOriginal = () => {
+    if (!image || !origCanvasRef.current) return;
+    const canvas = origCanvasRef.current;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    const maxWidth = 1200;
+    const scale = Math.min(1, maxWidth / image.width);
+    const totalRotation = rotation + orientation;
+    const rad = (totalRotation * Math.PI) / 180;
+    const sin = Math.abs(Math.sin(rad));
+    const cos = Math.abs(Math.cos(rad));
+    const scaledW = image.width * scale;
+    const scaledH = image.height * scale;
+    const rotatedW = scaledW * cos + scaledH * sin;
+    const rotatedH = scaledW * sin + scaledH * cos;
+
+    if (isCropping) {
+      canvas.width = rotatedW;
+      canvas.height = rotatedH;
+      ctx.save();
+      ctx.translate(rotatedW / 2, rotatedH / 2);
+      ctx.rotate(rad);
+      ctx.drawImage(image, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
+      ctx.restore();
+    } else {
+      const cropX = cropRect.x * rotatedW;
+      const cropY = cropRect.y * rotatedH;
+      const cropW = cropRect.w * rotatedW;
+      const cropH = cropRect.h * rotatedH;
+      canvas.width = Math.max(1, cropW);
+      canvas.height = Math.max(1, cropH);
+      ctx.save();
+      ctx.translate(-cropX, -cropY);
+      ctx.translate(rotatedW / 2, rotatedH / 2);
+      ctx.rotate(rad);
+      ctx.drawImage(image, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
+      ctx.restore();
+    }
+  };
 
   const handleAutoLevels = () => {
     if (!image) return;
@@ -1490,6 +1694,7 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
 
       <FilmLabCanvas
         canvasRef={canvasRef}
+        origCanvasRef={origCanvasRef}
         zoom={zoom} setZoom={setZoom}
         pan={pan} setPan={setPan}
         isPanning={isPanning}
@@ -1502,6 +1707,9 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
         isPicking={isPicking || isPickingBase || isPickingWB}
         cropRect={cropRect}
         startCropDrag={startCropDrag}
+        compareMode={compareMode}
+        compareSlider={compareSlider}
+        setCompareSlider={setCompareSlider}
       />
 
       <FilmLabControls
@@ -1538,7 +1746,13 @@ export default function FilmLab({ imageUrl, onClose, onSave }) {
         lutExportSize={lutExportSize} setLutExportSize={setLutExportSize}
         generateOutputLUT={generateOutputLUT}
         handleLutUpload={handleLutUpload}
-        // compareCpuGpu removed
+        compareMode={compareMode} setCompareMode={setCompareMode}
+        compareSlider={compareSlider} setCompareSlider={setCompareSlider}
+        presets={presets}
+        onSavePreset={savePreset}
+        onApplyPreset={applyPreset}
+        onDeletePreset={deletePreset}
+        onApplyPresetToRoll={applyPresetToRoll}
         handleDownload={handleDownload} handleSave={handleSave} onClose={onClose}
       />
     </div>

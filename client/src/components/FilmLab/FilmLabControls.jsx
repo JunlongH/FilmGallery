@@ -36,13 +36,59 @@ export default function FilmLabControls({
   lutExportSize, setLutExportSize,
   generateOutputLUT,
   handleLutUpload,
-  compareCpuGpu,
+  compareMode, setCompareMode,
+  compareSlider, setCompareSlider,
+  presets,
+  onSavePreset,
+  onApplyPreset,
+  onDeletePreset,
+  onApplyPresetToRoll,
   handleDownload, handleSave, onClose
 }) {
+  const [presetName, setPresetName] = React.useState('');
+  const handleSavePresetClick = () => {
+    if (!presetName.trim()) return;
+    onSavePreset(presetName.trim());
+    setPresetName('');
+  };
+  const isDuplicateName = presets.some(p => p.name === presetName.trim());
+  const cycleCompare = (mode) => {
+    // helper for toggles
+    if (compareMode === mode) setCompareMode('off'); else setCompareMode(mode);
+  };
   return (
     <div className="iv-sidebar iv-scroll" style={{ width: 320, background: '#1e1e1e', padding: 24, color: '#eee', display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', borderLeft: '1px solid #333', boxShadow: '-5px 0 15px rgba(0,0,0,0.5)' }}>
-      {/* Debug: Compare CPU/GPU */}
-      <button className="iv-btn" style={{ marginBottom: 10, background: '#444', color: '#fff' }} onClick={compareCpuGpu}>Compare CPU vs GPU</button>
+      {/* Compare Mode Controls */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: '#252525', padding: 10, borderRadius: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}>COMPARE</span>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="iv-btn"
+              style={{ fontSize: 10, padding: '4px 8px', background: compareMode === 'original' ? '#2e7d32' : '#333', borderColor: compareMode === 'original' ? '#1b5e20' : '#444' }}
+              onClick={() => cycleCompare('original')}
+            >ORIGINAL</button>
+            <button
+              className="iv-btn"
+              style={{ fontSize: 10, padding: '4px 8px', background: compareMode === 'split' ? '#2e7d32' : '#333', borderColor: compareMode === 'split' ? '#1b5e20' : '#444' }}
+              onClick={() => cycleCompare('split')}
+            >SPLIT</button>
+          </div>
+        </div>
+        {compareMode === 'split' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={compareSlider}
+              onChange={(e) => setCompareSlider(Number(e.target.value))}
+            />
+            <div style={{ fontSize: 10, color: '#888', textAlign: 'center' }}>Split: {(compareSlider * 100).toFixed(0)}%</div>
+          </div>
+        )}
+      </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ margin: 0, color: '#fff', fontSize: 18, fontWeight: 600, letterSpacing: 0.5 }}>Film Lab</h3>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -211,37 +257,17 @@ export default function FilmLabControls({
       </div>
 
       {/* Curve Editor UI */}
-      <div style={{ background: '#111', padding: 12, borderRadius: 6, border: '1px solid #333' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <label className="iv-control-label">TONE CURVE</label>
-          <button 
-             className="iv-btn"
-             onClick={() => setIsPicking(!isPicking)}
-             style={{ 
-               background: isPicking ? '#2e7d32' : 'transparent', 
-               border: isPicking ? '1px solid #1b5e20' : '1px solid #444',
-               color: isPicking ? '#fff' : '#888', 
-               fontSize: 10, 
-               padding: '2px 8px', 
-               borderRadius: 3,
-             }}
-           >
-             {isPicking ? 'PICKING...' : 'PICK POINT'}
-           </button>
-        </div>
-        
-        <ToneCurveEditor
-          curves={curves}
-          setCurves={setCurves}
-          activeChannel={activeChannel}
-          setActiveChannel={setActiveChannel}
-          isPicking={isPicking}
-          setIsPicking={setIsPicking}
-          pickedColor={pickedColor}
-          histograms={histograms}
-          pushToHistory={pushToHistory}
-        />
-      </div>
+      <ToneCurveEditor
+        curves={curves}
+        setCurves={setCurves}
+        activeChannel={activeChannel}
+        setActiveChannel={setActiveChannel}
+        isPicking={isPicking}
+        setIsPicking={setIsPicking}
+        pickedColor={pickedColor}
+        histograms={histograms}
+        pushToHistory={pushToHistory}
+      />
 
       {/* LUTs Section */}
       <div style={{ borderTop: '1px solid #333', paddingTop: 20 }}>
@@ -319,6 +345,45 @@ export default function FilmLabControls({
               />
             </>
           )}
+        </div>
+      </div>
+
+      {/* Preset Management */}
+      <div style={{ borderTop: '1px solid #333', paddingTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <label className="iv-control-label" style={{ fontSize: 12, color: '#eee' }}>PRESETS</label>
+        </div>
+        <div style={{ background: '#252525', padding: 10, borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              placeholder="Preset Name"
+              style={{ flex: 1, background: '#333', border: '1px solid #444', color: '#eee', fontSize: 12, padding: '4px 6px', borderRadius: 4 }}
+            />
+            <button
+              className="iv-btn"
+              disabled={!presetName.trim()}
+              onClick={handleSavePresetClick}
+              style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+            >SAVE</button>
+          </div>
+          {presetName && isDuplicateName && (
+            <div style={{ fontSize: 10, color: '#e0a800' }}>覆盖已有预设: {presetName}</div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 180, overflowY: 'auto' }}>
+            {presets.length === 0 && (
+              <div style={{ fontSize: 11, color: '#666', textAlign: 'center' }}>暂无预设</div>
+            )}
+            {presets.map(p => (
+              <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#1d1d1d', padding: '6px 8px', borderRadius: 4 }}>
+                <div style={{ flex: 1, fontSize: 11, color: '#ddd', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
+                <button className="iv-btn" style={{ fontSize: 10, padding: '4px 6px' }} onClick={() => onApplyPreset(p)}>APPLY</button>
+                <button className="iv-btn" style={{ fontSize: 10, padding: '4px 6px' }} onClick={() => onApplyPresetToRoll(p)}>ROLL</button>
+                <button className="iv-btn iv-btn-danger" style={{ fontSize: 10, padding: '4px 6px' }} onClick={() => onDeletePreset(p.name)}>✕</button>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

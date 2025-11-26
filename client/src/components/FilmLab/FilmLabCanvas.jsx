@@ -2,6 +2,7 @@ import React from 'react';
 
 export default function FilmLabCanvas({
   canvasRef,
+  origCanvasRef,
   zoom, setZoom,
   pan, setPan,
   isPanning,
@@ -13,8 +14,31 @@ export default function FilmLabCanvas({
   handleCanvasClick,
   isPicking,
   cropRect,
-  startCropDrag
+  startCropDrag,
+  compareMode,
+  compareSlider,
+  setCompareSlider
 }) {
+  const handleSplitDrag = (e) => {
+    if (compareMode !== 'split') return;
+    const wrapper = e.currentTarget.parentElement;
+    const rect = wrapper.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const ratio = Math.min(1, Math.max(0, x / rect.width));
+    setCompareSlider(ratio);
+  };
+
+  const handleBarMouseDown = (e) => {
+    e.preventDefault();
+    const move = (ev) => handleSplitDrag(ev);
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
   return (
     <div 
       style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', padding: 20, background: '#000', cursor: isPanning ? 'grabbing' : 'grab', position: 'relative' }}
@@ -58,6 +82,7 @@ export default function FilmLabCanvas({
         transformOrigin: 'center',
         transition: isPanning ? 'none' : 'transform 0.1s ease-out'
       }}>
+        {/* Processed Canvas */}
         <canvas 
           ref={canvasRef} 
           onClick={handleCanvasClick}
@@ -66,9 +91,50 @@ export default function FilmLabCanvas({
             maxWidth: '100%', 
             maxHeight: 'calc(100vh - 40px)', 
             objectFit: 'contain',
-            cursor: isPicking ? 'crosshair' : 'default'
+            cursor: isPicking ? 'crosshair' : 'default',
+            opacity: compareMode === 'original' ? 0 : 1,
           }} 
         />
+
+        {/* Original Canvas for compare */}
+        {(compareMode === 'original' || compareMode === 'split') && (
+          <div style={{
+            pointerEvents: compareMode === 'split' ? 'none' : 'auto',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: compareMode === 'split' ? `${compareSlider * 100}%` : '100%',
+            height: '100%',
+            overflow: 'hidden'
+          }}>
+            <canvas
+              ref={origCanvasRef}
+              style={{
+                display: 'block',
+                maxWidth: '100%',
+                maxHeight: 'calc(100vh - 40px)',
+                objectFit: 'contain',
+              }}
+            />
+          </div>
+        )}
+
+        {/* Split Bar */}
+        {compareMode === 'split' && (
+          <div
+            onMouseDown={handleBarMouseDown}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: `${compareSlider * 100}%`,
+              height: '100%',
+              width: 3,
+              background: 'rgba(255,255,255,0.6)',
+              cursor: 'ew-resize',
+              boxShadow: '0 0 4px rgba(0,0,0,0.6)'
+            }}
+          />
+        )}
         {isCropping && (
           <div 
             className="crop-overlay"

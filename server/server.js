@@ -45,6 +45,7 @@ const mountRoutes = () => {
 	app.use('/api/uploads', require('./routes/uploads'));
 	app.use('/api/metadata', require('./routes/metadata'));
 	app.use('/api/search', require('./routes/search'));
+	app.use('/api/presets', require('./routes/presets'));
 };
 
 // Ensure database schema exists before accepting requests (first-run install)
@@ -120,6 +121,16 @@ CREATE TABLE IF NOT EXISTS roll_files (
 	createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
 	FOREIGN KEY (rollId) REFERENCES rolls(id) ON DELETE CASCADE
 );
+ 
+CREATE TABLE IF NOT EXISTS presets (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL,
+	category TEXT,
+	description TEXT,
+	params_json TEXT NOT NULL,
+	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `;
 
 function ensureSchema() {
@@ -136,7 +147,7 @@ async function verifySchemaTables() {
 		db.all("SELECT name FROM sqlite_master WHERE type='table'", (err, rows) => {
 			if (err) { console.error('Schema check failed', err.message); return resolve(false); }
 			const existing = new Set(rows.map(r => r.name));
-			const required = ['films','rolls','photos','tags','photo_tags','roll_files'];
+			const required = ['films','rolls','photos','tags','photo_tags','roll_files','presets'];
 			const missing = required.filter(t => !existing.has(t));
 			if (missing.length === 0) return resolve(true);
 			console.warn('Missing tables detected, creating:', missing.join(', '));
@@ -145,9 +156,25 @@ async function verifySchemaTables() {
 	});
 }
 
+// Ensure additional columns (non-breaking migrations) without separate migration files.
+function ensureExtraColumns() {
+    // Add preset_json column to rolls if missing
+    db.all("PRAGMA table_info(rolls)", (err, cols) => {
+        if (err) { console.error('Failed to inspect rolls table', err.message); return; }
+        const hasPreset = cols.some(c => c.name === 'preset_json');
+        if (!hasPreset) {
+            console.log('[MIGRATION] Adding preset_json column to rolls');
+            db.run('ALTER TABLE rolls ADD COLUMN preset_json TEXT', (e) => {
+                if (e) console.error('Failed adding preset_json column', e.message); else console.log('[MIGRATION] preset_json column added');
+            });
+        }
+    });
+}
+
 (async () => {
 	try {
 		await verifySchemaTables();
+		ensureExtraColumns();
 		mountRoutes();
 		const PORT = process.env.PORT || 4000;
 		// Listen on all interfaces (0.0.0.0) to allow mobile access

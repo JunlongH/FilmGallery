@@ -294,6 +294,44 @@ router.get('/:id', (req, res) => {
   });
 });
 
+// GET /api/rolls/:id/preset - return stored preset JSON (parsed)
+router.get('/:id/preset', (req, res) => {
+  const id = req.params.id;
+  db.get('SELECT preset_json FROM rolls WHERE id = ?', [id], (err, row) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    let parsed = null;
+    if (row.preset_json) {
+      try { parsed = JSON.parse(row.preset_json); } catch(e) { parsed = null; }
+    }
+    res.json({ rollId: id, preset: parsed });
+  });
+});
+
+// POST /api/rolls/:id/preset - set/overwrite preset_json
+// Body: { name: string, params: { inverted, inversionMode, exposure, ... curves } }
+router.post('/:id/preset', (req, res) => {
+  const id = req.params.id;
+  const body = req.body || {};
+  if (!body || !body.params) return res.status(400).json({ error: 'params required' });
+  const payload = { name: body.name || 'Unnamed', params: body.params };
+  let json;
+  try { json = JSON.stringify(payload); } catch(e) { return res.status(400).json({ error: 'Invalid params JSON' }); }
+  db.run('UPDATE rolls SET preset_json = ? WHERE id = ?', [json, id], function(err){
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true, updated: this.changes });
+  });
+});
+
+// DELETE /api/rolls/:id/preset - clear preset_json
+router.delete('/:id/preset', (req, res) => {
+  const id = req.params.id;
+  db.run('UPDATE rolls SET preset_json = NULL WHERE id = ?', [id], function(err){
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ ok: true, cleared: this.changes });
+  });
+});
+
 // PUT /api/rolls/:id
 router.put('/:id', (req, res) => {
   const id = req.params.id;

@@ -14,22 +14,33 @@ export default function ToneCurveEditor({
 }) {
   const curveContainerRef = useRef(null);
   const [draggingPointIndex, setDraggingPointIndex] = useState(null);
+  const dragRafRef = useRef(null);
   
   const curveWidth = 260;
   const curveHeight = 150;
 
-  // Generate Histogram Path
+  // Generate Histogram Path (outline, not filled) with adaptive vertical scaling
   const getHistogramPath = () => {
-    const currentHist = histograms[activeChannel];
-    let histD = `M 0 ${curveHeight}`;
+    const currentHist = (histograms && histograms[activeChannel]) ? histograms[activeChannel] : new Array(256).fill(0);
+    // Find local max to stretch the histogram vertically per-channel
+    let localMax = 0;
     for (let i = 0; i < 256; i++) {
-      const h = currentHist[i] * curveHeight; // Normalized 0-1
+      const v = currentHist[i] || 0;
+      if (v > localMax) localMax = v;
+    }
+    if (localMax <= 0) localMax = 1; // avoid divide-by-zero
+    const scale = curveHeight * 0.85; // leave a bit of headroom at top
+
+    let d = '';
+    for (let i = 0; i < 256; i++) {
+      const norm = (currentHist[i] || 0) / localMax; // 0-1
+      const h = norm * scale; // map to 0 - 85% of height
       const x = (i / 255) * curveWidth;
       const y = curveHeight - h;
-      histD += ` L ${x} ${y}`;
+      if (i === 0) d += `M ${x} ${y}`;
+      else d += ` L ${x} ${y}`;
     }
-    histD += ` L ${curveWidth} ${curveHeight} Z`;
-    return histD;
+    return d || `M 0 ${curveHeight} L ${curveWidth} ${curveHeight}`;
   };
 
   const getCurveColor = () => {
@@ -41,12 +52,21 @@ export default function ToneCurveEditor({
     }
   };
 
-  const getHistogramColor = () => {
+  const getHistogramFill = () => {
     switch(activeChannel) {
-      case 'red': return 'rgba(255, 68, 68, 0.3)';
-      case 'green': return 'rgba(68, 255, 68, 0.3)';
-      case 'blue': return 'rgba(68, 68, 255, 0.3)';
-      default: return 'rgba(200, 200, 200, 0.3)';
+      case 'red': return 'rgba(255, 102, 102, 0.28)';
+      case 'green': return 'rgba(102, 255, 102, 0.28)';
+      case 'blue': return 'rgba(102, 102, 255, 0.28)';
+      default: return 'rgba(220, 220, 220, 0.23)';
+    }
+  };
+
+  const getHistogramStroke = () => {
+    switch(activeChannel) {
+      case 'red': return 'rgba(255, 130, 130, 0.85)';
+      case 'green': return 'rgba(130, 255, 130, 0.85)';
+      case 'blue': return 'rgba(130, 130, 255, 0.85)';
+      default: return 'rgba(240, 240, 240, 0.9)';
     }
   };
 
@@ -117,27 +137,37 @@ export default function ToneCurveEditor({
       const valY = 255 - (y / rect.height) * 255;
       const valX = (x / rect.width) * 255;
 
-      setCurves(prevCurves => {
-        const currentPoints = prevCurves[activeChannel];
-        const newPoints = [...currentPoints];
-        const index = draggingPointIndex;
-        
-        // Constrain X to be between neighbors
-        let minX = 0, maxX = 255;
-        if (index > 0) minX = newPoints[index-1].x + 1;
-        if (index < newPoints.length - 1) maxX = newPoints[index+1].x - 1;
-        
-        newPoints[index] = { 
-          x: Math.min(maxX, Math.max(minX, valX)), 
-          y: Math.min(255, Math.max(0, valY)) 
-        };
-        
-        return { ...prevCurves, [activeChannel]: newPoints };
+      if (dragRafRef.current) {
+        cancelAnimationFrame(dragRafRef.current);
+      }
+
+      dragRafRef.current = requestAnimationFrame(() => {
+        setCurves(prevCurves => {
+          const currentPoints = prevCurves[activeChannel];
+          const newPoints = [...currentPoints];
+          const index = draggingPointIndex;
+
+          // Constrain X to be between neighbors
+          let minX = 0, maxX = 255;
+          if (index > 0) minX = newPoints[index-1].x + 1;
+          if (index < newPoints.length - 1) maxX = newPoints[index+1].x - 1;
+
+          newPoints[index] = {
+            x: Math.min(maxX, Math.max(minX, valX)),
+            y: Math.min(255, Math.max(0, valY))
+          };
+
+          return { ...prevCurves, [activeChannel]: newPoints };
+        });
       });
     };
 
     const handleMouseUp = () => {
       setDraggingPointIndex(null);
+      if (dragRafRef.current) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -198,11 +228,6 @@ export default function ToneCurveEditor({
         style={{ position: 'relative', width: '100%', height: 150, border: '1px solid #333', background: '#000', cursor: 'crosshair', borderRadius: 2 }}
         onMouseDown={handleAddPoint}
       >
-        {/* Histogram Background */}
-        <svg width="100%" height="100%" viewBox={`0 0 ${curveWidth} ${curveHeight}`} preserveAspectRatio="none" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none' }}>
-          <path d={getHistogramPath()} fill={getHistogramColor()} stroke="none" />
-        </svg>
-
         {/* Grid lines */}
         <div style={{ position: 'absolute', top: '25%', left: 0, right: 0, height: 1, background: '#222', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', top: '50%', left: 0, right: 0, height: 1, background: '#222', pointerEvents: 'none' }} />
@@ -210,6 +235,28 @@ export default function ToneCurveEditor({
         <div style={{ position: 'absolute', left: '25%', top: 0, bottom: 0, width: 1, background: '#222', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: '#222', pointerEvents: 'none' }} />
         <div style={{ position: 'absolute', left: '75%', top: 0, bottom: 0, width: 1, background: '#222', pointerEvents: 'none' }} />
+
+        {/* Histogram filled area + outline (above grid for clearer visibility) */}
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${curveWidth} ${curveHeight}`}
+          preserveAspectRatio="none"
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}
+        >
+          <path
+            d={`${getHistogramPath()} L ${curveWidth} ${curveHeight} L 0 ${curveHeight} Z`}
+            fill={getHistogramFill()}
+            stroke="none"
+          />
+          <path
+            d={getHistogramPath()}
+            fill="none"
+            stroke={getHistogramStroke()}
+            strokeWidth="0.8"
+            opacity="0.7"
+          />
+        </svg>
 
         {/* Picked Color Indicator */}
         {pickedColor && (

@@ -127,7 +127,8 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
           onCancel={dialog.onCancel}
         />
         <FilmLab 
-          imageUrl={targetUrl} 
+          imageUrl={targetUrl}
+          rollId={img.roll_id}
           onClose={() => { setShowInverter(false); setIsNegativeMode(false); }} 
           onSave={(blob) => { 
               setPendingBlob(blob);

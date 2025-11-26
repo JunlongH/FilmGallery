@@ -206,6 +206,54 @@ export async function updateRoll(id, data) {
   return { ok: resp.ok, status: resp.status, text };
 }
 
+// Roll preset management
+export async function getRollPreset(rollId) {
+  return jsonFetch(`/api/rolls/${rollId}/preset`);
+}
+
+export async function setRollPreset(rollId, { name, params }) {
+  const resp = await fetch(`${API_BASE}/api/rolls/${rollId}/preset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, params })
+  });
+  return resp.json();
+}
+
+export async function clearRollPreset(rollId) {
+  const resp = await fetch(`${API_BASE}/api/rolls/${rollId}/preset`, { method: 'DELETE' });
+  return resp.json();
+}
+
+// Global presets (Film Lab)
+export async function listPresets(category) {
+  const q = category ? `?category=${encodeURIComponent(category)}` : '';
+  return jsonFetch(`/api/presets${q}`);
+}
+
+export async function createPreset({ name, category, description, params }) {
+  const resp = await fetch(`${API_BASE}/api/presets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category, description, params })
+  });
+  return resp.json();
+}
+
+export async function updatePreset(id, { name, category, description, params }) {
+  const resp = await fetch(`${API_BASE}/api/presets/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, category, description, params })
+  });
+  return resp.json();
+}
+
+export async function deletePreset(id) {
+  const resp = await fetch(`${API_BASE}/api/presets/${id}`, { method: 'DELETE' });
+  return resp.json();
+}
+
 export async function updatePhoto(id, data) {
   const resp = await fetch(`${API_BASE}/api/photos/${id}`, {
     method: 'PUT',
