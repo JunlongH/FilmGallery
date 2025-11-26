@@ -1,0 +1,8 @@
+node_modules/
+build/
+dist/
+uploads/
+temp_expo_orig/
+*.log
+.DS_Store
+.env
