@@ -23,8 +23,8 @@ export function buildUploadUrl(pathOrUrl) {
     const base = parts[parts.length - 1];
     return `${API_BASE}/uploads/${base}`;
   }
-  // default: treat as relative to API_BASE
-  return `${API_BASE}/${pathOrUrl.replace(/^\/+/, '')}`;
+  // default: assume value is relative inside uploads (e.g. 'rolls/..')
+  return `${API_BASE}/uploads/${pathOrUrl.replace(/^\/+/, '')}`;
 }
 
 async function jsonFetch(url, opts = {}) {
@@ -88,8 +88,30 @@ export async function createRollWithTmp({ fields = {}, tmpFiles = [], coverIndex
   return res.json();
 }
 
-export async function getRolls() {
-  const data = await jsonFetch('/api/rolls');
+// Unified roll creation pipeline: decides multipart vs tmp-flow based on presence of File objects and useTwoStep flag.
+export async function createRollUnified({ fields = {}, files = [], useTwoStep = false, isNegative = false, onProgress } = {}) {
+  if (useTwoStep) {
+    // Upload temp files first
+    const uploaded = await uploadTmpFiles(files, p => onProgress && onProgress(p));
+    const tmpFiles = (uploaded.files || []).map(f => ({ tmpName: f.tmpName, isNegative }));
+    return createRollWithTmp({ fields: { ...fields, isNegative }, tmpFiles });
+  }
+  return createRollMultipart({ fields: { ...fields, isNegative }, files, onProgress });
+}
+
+export async function getRolls(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    if (Array.isArray(v)) {
+      v.filter(Boolean).forEach(item => params.append(k, item));
+    } else if (v !== '') {
+      params.append(k, v);
+    }
+  });
+  const qs = params.toString();
+  const url = qs ? `/api/rolls?${qs}` : '/api/rolls';
+  const data = await jsonFetch(url);
   if (Array.isArray(data)) return data;
   if (data && Array.isArray(data.rows)) return data.rows;
   if (data && Array.isArray(data.rolls)) return data.rolls;
@@ -98,11 +120,27 @@ export async function getRolls() {
 export async function getRoll(id) {
   return jsonFetch(`/api/rolls/${id}`);
 }
+export async function getRollLocations(rollId) {
+  return jsonFetch(`/api/rolls/${rollId}/locations`);
+}
+export async function getLocations() {
+  return jsonFetch('/api/locations');
+}
 export async function getMetadataOptions() {
   return jsonFetch('/api/metadata/options');
 }
 export async function getPhotos(rollId) {
   return jsonFetch(`/api/rolls/${rollId}/photos`);
+}
+export async function searchPhotos(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    if (Array.isArray(v)) v.filter(Boolean).forEach(item => params.append(k, item));
+    else if (v !== '') params.append(k, v);
+  });
+  const qs = params.toString();
+  return jsonFetch(`/api/photos${qs ? '?' + qs : ''}`);
 }
 export async function uploadPhotoToRoll(rollId, file, fields = {}) {
   const fd = new FormData();
@@ -266,6 +304,20 @@ export async function updatePhoto(id, data) {
   return { ok: resp.ok, status: resp.status, text };
 }
 
+export async function searchLocations(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return jsonFetch(`/api/locations${qs ? '?' + qs : ''}`);
+}
+
+export async function createLocation(data) {
+  const resp = await fetch(`${API_BASE}/api/locations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return resp.json();
+}
+
 export async function getFavoritePhotos() {
   return jsonFetch(`/api/photos/favorites?t=${Date.now()}`);
 }
@@ -287,4 +339,37 @@ export async function updatePositiveFromNegative(photoId, blob) {
     body: fd
   });
   return res.json();
+}
+
+// Film Lab API
+export async function filmlabPreview({ photoId, params, maxWidth }) {
+  const res = await fetch(`${API_BASE}/api/filmlab/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoId, params, maxWidth })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Preview failed');
+  }
+  return res.blob();
+}
+
+export async function renderPositive({ photoId, params }) {
+  const res = await fetch(`${API_BASE}/api/filmlab/render`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoId, params })
+  });
+  return res.json();
+}
+
+export async function exportPositive({ photoId, params }) {
+  const res = await fetch(`${API_BASE}/api/filmlab/export`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoId, params })
+  });
+  if (!res.ok) throw new Error('Export failed');
+  return res.blob();
 }
