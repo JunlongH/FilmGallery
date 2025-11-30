@@ -11,6 +11,7 @@ import Favorites from './components/Favorites';
 import TagGallery from './components/TagGallery';
 import Settings from './components/Settings';
 import TitleBar from './components/TitleBar';
+import ConflictBanner from './components/ConflictBanner';
 import { getTags } from './api';
 import FloatingRefreshButton from './components/FloatingRefreshButton';
 
@@ -67,6 +68,7 @@ function Layout() {
 
   return (
     <>
+      <ConflictBanner />
       <div className="app-shell">
         <TitleBar />
         <div className="app-body">

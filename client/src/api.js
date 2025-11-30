@@ -155,6 +155,19 @@ export async function createFilm({ name, iso, category, thumbFile }) {
   return resp.json();
 }
 
+export async function updateFilm({ id, name, iso, category, thumbFile }) {
+  const fd = new FormData();
+  if (name !== undefined) fd.append('name', name);
+  if (iso !== undefined) fd.append('iso', iso);
+  if (category !== undefined) fd.append('category', category);
+  if (thumbFile) fd.append('thumb', thumbFile);
+  const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'PUT', body: fd });
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.includes('application/json')) return resp.json();
+  const text = await resp.text();
+  return { ok: resp.ok, status: resp.status, text };
+}
+
 export async function deleteFilm(id) {
   const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'DELETE' });
   const ct = resp.headers.get('content-type') || '';
@@ -287,4 +300,57 @@ export async function updatePositiveFromNegative(photoId, blob) {
     body: fd
   });
   return res.json();
+}
+
+// High-quality server-side export using original scan
+// params: object matching FilmLab preset shape subset
+export async function exportPositive(photoId, params, { format = 'jpeg' } = {}) {
+  const res = await fetch(`${API_BASE}/api/photos/${photoId}/export-positive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ params, format })
+  });
+  const ct = res.headers.get('content-type') || '';
+  if (ct.includes('application/json')) {
+    return res.json();
+  }
+  const text = await res.text();
+  return { ok: res.ok, status: res.status, error: text };
+}
+
+// Ad-hoc render (non-destructive) for Save As
+// Returns blob for jpeg or tiff16 without updating DB
+export async function renderPositive(photoId, params, { format = 'jpeg' } = {}) {
+  const resp = await fetch(`${API_BASE}/api/photos/${photoId}/render-positive`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ params, format })
+  });
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.startsWith('image/')) {
+    const blob = await resp.blob();
+    return { ok: true, blob, contentType: ct };
+  }
+  const text = await resp.text();
+  let err;
+  try { err = JSON.parse(text); } catch { err = { error: text }; }
+  return { ok: false, error: err.error || err.message || text };
+}
+
+// Film Lab preview (server-rendered)
+export async function filmlabPreview({ photoId, params, maxWidth = 1400 }) {
+  const resp = await fetch(`${API_BASE}/api/filmlab/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoId, params, maxWidth })
+  });
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.startsWith('image/')) {
+    const blob = await resp.blob();
+    return { ok: true, blob };
+  }
+  const text = await resp.text();
+  let err;
+  try { err = JSON.parse(text); } catch { err = { error: text }; }
+  return { ok: false, error: err && (err.error || err.message) };
 }

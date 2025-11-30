@@ -1,7 +1,7 @@
 // src/components/RollDetail.jsx
 import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRoll, getPhotos, uploadPhotosToRoll, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl } from '../api';
+import { getRoll, getPhotos, uploadPhotosToRoll, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions } from '../api';
 import { useParams } from 'react-router-dom';
 import ImageViewer from './ImageViewer';
 import PhotoItem from './PhotoItem';
@@ -405,8 +405,14 @@ export default function RollDetail() {
         )}
 
         {(() => {
+          const positiveCount = photos.filter(p => !!p.full_rel_path || !!p.positive_rel_path).length;
+          const negativeCount = photos.filter(p => !!p.negative_rel_path).length;
+
+          // Auto-switch view mode if only negatives exist and we are in positive mode
+          // Use a ref or effect to avoid infinite render loop, or just show a helpful message
+          
           const filteredPhotos = photos.filter(p => {
-            if (viewMode === 'positive') return !!p.full_rel_path;
+            if (viewMode === 'positive') return !!p.full_rel_path || !!p.positive_rel_path;
             if (viewMode === 'negative') return !!p.negative_rel_path;
             return true;
           });
@@ -420,9 +426,33 @@ export default function RollDetail() {
                 fontSize: '15px',
                 background: '#f9f9f9',
                 borderRadius: '12px',
-                border: '1px dashed #ddd'
+                border: '1px dashed #ddd',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '12px'
               }}>
-                {viewMode === 'positive' ? 'No positive photos available.' : 'No negative photos available.'}
+                <div>{viewMode === 'positive' ? 'No positive photos available.' : 'No negative photos available.'}</div>
+                
+                {viewMode === 'positive' && negativeCount > 0 && (
+                  <button 
+                    className="primary-btn" 
+                    onClick={() => setViewMode('negative')}
+                    style={{ fontSize: '14px', padding: '8px 16px' }}
+                  >
+                    Switch to Negative View ({negativeCount} photos)
+                  </button>
+                )}
+                
+                {viewMode === 'negative' && positiveCount > 0 && (
+                  <button 
+                    className="primary-btn" 
+                    onClick={() => setViewMode('positive')}
+                    style={{ fontSize: '14px', padding: '8px 16px' }}
+                  >
+                    Switch to Positive View ({positiveCount} photos)
+                  </button>
+                )}
               </div>
             );
           }
@@ -454,8 +484,8 @@ export default function RollDetail() {
             onSave={async (photoId, newTags) => {
               try {
                 await onUpdatePhoto(photoId, { tags: newTags });
-                // Refresh tags list in case new ones were added
-                getTags().then(t => setAllTags(Array.isArray(t) ? t : [])).catch(console.error);
+                // Refresh tags query and notify sidebar
+                queryClient.invalidateQueries(['tags']);
                 // Also dispatch event to refresh sidebar
                 window.dispatchEvent(new Event('refresh-tags'));
               } catch (err) {

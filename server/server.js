@@ -7,6 +7,25 @@ const db = require('./db');
 // Disable sharp cache to prevent file locking on Windows
 sharp.cache(false);
 const { uploadsDir, tmpUploadDir, rollsDir } = require('./config/paths');
+console.log('[PATHS]', {
+	DATA_ROOT: process.env.DATA_ROOT,
+	UPLOADS_ROOT: process.env.UPLOADS_ROOT,
+	USER_DATA: process.env.USER_DATA,
+	uploadsDir,
+	tmpUploadDir,
+	rollsDir
+});
+
+// Global error handlers to prevent crash and log the cause
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  // Keep server alive if possible, but this is risky. 
+  // For debugging "flashback", logging is key.
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
 
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' }));
@@ -46,6 +65,8 @@ const mountRoutes = () => {
 	app.use('/api/metadata', require('./routes/metadata'));
 	app.use('/api/search', require('./routes/search'));
 	app.use('/api/presets', require('./routes/presets'));
+	app.use('/api/filmlab', require('./routes/filmlab'));
+	app.use('/api/conflicts', require('./routes/conflicts'));
 };
 
 // Ensure database schema exists before accepting requests (first-run install)
@@ -89,6 +110,11 @@ CREATE TABLE IF NOT EXISTS photos (
 	filename TEXT,
 	full_rel_path TEXT,
 	thumb_rel_path TEXT,
+	original_rel_path TEXT,
+	positive_rel_path TEXT,
+	positive_thumb_rel_path TEXT,
+	negative_thumb_rel_path TEXT,
+	is_negative_source INTEGER DEFAULT 0,
 	caption TEXT,
 	taken_at TEXT,
 	rating INTEGER,
@@ -158,17 +184,38 @@ async function verifySchemaTables() {
 
 // Ensure additional columns (non-breaking migrations) without separate migration files.
 function ensureExtraColumns() {
-    // Add preset_json column to rolls if missing
-    db.all("PRAGMA table_info(rolls)", (err, cols) => {
-        if (err) { console.error('Failed to inspect rolls table', err.message); return; }
-        const hasPreset = cols.some(c => c.name === 'preset_json');
-        if (!hasPreset) {
-            console.log('[MIGRATION] Adding preset_json column to rolls');
-            db.run('ALTER TABLE rolls ADD COLUMN preset_json TEXT', (e) => {
-                if (e) console.error('Failed adding preset_json column', e.message); else console.log('[MIGRATION] preset_json column added');
-            });
-        }
-    });
+	// Add preset_json column to rolls if missing
+	db.all("PRAGMA table_info(rolls)", (err, cols) => {
+		if (err) { console.error('Failed to inspect rolls table', err.message); return; }
+		const hasPreset = cols.some(c => c.name === 'preset_json');
+		if (!hasPreset) {
+			console.log('[MIGRATION] Adding preset_json column to rolls');
+			db.run('ALTER TABLE rolls ADD COLUMN preset_json TEXT', (e) => {
+				if (e) console.error('Failed adding preset_json column', e.message); else console.log('[MIGRATION] preset_json column added');
+			});
+		}
+	});
+
+	// Add extended photo columns if missing (original / positive / thumbs / flags)
+	db.all("PRAGMA table_info(photos)", (err, cols) => {
+		if (err) { console.error('Failed to inspect photos table', err.message); return; }
+		const names = new Set(cols.map(c => c.name));
+		const toAdd = [];
+		if (!names.has('original_rel_path')) toAdd.push("ALTER TABLE photos ADD COLUMN original_rel_path TEXT");
+		if (!names.has('positive_rel_path')) toAdd.push("ALTER TABLE photos ADD COLUMN positive_rel_path TEXT");
+		if (!names.has('positive_thumb_rel_path')) toAdd.push("ALTER TABLE photos ADD COLUMN positive_thumb_rel_path TEXT");
+		if (!names.has('negative_thumb_rel_path')) toAdd.push("ALTER TABLE photos ADD COLUMN negative_thumb_rel_path TEXT");
+		if (!names.has('negative_rel_path')) toAdd.push("ALTER TABLE photos ADD COLUMN negative_rel_path TEXT");
+		if (!names.has('is_negative_source')) toAdd.push("ALTER TABLE photos ADD COLUMN is_negative_source INTEGER DEFAULT 0");
+		if (toAdd.length) {
+			console.log('[MIGRATION] Extending photos table with extra columns');
+			toAdd.forEach(sql => {
+				db.run(sql, (e) => {
+					if (e) console.error('Failed altering photos table with', sql, e.message);
+				});
+			});
+		}
+	});
 }
 
 (async () => {
@@ -176,9 +223,46 @@ function ensureExtraColumns() {
 		await verifySchemaTables();
 		ensureExtraColumns();
 		mountRoutes();
+		
+		// Add graceful shutdown endpoint
+		app.post('/api/shutdown', (req, res) => {
+			console.log('[SERVER] Shutdown requested');
+			res.json({ ok: true, message: 'Shutting down...' });
+			// Close DB and exit after sending response
+			setTimeout(() => {
+				if (db.closeDB) {
+					db.closeDB('shutdown_endpoint');
+				} else {
+					process.exit(0);
+				}
+			}, 100);
+		});
+		
 		const PORT = process.env.PORT || 4000;
 		// Listen on all interfaces (0.0.0.0) to allow mobile access
-		app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://0.0.0.0:${PORT}`));
+		const server = app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://0.0.0.0:${PORT}`));
+		
+		// Graceful shutdown on signals
+		const gracefulShutdown = (signal) => {
+			console.log(`[SERVER] Received ${signal}, closing HTTP server...`);
+			server.close(() => {
+				console.log('[SERVER] HTTP server closed');
+				if (db.closeDB) {
+					db.closeDB(signal);
+				} else {
+					process.exit(0);
+				}
+			});
+			// Force exit if graceful shutdown takes too long
+			setTimeout(() => {
+				console.error('[SERVER] Forced exit after timeout');
+				process.exit(1);
+			}, 5000);
+		};
+		
+		process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+		process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+		
 	} catch (e) {
 		console.error('Failed to ensure DB schema', e);
 		process.exit(1);

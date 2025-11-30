@@ -25,7 +25,7 @@ export default function RollLibrary() {
 
   async function onDeleteRoll(id, e) {
     e && e.stopPropagation();
-    if (!confirm('Delete this roll and its files? This cannot be undone.')) return;
+    if (!window.confirm('Delete this roll and its files? This cannot be undone.')) return;
     try {
       const res = await deleteRoll(id);
       if (res && (res.deleted || res.ok || res.success !== false)) {
