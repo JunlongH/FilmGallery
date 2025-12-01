@@ -7,46 +7,13 @@ const https = require('https');
 
 const isDev = process.env.ELECTRON_DEV === 'true' || !app.isPackaged;
 
-// Lightweight file logger available from the very top
-const LOG = (...args) => {
-  try {
-    const logDir = app.getPath ? app.getPath('userData') : __dirname;
-    const p = path.join(logDir, 'electron-main.log');
-    fs.appendFileSync(p, `[${new Date().toISOString()}] ${args.join(' ')}\n`);
-  } catch (e) {
-    // ignore
-  }
-};
-
-// [SINGLE INSTANCE LOCK]
-// Ensure only one instance of the application is running.
-const gotTheLock = app.requestSingleInstanceLock();
-
-if (!gotTheLock) {
-  LOG('Another instance is already running. Quitting...');
-  app.quit();
-} else {
-  app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // Someone tried to run a second instance, we should focus our window.
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-    }
-  });
-
-  // Continue with app initialization...
-  // Ensure Windows uses our packaged icon for taskbar/start shortcuts
-  // Must be set before any BrowserWindow is created
-  try { app.setAppUserModelId('com.yourorg.filmgallery'); } catch (_) {}
-  
-  // ... (rest of the initialization)
-}
-
+// Ensure Windows uses our packaged icon for taskbar/start shortcuts
+// Must be set before any BrowserWindow is created
+try { app.setAppUserModelId('com.yourorg.filmgallery'); } catch (_) {}
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let serverProcess = null;
-let serverStartPromise = null;
 let appConfig = {};
 let gpuWindow = null;
 let gpuJobs = new Map();
@@ -107,6 +74,16 @@ const getSharp = () => {
   return null;
 };
 
+const LOG = (...args) => {
+  try {
+    const logDir = app.getPath ? app.getPath('userData') : __dirname;
+    const p = path.join(logDir, 'electron-main.log');
+    fs.appendFileSync(p, `[${new Date().toISOString()}] ${args.join(' ')}\n`);
+  } catch (e) {
+    // ignore
+  }
+};
+
 // LOG defined earlier to be usable during early startup
 
 function probeBackend(url, timeout = 1200) {
@@ -126,10 +103,6 @@ function probeBackend(url, timeout = 1200) {
 }
 
 async function startServer() {
-  if (serverStartPromise) {
-    LOG('startServer: already starting, awaiting existing promise');
-    return serverStartPromise;
-  }
   if (serverProcess) {
     LOG('startServer: server already running, skipping spawn');
     return;
@@ -165,9 +138,6 @@ async function startServer() {
         } catch (e) {
           LOG('startServer: Failed to find/kill zombie via netstat:', e.message);
         }
-      } else {
-        // Linux/Mac fallback (lsof/kill) - simplified for now as user is on Windows
-        LOG('startServer: Non-Windows platform, skipping aggressive kill.');
       }
     } catch (e) {
       LOG('startServer: Error during zombie cleanup:', e.message);
@@ -189,7 +159,6 @@ async function startServer() {
 
   // Always use Electron's embedded Node to avoid native module ABI mismatch
   try {
-    serverStartPromise = Promise.resolve(); // mark as starting; replaced below with real
     const cmd = process.execPath;
     const args = [serverEntry];
     LOG('attempt spawn', cmd, args.join(' '));
@@ -219,11 +188,9 @@ async function startServer() {
     });
     LOG('spawned, pid=', serverProcess.pid);
     fs.appendFileSync(outLog, `spawned ${cmd} ${args.join(' ')} pid=${serverProcess.pid}\n`);
-    serverStartPromise = null;
   } catch (e) {
     LOG('Failed to start server', e && e.message);
     fs.appendFileSync(errLog, `Failed to start server ${e && e.message}\n`);
-    serverStartPromise = null;
   }
 }
 
@@ -450,6 +417,12 @@ function createWindow() {
   mainWindow.on('resize', () => saveWindowState(mainWindow));
   mainWindow.on('maximize', () => saveWindowState(mainWindow));
   mainWindow.on('unmaximize', () => saveWindowState(mainWindow));
+
+  // Ensure server is stopped when app quits
+  app.on('before-quit', async () => {
+    isQuitting = true;
+    await stopServer();
+  });
 
   if (isDev) {
     // dev server
@@ -831,12 +804,16 @@ ipcMain.handle('config-set-data-root', async (e, dir) => {
 });
 
 app.on('ready', async () => {
-  if (!gotTheLock) return;
   LOG('app ready, isDev=', isDev);
   appConfig = loadConfig();
   createWindow();
   createTray();
-  // Backend will be started from within createWindow flow (awaited) to avoid double-spawn
+  // Ensure backend starts when Electron launches (dev and prod)
+  try {
+    startServer();
+  } catch (e) {
+    LOG('startServer on ready failed', e && e.message);
+  }
 });
 
 app.on('window-all-closed', async () => {

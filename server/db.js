@@ -31,10 +31,9 @@ db.serialize(() => {
   // [ONEDRIVE-FIX] Use DELETE mode instead of WAL to prevent .db-wal/.db-shm files
   // which cause sync conflicts and locking issues in OneDrive.
   db.run('PRAGMA journal_mode = DELETE'); 
-  // [MULTI-DEVICE FIX] Wait up to 10000ms if DB is locked by another process/device
-  // Increased to 10s to handle network latency on OneDrive
-  db.run('PRAGMA busy_timeout = 10000');
   db.run('PRAGMA synchronous = NORMAL');
+  // [MULTI-DEVICE-FIX] Wait up to 10 seconds for lock instead of failing immediately
+  db.run('PRAGMA busy_timeout = 10000');
   // negative cache_size sets size in KB (here ~16MB)
   db.run('PRAGMA cache_size = -16000');
   db.run('PRAGMA temp_store = MEMORY');

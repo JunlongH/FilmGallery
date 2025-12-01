@@ -54,7 +54,8 @@
     ],
     "asar": true,
     "directories": {
-      "buildResources": "assets"
+      "buildResources": "assets",
+      "output": "dist_v9"
     },
     "win": {
       "target": [
