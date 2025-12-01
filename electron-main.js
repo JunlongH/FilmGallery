@@ -7,6 +7,17 @@ const https = require('https');
 
 const isDev = process.env.ELECTRON_DEV === 'true' || !app.isPackaged;
 
+// Lightweight file logger available from the very top
+const LOG = (...args) => {
+  try {
+    const logDir = app.getPath ? app.getPath('userData') : __dirname;
+    const p = path.join(logDir, 'electron-main.log');
+    fs.appendFileSync(p, `[${new Date().toISOString()}] ${args.join(' ')}\n`);
+  } catch (e) {
+    // ignore
+  }
+};
+
 // [SINGLE INSTANCE LOCK]
 // Ensure only one instance of the application is running.
 const gotTheLock = app.requestSingleInstanceLock();
@@ -35,6 +46,7 @@ let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let serverProcess = null;
+let serverStartPromise = null;
 let appConfig = {};
 let gpuWindow = null;
 let gpuJobs = new Map();
@@ -95,21 +107,73 @@ const getSharp = () => {
   return null;
 };
 
-const LOG = (...args) => {
-  try {
-    const logDir = app.getPath ? app.getPath('userData') : __dirname;
-    const p = path.join(logDir, 'electron-main.log');
-    fs.appendFileSync(p, `[${new Date().toISOString()}] ${args.join(' ')}\n`);
-  } catch (e) {
-    // ignore
-  }
-};
+// LOG defined earlier to be usable during early startup
 
-function startServer() {
+function probeBackend(url, timeout = 1200) {
+  return new Promise((resolve) => {
+    try {
+      const req = http.get(url, (res) => {
+        res.destroy();
+        resolve(true);
+      });
+      req.on('timeout', () => { try { req.destroy(); } catch (_) {}; resolve(false); });
+      req.on('error', () => resolve(false));
+      req.setTimeout(timeout);
+    } catch (_) {
+      resolve(false);
+    }
+  });
+}
+
+async function startServer() {
+  if (serverStartPromise) {
+    LOG('startServer: already starting, awaiting existing promise');
+    return serverStartPromise;
+  }
   if (serverProcess) {
     LOG('startServer: server already running, skipping spawn');
     return;
   }
+
+  // [ZOMBIE KILLER]
+  // Since we hold the Single Instance Lock, ANY process on port 4000 is a zombie or conflict.
+  // We must kill it to ensure we can bind the port and control the DB.
+  const apiProbeUrl = 'http://127.0.0.1:4000/api/rolls';
+  const alreadyUp = await probeBackend(apiProbeUrl, 500);
+  
+  if (alreadyUp) {
+    LOG('startServer: Port 4000 is in use. Attempting to kill zombie process...');
+    try {
+      if (process.platform === 'win32') {
+        // Find PID using netstat and kill it
+        const { execSync } = require('child_process');
+        // This command finds the PID listening on port 4000
+        const findCmd = 'netstat -ano | findstr :4000';
+        try {
+          const output = execSync(findCmd).toString();
+          const lines = output.split('\n').filter(l => l.includes('LISTENING'));
+          if (lines.length > 0) {
+            const parts = lines[0].trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && parseInt(pid) > 0) {
+              LOG(`startServer: Found zombie PID ${pid}. Killing...`);
+              execSync(`taskkill /F /PID ${pid}`);
+              // Wait a moment for OS to release port
+              await new Promise(r => setTimeout(r, 1000));
+            }
+          }
+        } catch (e) {
+          LOG('startServer: Failed to find/kill zombie via netstat:', e.message);
+        }
+      } else {
+        // Linux/Mac fallback (lsof/kill) - simplified for now as user is on Windows
+        LOG('startServer: Non-Windows platform, skipping aggressive kill.');
+      }
+    } catch (e) {
+      LOG('startServer: Error during zombie cleanup:', e.message);
+    }
+  }
+
   const serverDir = path.join(process.resourcesPath || __dirname, 'server');
   LOG('startServer, serverDir=', serverDir);
 
@@ -125,6 +189,7 @@ function startServer() {
 
   // Always use Electron's embedded Node to avoid native module ABI mismatch
   try {
+    serverStartPromise = Promise.resolve(); // mark as starting; replaced below with real
     const cmd = process.execPath;
     const args = [serverEntry];
     LOG('attempt spawn', cmd, args.join(' '));
@@ -154,9 +219,11 @@ function startServer() {
     });
     LOG('spawned, pid=', serverProcess.pid);
     fs.appendFileSync(outLog, `spawned ${cmd} ${args.join(' ')} pid=${serverProcess.pid}\n`);
+    serverStartPromise = null;
   } catch (e) {
     LOG('Failed to start server', e && e.message);
     fs.appendFileSync(errLog, `Failed to start server ${e && e.message}\n`);
+    serverStartPromise = null;
   }
 }
 
@@ -409,13 +476,13 @@ function createWindow() {
   }
 
   // If app needs backend API, ensure server is started and ready before loading UI
-  const apiHealthUrl = 'http://localhost:4000/api/rolls'; // 如果没有 health 路由可以改成 /api/rolls 或根
+  const apiHealthUrl = 'http://127.0.0.1:4000/api/rolls'; // prefer IPv4 to avoid IPv6 resolution quirks
   const needsBackend = true; // set to true if front-end calls local API
 
   (async () => {
     try {
       if (needsBackend) {
-        startServer();
+        await startServer();
         LOG('waiting for backend', apiHealthUrl);
         // wait for backend up (10s), if no health endpoint change to a reachable endpoint
         await waitForUrl(apiHealthUrl, 15000).catch(() => {
@@ -769,12 +836,7 @@ app.on('ready', async () => {
   appConfig = loadConfig();
   createWindow();
   createTray();
-  // Ensure backend starts when Electron launches (dev and prod)
-  try {
-    startServer();
-  } catch (e) {
-    LOG('startServer on ready failed', e && e.message);
-  }
+  // Backend will be started from within createWindow flow (awaited) to avoid double-spawn
 });
 
 app.on('window-all-closed', async () => {
