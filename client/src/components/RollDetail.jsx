@@ -381,15 +381,19 @@ export default function RollDetail() {
 
         <div className="roll-visual-column">
           <div className="roll-cover-frame">
-            {(roll.coverPath || roll.cover_photo) ? (
-              <img 
-                src={buildUploadUrl(roll.coverPath || roll.cover_photo)} 
-                alt="Cover" 
-                className="roll-cover-img"
-              />
-            ) : (
-              <div className="empty-cover-placeholder">No Cover Image</div>
-            )}
+            {(() => {
+               const cover = roll.coverPath || roll.cover_photo;
+               if (cover) {
+                 return <img src={buildUploadUrl(cover)} alt="Cover" className="roll-cover-img" />;
+               }
+               // Fallback to first photo
+               const first = photos.find(p => p.positive_rel_path || p.full_rel_path || p.negative_rel_path);
+               if (first) {
+                 const path = first.positive_rel_path || first.full_rel_path || first.negative_rel_path;
+                 return <img src={buildUploadUrl(path)} alt="Cover (Auto)" className="roll-cover-img" />;
+               }
+               return <div className="empty-cover-placeholder">No Cover Image</div>;
+            })()}
           </div>
         </div>
       </div>
@@ -414,6 +418,16 @@ export default function RollDetail() {
           });
 
           if (filteredPhotos.length === 0) {
+            if (viewMode === 'positive' && negativeCount > 0) {
+               return (
+                 <div style={{ padding: '60px 0', textAlign: 'center', color: '#888' }}>
+                   <p>No positive photos available.</p>
+                   <button className="btn btn-secondary" onClick={() => setViewMode('negative')}>
+                     Switch to Negative View ({negativeCount} photos)
+                   </button>
+                 </div>
+               );
+            }
             return (
               <div style={{ 
                 padding: '60px 0', 
@@ -500,7 +514,7 @@ export default function RollDetail() {
         {selectedPhotoIndex !== null && (
           <ImageViewer
             images={photos.filter(p => {
-              if (viewMode === 'positive') return !!p.full_rel_path;
+              if (viewMode === 'positive') return !!p.full_rel_path || !!p.positive_rel_path;
               if (viewMode === 'negative') return !!p.negative_rel_path;
               return true;
             })}

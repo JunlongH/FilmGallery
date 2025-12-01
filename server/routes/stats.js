@@ -194,23 +194,33 @@ router.get('/ratings', (req, res) => {
 
 // GET /api/stats/locations
 router.get('/locations', (req, res) => {
-  const sql = `
-    SELECT 
-      l.city_name,
-      l.country_name,
-      COUNT(DISTINCT p.id) as photo_count,
-      COUNT(DISTINCT p.roll_id) as roll_count
-    FROM photos p
-    JOIN locations l ON p.location_id = l.id
-    WHERE p.location_id IS NOT NULL
-    GROUP BY l.id
-    ORDER BY photo_count DESC
-    LIMIT 15
-  `;
-  
-  db.all(sql, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+  // Check if locations table exists
+  db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", [], (checkErr, tableExists) => {
+    if (!tableExists) {
+      return res.json([]);
+    }
+    
+    const sql = `
+      SELECT 
+        l.city_name,
+        l.country_name,
+        COUNT(DISTINCT p.id) as photo_count,
+        COUNT(DISTINCT p.roll_id) as roll_count
+      FROM photos p
+      JOIN locations l ON p.location_id = l.id
+      WHERE p.location_id IS NOT NULL
+      GROUP BY l.id
+      ORDER BY photo_count DESC
+      LIMIT 15
+    `;
+    
+    db.all(sql, (err, rows) => {
+      if (err) {
+        console.warn('Error fetching locations:', err.message);
+        return res.json([]);
+      }
+      res.json(rows);
+    });
   });
 });
 

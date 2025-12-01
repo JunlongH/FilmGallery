@@ -23,7 +23,10 @@ function PhotoThumb({ photo, onClick }) {
   const [url, setUrl] = useState(null);
   useEffect(() => {
     let candidate = null;
-    if (photo.thumb_rel_path) candidate = `/uploads/${photo.thumb_rel_path}`;
+    // Prefer positive thumb/full when present
+    if (photo.positive_thumb_rel_path) candidate = `/uploads/${photo.positive_thumb_rel_path}`;
+    else if (photo.thumb_rel_path) candidate = `/uploads/${photo.thumb_rel_path}`;
+    else if (photo.positive_rel_path) candidate = `/uploads/${photo.positive_rel_path}`;
     else if (photo.full_rel_path) candidate = `/uploads/${photo.full_rel_path}`;
     else if (photo.filename) candidate = photo.filename;
     setUrl(buildUploadUrl(candidate));

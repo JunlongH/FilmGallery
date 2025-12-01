@@ -130,7 +130,13 @@ export async function getMetadataOptions() {
   return jsonFetch('/api/metadata/options');
 }
 export async function getPhotos(rollId) {
-  return jsonFetch(`/api/rolls/${rollId}/photos`);
+  const data = await jsonFetch(`/api/rolls/${rollId}/photos`);
+  // Normalize paths to prefer positive variants
+  return (Array.isArray(data) ? data : []).map(p => ({
+    ...p,
+    full_rel_path: p.positive_rel_path || p.full_rel_path || null,
+    thumb_rel_path: p.positive_thumb_rel_path || p.thumb_rel_path || null,
+  }));
 }
 export async function searchPhotos(filters = {}) {
   const params = new URLSearchParams();
@@ -140,7 +146,12 @@ export async function searchPhotos(filters = {}) {
     else if (v !== '') params.append(k, v);
   });
   const qs = params.toString();
-  return jsonFetch(`/api/photos${qs ? '?' + qs : ''}`);
+  const data = await jsonFetch(`/api/photos${qs ? '?' + qs : ''}`);
+  return (Array.isArray(data) ? data : []).map(p => ({
+    ...p,
+    full_rel_path: p.positive_rel_path || p.full_rel_path || null,
+    thumb_rel_path: p.positive_thumb_rel_path || p.thumb_rel_path || null,
+  }));
 }
 export async function uploadPhotoToRoll(rollId, file, fields = {}) {
   const fd = new FormData();
@@ -320,6 +331,14 @@ export async function updatePhoto(id, data) {
 export async function searchLocations(params = {}) {
   const qs = new URLSearchParams(params).toString();
   return jsonFetch(`/api/locations${qs ? '?' + qs : ''}`);
+}
+
+export async function getLocation(id) {
+  return jsonFetch(`/api/locations/${id}`);
+}
+
+export async function getCountries() {
+  return jsonFetch('/api/locations/countries');
 }
 
 export async function createLocation(data) {

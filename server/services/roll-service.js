@@ -36,8 +36,6 @@ async function recomputeRollSequence() {
     SELECT id
     FROM rolls
     ORDER BY 
-      CASE WHEN end_date IS NULL THEN 1 ELSE 0 END,
-      end_date ASC,
       CASE WHEN start_date IS NULL THEN 1 ELSE 0 END,
       start_date ASC,
       CASE WHEN created_at IS NULL THEN 1 ELSE 0 END,

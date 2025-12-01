@@ -96,11 +96,24 @@ router.get('/', async (req, res) => {
   const yms = toArray(ym);
   const films = toArray(film);
 
-  let sql = `
+  // Check if locations table exists
+  const locationsTableExists = await new Promise((resolve) => {
+    db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", [], (err, row) => {
+      resolve(!!row);
+    });
+  });
+
+  let sql = locationsTableExists ? `
     SELECT p.*, r.title as roll_title, l.city_name, l.country_name, COALESCE(f.name, r.film_type) AS film_name
     FROM photos p
     JOIN rolls r ON p.roll_id = r.id
     LEFT JOIN locations l ON p.location_id = l.id
+    LEFT JOIN films f ON r.filmId = f.id
+    WHERE 1=1
+  ` : `
+    SELECT p.*, r.title as roll_title, NULL as city_name, NULL as country_name, COALESCE(f.name, r.film_type) AS film_name
+    FROM photos p
+    JOIN rolls r ON p.roll_id = r.id
     LEFT JOIN films f ON r.filmId = f.id
     WHERE 1=1
   `;
@@ -153,7 +166,16 @@ router.get('/', async (req, res) => {
 
   try {
     const rows = await allAsync(sql, params);
-    const withTags = await attachTagsToPhotos(rows);
+    // Normalize paths: prefer positive_rel_path when present
+    const normalized = (rows || []).map(r => {
+      const fullPath = r.positive_rel_path || r.full_rel_path || null;
+      const thumbPath = r.positive_thumb_rel_path || r.thumb_rel_path || null;
+      return Object.assign({}, r, {
+        full_rel_path: fullPath,
+        thumb_rel_path: thumbPath,
+      });
+    });
+    const withTags = await attachTagsToPhotos(normalized);
     res.json(withTags);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -272,13 +294,14 @@ router.put('/:id', async (req, res) => {
       }
     }
 
-    // Add gear values to roll_gear without replacing roll fields
+    // Add gear values to roll_gear with intelligent deduplication
     if (camera || lens || photographer) {
+      const { addOrUpdateGear } = require('../services/gear-service');
       const photo = await getAsync('SELECT roll_id FROM photos WHERE id = ?', [id]);
       if (photo && photo.roll_id) {
-        if (camera) await runAsync('INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?,?,?)', [photo.roll_id, 'camera', camera]);
-        if (lens) await runAsync('INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?,?,?)', [photo.roll_id, 'lens', lens]);
-        if (photographer) await runAsync('INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?,?,?)', [photo.roll_id, 'photographer', photographer]);
+        if (camera) await addOrUpdateGear(photo.roll_id, 'camera', camera).catch(e => console.error('Add camera failed', e));
+        if (lens) await addOrUpdateGear(photo.roll_id, 'lens', lens).catch(e => console.error('Add lens failed', e));
+        if (photographer) await addOrUpdateGear(photo.roll_id, 'photographer', photographer).catch(e => console.error('Add photographer failed', e));
       }
     }
 

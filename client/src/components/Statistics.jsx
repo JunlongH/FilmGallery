@@ -59,8 +59,11 @@ export default function Statistics({ mode = 'stats' }) {
 
   const { data: locations } = useQuery({
     queryKey: ['stats-locations'],
-    queryFn: () => fetch(`${API}/api/stats/locations`).then(r => r.json())
+    queryFn: () => fetch(`${API}/api/stats/locations`).then(r => r.json()).catch(() => [])
   });
+  
+  // Ensure locations is always an array
+  const locationsArray = Array.isArray(locations) ? locations : [];
 
   const { data: temporal } = useQuery({
     queryKey: ['stats-temporal'],
@@ -342,8 +345,8 @@ export default function Statistics({ mode = 'stats' }) {
             <div style={chartCard}>
               <h3 style={{ marginTop: 0, marginBottom: '20px', fontSize: '18px', fontWeight: 700, color: '#334155' }}>Top Shooting Locations</h3>
               <div style={{ height: '300px', display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '20px' }}>
-                {(locations || []).slice(0, 15).map((loc, index) => {
-                  const maxCount = Math.max(...(locations || []).map(l => l.photo_count));
+                {locationsArray.slice(0, 15).map((loc, index) => {
+                  const maxCount = locationsArray.length > 0 ? Math.max(...locationsArray.map(l => l.photo_count)) : 1;
                   const minSize = 14;
                   const maxSize = 48;
                   const fontSize = minSize + ((loc.photo_count / maxCount) * (maxSize - minSize));

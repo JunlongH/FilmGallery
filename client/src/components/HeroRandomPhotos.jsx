@@ -44,7 +44,7 @@ export default function HeroRandomPhotos() {
       <AnimatePresence mode='wait'>
         <motion.img
           key={current.id}
-          src={buildUploadUrl(current.full_rel_path)}
+          src={buildUploadUrl(current.positive_rel_path || current.full_rel_path)}
           alt={current.caption || current.roll_title || ''}
           initial={{ opacity: 0, scale: 1.04 }}
           animate={{ opacity: 1, scale: 1 }}

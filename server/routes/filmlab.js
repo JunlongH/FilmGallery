@@ -208,11 +208,18 @@ router.post('/render', async (req, res) => {
       out[j] = r; out[j + 1] = g; out[j + 2] = b;
     }
 
-    // Save to new positive file
+    // Save to positive file
     const rollDir = path.dirname(path.join(uploadsDir, relSource));
     const ext = path.extname(row.filename || 'image.jpg') || '.jpg';
     const base = path.basename(row.filename || 'image.jpg', ext);
-    const newName = `${base}_pos_${Date.now()}${ext}`;
+    
+    // Use consistent naming: if already has _pos, keep it; otherwise add _pos
+    let newName;
+    if (base.includes('_pos')) {
+      newName = `${base}${ext}`;
+    } else {
+      newName = `${base}_pos${ext}`;
+    }
     
     let outDir = rollDir;
     if (relSource.includes('/negative')) {
@@ -226,8 +233,9 @@ router.post('/render', async (req, res) => {
     
     const relOut = path.relative(uploadsDir, outPath).replace(/\\/g, '/');
     
+    // Also update filename in database to match the actual file
     await new Promise((resolve, reject) => {
-        db.run('UPDATE photos SET positive_rel_path = ?, full_rel_path = ? WHERE id = ?', [relOut, relOut, photoId], (err) => err ? reject(err) : resolve());
+        db.run('UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ? WHERE id = ?', [newName, relOut, relOut, photoId], (err) => err ? reject(err) : resolve());
     });
 
     res.json({ ok: true, path: relOut });
@@ -244,7 +252,7 @@ router.post('/export', async (req, res) => {
   if (!photoId) return res.status(400).json({ error: 'photoId required' });
   try {
     const row = await new Promise((resolve, reject) => {
-      db.get('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
+      db.get('SELECT id, roll_id, filename, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
     });
     if (!row) return res.status(404).json({ error: 'photo not found' });
     const relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
@@ -284,10 +292,61 @@ router.post('/export', async (req, res) => {
       out[j] = r; out[j + 1] = g; out[j + 2] = b;
     }
 
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Content-Disposition', `attachment; filename="export_${photoId}.jpg"`);
-    const buf = await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
-    res.end(buf);
+    // Persist export to disk and update DB paths consistently
+    // Determine output directory (prefer full/ under the same roll)
+    const baseDir = path.dirname(path.join(uploadsDir, relSource));
+    let outDir = baseDir;
+    if (relSource.includes('/negative')) {
+      outDir = baseDir.replace(/negative$/, 'full').replace(/negative[\\/]$/, 'full');
+    } else if (!relSource.includes('/full')) {
+      // If source is originals or other, use full directory sibling
+      outDir = baseDir.replace(/originals$/, 'full').replace(/originals[\\/]$/, 'full');
+    }
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+    // Build consistent file name based on existing filename
+    const ext = path.extname(row.filename || 'image.jpg') || '.jpg';
+    const base = path.basename(row.filename || 'image.jpg', ext);
+    const outName = base.includes('_pos') ? `${base}${ext}` : `${base}_pos${ext}`;
+    const outPath = path.join(outDir, outName);
+
+    await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toFile(outPath);
+    const relOut = path.relative(uploadsDir, outPath).replace(/\\/g, '/');
+
+    // Optionally generate/update thumbnail in thumb/ directory
+    try {
+      const rollsRoot = path.resolve(outDir, '..');
+      const thumbDir = path.join(rollsRoot, 'thumb');
+      if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
+      const thumbName = `${base.includes('_pos') ? base : base + '_pos'}-thumb.jpg`;
+      const thumbPath = path.join(thumbDir, thumbName);
+      await sharp(outPath)
+        .resize({ width: 240, height: 240, fit: 'inside' })
+        .jpeg({ quality: 40 })
+        .toFile(thumbPath)
+        .catch(() => {});
+      const relThumb = path.relative(uploadsDir, thumbPath).replace(/\\/g, '/');
+
+      // Update DB: filename, positive_rel_path, full_rel_path, positive_thumb_rel_path, thumb_rel_path
+      await new Promise((resolve, reject) => {
+        db.run(
+          'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ?, positive_thumb_rel_path = ?, thumb_rel_path = ? WHERE id = ?',
+          [outName, relOut, relOut, relThumb, relThumb, photoId],
+          (err) => (err ? reject(err) : resolve())
+        );
+      });
+    } catch (e) {
+      // Fallback: update paths without thumbnail
+      await new Promise((resolve, reject) => {
+        db.run(
+          'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ? WHERE id = ?',
+          [outName, relOut, relOut, photoId],
+          (err) => (err ? reject(err) : resolve())
+        );
+      });
+    }
+
+    res.json({ ok: true, path: relOut });
   } catch (e) {
     console.error('[FILMLAB] export error', e);
     res.status(500).json({ error: e && e.message });

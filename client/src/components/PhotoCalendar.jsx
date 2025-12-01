@@ -53,21 +53,25 @@ export default function PhotoCalendar() {
         ? `${process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000'}/api/photos?year=${year}&month=${month}`
         : `${process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000'}/api/photos?year=${year}`;
       const res = await fetch(url);
-      return res.json();
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
     }
   });
+
+  // Ensure photos is always an array
+  const photosArray = Array.isArray(photos) ? photos : [];
 
   // Group photos by date
   const photosByDay = useMemo(() => {
     const map = new Map();
-    photos.forEach(p => {
+    photosArray.forEach(p => {
       if (!p.date_taken) return;
       const d = p.date_taken.split('T')[0];
       if (!map.has(d)) map.set(d, []);
       map.get(d).push(p);
     });
     return map;
-  }, [photos]);
+  }, [photosArray]);
 
   // Navigation
   const handlePrev = () => {
@@ -89,7 +93,7 @@ export default function PhotoCalendar() {
   // Helper to get photo URL
   const getPhotoUrl = (photo) => {
     if (!photo) return null;
-    let path = photo.thumb_rel_path || photo.full_rel_path;
+    let path = photo.positive_thumb_rel_path || photo.thumb_rel_path || photo.positive_rel_path || photo.full_rel_path;
     if (!path) return null;
     if (!path.startsWith('http') && !path.startsWith('/') && !path.startsWith('uploads') && !path.includes(':')) {
       path = `uploads/${path}`;

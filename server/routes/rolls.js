@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { recomputeRollSequence } = require('../services/roll-service');
+const { addOrUpdateGear } = require('../services/gear-service');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
@@ -280,25 +281,21 @@ router.post('/', (req, res) => {
           // Insert immediately to prevent data loss on crash
           try {
               await runInsert([rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath, originalRelPath, positiveRelPath, positiveThumbRelPath, negativeThumbRelPath, isNegativeSource]);
-            inserted.push({ filename: finalName, fullRelPath, thumbRelPath, negativeRelPath });
+            inserted.push({ filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, positiveRelPath });
             console.log(`[CREATE ROLL] Inserted photo ${finalName}`);
           } catch (dbErr) {
               console.error('Failed to insert photo record', dbErr);
           }
         }
 
-        const stmt = db.prepare('INSERT INTO photos (roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path, camera, lens, photographer) VALUES (?,?,?,?,?,?,?,?,?)');
-        for (const p of inserted) stmt.run(rollId, p.frameNumber, p.filename, p.fullRelPath, p.thumbRelPath, p.negativeRelPath, camera, lens, photographer);
-        stmt.finalize();
-
         // Set cover
         try {
 
-        // Seed roll_gear with initial values
+        // Seed roll_gear with initial values using intelligent deduplication
         try {
-          if (camera) db.run('INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?,?,?)', [rollId, 'camera', camera]);
-          if (lens) db.run('INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?,?,?)', [rollId, 'lens', lens]);
-          if (photographer) db.run('INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?,?,?)', [rollId, 'photographer', photographer]);
+          if (camera) await addOrUpdateGear(rollId, 'camera', camera).catch(e => console.error('Add camera failed', e));
+          if (lens) await addOrUpdateGear(rollId, 'lens', lens).catch(e => console.error('Add lens failed', e));
+          if (photographer) await addOrUpdateGear(rollId, 'photographer', photographer).catch(e => console.error('Add photographer failed', e));
         } catch(e){ console.error('Seed roll_gear failed', e.message); }
             let coverToSet = null;
             if (filmId) {
@@ -311,12 +308,10 @@ router.post('/', (req, res) => {
                const idx = (Number.isFinite(coverIndex) && coverIndex >= 0 && coverIndex < inserted.length) ? coverIndex : 0;
                // Prefer thumbRelPath if fullRelPath is null (negative case)
                const p = inserted[idx];
-               const pathForCover = p.fullRelPath || p.thumbRelPath || p.negativeRelPath; // Note: p here is from inserted array which only has limited fields now
-               // We need to fetch the actual inserted row or just use what we have.
-               // The inserted array above only pushes { filename, fullRelPath, thumbRelPath }.
-               // Let's just use the first successful insert.
-               if (p && (p.fullRelPath || p.thumbRelPath)) {
-                  coverToSet = `/uploads/${p.fullRelPath || p.thumbRelPath}`.replace(/\\/g, '/');
+               const pathForCover = p.positiveRelPath || p.fullRelPath || p.thumbRelPath || p.negativeRelPath; 
+               
+               if (p && pathForCover) {
+                  coverToSet = `/uploads/${pathForCover}`.replace(/\\/g, '/');
                }
             }
             
@@ -463,23 +458,50 @@ router.get('/:id', (req, res) => {
   db.get(sql, [id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!row) return res.status(404).json({ error: 'Not found' });
-    db.all(`SELECT l.id AS location_id, l.country_code, l.country_name, l.city_name, l.city_lat, l.city_lng
-            FROM roll_locations rl JOIN locations l ON rl.location_id = l.id
-            WHERE rl.roll_id = ? ORDER BY l.country_name, l.city_name`, [id], (e2, locs) => {
-      if (e2) return res.status(500).json({ error: e2.message });
-      row.locations = locs || [];
-      // attach gear arrays
-      db.all('SELECT type, value FROM roll_gear WHERE roll_id = ?', [id], (e3, gearRows) => {
-        if (e3) return res.status(500).json({ error: e3.message });
-        const gear = { cameras: [], lenses: [], photographers: [] };
-        (gearRows || []).forEach(g => {
-          if (g.type === 'camera') gear.cameras.push(g.value);
-          else if (g.type === 'lens') gear.lenses.push(g.value);
-          else if (g.type === 'photographer') gear.photographers.push(g.value);
+    
+    // Check if locations table exists before querying
+    db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", [], (checkErr, tableExists) => {
+      const locationsQuery = tableExists ? 
+        `SELECT l.id AS location_id, l.country_code, l.country_name, l.city_name, l.city_lat, l.city_lng
+         FROM roll_locations rl JOIN locations l ON rl.location_id = l.id
+         WHERE rl.roll_id = ? ORDER BY l.country_name, l.city_name` : null;
+      
+      if (!locationsQuery) {
+        row.locations = [];
+        // attach gear arrays
+        db.all('SELECT type, value FROM roll_gear WHERE roll_id = ?', [id], (e3, gearRows) => {
+          if (e3) return res.status(500).json({ error: e3.message });
+          const gear = { cameras: [], lenses: [], photographers: [] };
+          (gearRows || []).forEach(g => {
+            if (g.type === 'camera') gear.cameras.push(g.value);
+            else if (g.type === 'lens') gear.lenses.push(g.value);
+            else if (g.type === 'photographer') gear.photographers.push(g.value);
+          });
+          row.gear = gear;
+          res.json(row);
         });
-        row.gear = gear;
-        res.json(row);
-      });
+      } else {
+        db.all(locationsQuery, [id], (e2, locs) => {
+          if (e2) {
+            console.warn('Error fetching locations:', e2.message);
+            row.locations = [];
+          } else {
+            row.locations = locs || [];
+          }
+          // attach gear arrays
+          db.all('SELECT type, value FROM roll_gear WHERE roll_id = ?', [id], (e3, gearRows) => {
+            if (e3) return res.status(500).json({ error: e3.message });
+            const gear = { cameras: [], lenses: [], photographers: [] };
+            (gearRows || []).forEach(g => {
+              if (g.type === 'camera') gear.cameras.push(g.value);
+              else if (g.type === 'lens') gear.lenses.push(g.value);
+              else if (g.type === 'photographer') gear.photographers.push(g.value);
+            });
+            row.gear = gear;
+            res.json(row);
+          });
+        });
+      }
     });
   });
 });
@@ -544,19 +566,44 @@ router.delete('/:id/preset', (req, res) => {
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
   const { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note } = req.body;
-  if (start_date && end_date) {
+  if (start_date !== undefined && end_date !== undefined) {
     const sd = new Date(start_date);
     const ed = new Date(end_date);
     if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return res.status(400).json({ error: 'Invalid start_date or end_date' });
     if (sd > ed) return res.status(400).json({ error: 'start_date cannot be later than end_date' });
   }
-  const sql = `UPDATE rolls SET title=?, start_date=?, end_date=?, camera=?, lens=?, photographer=?, film_type=?, filmId=?, notes=?, develop_lab=?, develop_process=?, develop_date=?, purchase_cost=?, develop_cost=?, purchase_channel=?, batch_number=?, develop_note=? WHERE id=?`;
+  
+  // Build dynamic UPDATE query to only update provided fields
+  const updates = [];
+  const values = [];
+  const fieldMap = { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note };
+  
+  for (const [key, val] of Object.entries(fieldMap)) {
+    if (val !== undefined) {
+      updates.push(`${key}=?`);
+      values.push(val);
+    }
+  }
+  
+  if (updates.length === 0 && !Array.isArray(locations)) {
+    return res.json({ ok: true, message: 'No fields to update' });
+  }
+  
   try {
-    await new Promise((resolve, reject) => {
-      db.run(sql, [title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, id], function(err){
-        if (err) reject(err); else resolve(this.changes);
+    if (updates.length > 0) {
+      const sql = `UPDATE rolls SET ${updates.join(', ')} WHERE id=?`;
+      values.push(id);
+      await new Promise((resolve, reject) => {
+        db.run(sql, values, function(err){
+          if (err) reject(err); else resolve(this.changes);
+        });
       });
-    });
+      
+      // Update gear with intelligent deduplication
+      if (camera !== undefined) await addOrUpdateGear(id, 'camera', camera).catch(e => console.error('Update camera failed', e));
+      if (lens !== undefined) await addOrUpdateGear(id, 'lens', lens).catch(e => console.error('Update lens failed', e));
+      if (photographer !== undefined) await addOrUpdateGear(id, 'photographer', photographer).catch(e => console.error('Update photographer failed', e));
+    }
     if (Array.isArray(locations)) {
       for (const locId of locations) {
         await new Promise((resolve, reject) => db.run('INSERT OR IGNORE INTO roll_locations (roll_id, location_id) VALUES (?, ?)', [id, locId], (e)=> e?reject(e):resolve()));
@@ -664,7 +711,22 @@ router.get('/:rollId/photos', async (req, res) => {
   const rollId = req.params.rollId;
   try {
     const rows = await allAsync('SELECT * FROM photos WHERE roll_id = ? ORDER BY frame_number', [rollId]);
-    const withTags = await attachTagsToPhotos(rows);
+    
+    // DEBUG: Log first row to check paths
+    if (rows && rows.length > 0) {
+       const r = rows[0];
+       console.log(`[DEBUG] Roll ${rollId} photo[0]: id=${r.id}, full=${r.full_rel_path}, pos=${r.positive_rel_path}, neg=${r.negative_rel_path}`);
+    }
+
+    const normalized = (rows || []).map(r => {
+      const fullPath = r.positive_rel_path || r.full_rel_path || null;
+      const thumbPath = r.positive_thumb_rel_path || r.thumb_rel_path || null;
+      return Object.assign({}, r, {
+        full_rel_path: fullPath,
+        thumb_rel_path: thumbPath,
+      });
+    });
+    const withTags = await attachTagsToPhotos(normalized);
     res.json(withTags);
   } catch (err) {
     console.error('[GET] roll photos error', err.message);
@@ -856,20 +918,15 @@ router.post('/:id/cover', (req, res) => {
   };
 
   if (photoId) {
-    db.get('SELECT filename, full_rel_path FROM photos WHERE id = ? AND roll_id = ?', [photoId, rollId], (err, row) => {
+    db.get('SELECT filename, full_rel_path, positive_rel_path, negative_rel_path FROM photos WHERE id = ? AND roll_id = ?', [photoId, rollId], (err, row) => {
       if (err) return res.status(500).json({ error: err.message });
       if (!row) return res.status(404).json({ error: 'photo not found' });
-      const photoPath = row.full_rel_path;
+      
+      const photoPath = row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+      
       if (photoPath) {
         const coverPath = `/uploads/${photoPath}`.replace(/\\/g, '/');
-        const sql = `UPDATE rolls SET coverPath = ? WHERE id = ?`;
-        db.run(sql, [coverPath, rollId], function(err2) {
-          if (err2) return res.status(500).json({ error: err2.message });
-          db.get('SELECT * FROM rolls WHERE id = ?', [rollId], (e, rrow) => {
-            if (e) return res.status(500).json({ error: e.message });
-            res.json(rrow);
-          });
-        });
+        setCover(coverPath);
       } else {
         setCover(row.filename);
       }

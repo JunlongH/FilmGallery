@@ -3,6 +3,30 @@ const router = express.Router();
 const db = require('../db');
 const { allAsync, runAsync, getAsync } = require('../utils/db-helpers');
 
+// GET /api/locations/countries
+router.get('/countries', async (req, res) => {
+  try {
+    const sql = `SELECT DISTINCT country_code, country_name FROM locations WHERE country_code IS NOT NULL ORDER BY country_name`;
+    const rows = await allAsync(sql);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/locations/:id
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  if (!id || isNaN(id)) return res.status(400).json({ error: 'Invalid ID' });
+  try {
+    const row = await getAsync('SELECT * FROM locations WHERE id = ?', [id]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(row);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/locations?country=CN&query=shang
 router.get('/', async (req, res) => {
   const { country, query } = req.query;

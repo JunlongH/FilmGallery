@@ -3,10 +3,14 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const path = require('path');
 const sharp = require('sharp');
-const db = require('./db');
+const fs = require('fs');
+// const db = require('./db'); // MOVED: Loaded after migration
 // Disable sharp cache to prevent file locking on Windows
 sharp.cache(false);
 const { uploadsDir, tmpUploadDir, rollsDir } = require('./config/paths');
+const { runMigration } = require('./utils/migration');
+const { runSchemaMigration } = require('./utils/schema-migration');
+
 console.log('[PATHS]', {
 	DATA_ROOT: process.env.DATA_ROOT,
 	UPLOADS_ROOT: process.env.UPLOADS_ROOT,
@@ -19,8 +23,6 @@ console.log('[PATHS]', {
 // Global error handlers to prevent crash and log the cause
 process.on('uncaughtException', (err) => {
   console.error('UNCAUGHT EXCEPTION:', err);
-  // Keep server alive if possible, but this is risky. 
-  // For debugging "flashback", logging is key.
 });
 
 process.on('unhandledRejection', (reason, promise) => {
@@ -30,20 +32,17 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' }));
 // CORS: reflect origin (including 'null' from file://) and allow private network
-// Important: preflightContinue=true so we can add Access-Control-Allow-Private-Network on OPTIONS
 app.use(cors({ origin: true, credentials: false, preflightContinue: true }));
 app.use((req, res, next) => {
 	res.setHeader('Access-Control-Allow-Private-Network', 'true');
 	next();
 });
-// Ensure OPTIONS preflight includes the Private-Network header
 app.options('*', (req, res) => {
 	res.setHeader('Access-Control-Allow-Private-Network', 'true');
 	res.sendStatus(204);
 });
 
 // --- storage directories ---
-// Cache static files for 1 year (immutable) since filenames usually don't change or are unique
 const staticOptions = {
   maxAge: '1y',
   immutable: true,
@@ -51,8 +50,66 @@ const staticOptions = {
   lastModified: true
 };
 
+// Middleware to handle case-insensitive file serving on Windows/Linux mismatch
+const caseInsensitiveStatic = (root) => {
+  return (req, res, next) => {
+    let decodedPath;
+    try {
+      decodedPath = decodeURIComponent(req.path);
+    } catch (e) {
+      decodedPath = req.path;
+    }
+    
+    const filePath = path.join(root, decodedPath);
+    
+    // 1. Try exact match first
+    if (fs.existsSync(filePath)) {
+      // Check if it's a directory to avoid EISDIR
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.isDirectory()) return next();
+      } catch (e) { return next(); }
+
+      return res.sendFile(filePath, (err) => {
+        if (err) {
+          // If headers sent, we can't do anything. Otherwise pass to next.
+          if (res.headersSent) return;
+          console.error('[STATIC] Error serving exact file:', filePath, err.message);
+          next();
+        }
+      });
+    }
+
+    // 2. Try case-insensitive match
+    const dir = path.dirname(filePath);
+    const base = path.basename(filePath);
+    
+    if (fs.existsSync(dir)) {
+      try {
+        const files = fs.readdirSync(dir);
+        const match = files.find(f => f.toLowerCase() === base.toLowerCase());
+        if (match) {
+          const matchedPath = path.join(dir, match);
+          return res.sendFile(matchedPath, (err) => {
+             if (err) {
+               if (res.headersSent) return;
+               console.error('[STATIC] Error serving matched file:', matchedPath, err.message);
+               next();
+             }
+          });
+        }
+      } catch (e) {
+        console.error('[STATIC] Readdir error:', dir, e.message);
+      }
+    }
+    next();
+  };
+};
+
+app.use('/uploads', caseInsensitiveStatic(uploadsDir));
 app.use('/uploads', express.static(uploadsDir, staticOptions));
 app.use('/uploads/tmp', express.static(tmpUploadDir)); // tmp files don't need long cache
+app.use('/uploads/rolls', caseInsensitiveStatic(rollsDir));
 app.use('/uploads/rolls', express.static(rollsDir, staticOptions));
 
 // --- Routes (mount after schema is ensured just before listen) ---
@@ -76,249 +133,99 @@ const schemaSQL = `
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS films (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	name TEXT NOT NULL,
-	iso INTEGER NOT NULL,
-	category TEXT NOT NULL,
-	thumbPath TEXT,
-	createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  iso INTEGER,
+  format TEXT,
+  type TEXT,
+  description TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS rolls (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	title TEXT,
-	start_date TEXT,
-	end_date TEXT,
-	camera TEXT,
-	lens TEXT,
-	photographer TEXT,
-	filmId INTEGER,
-	film_type TEXT,
-	exposures INTEGER,
-	cover_photo TEXT,
-	coverPath TEXT,
-	folderName TEXT,
-	iso INTEGER,
-	notes TEXT,
-	develop_lab TEXT,
-	develop_process TEXT,
-	develop_date TEXT,
-	purchase_cost REAL,
-	develop_cost REAL,
-	purchase_channel TEXT,
-	batch_number TEXT,
-	develop_note TEXT,
-	preset_json TEXT,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	FOREIGN KEY (filmId) REFERENCES films(id) ON DELETE SET NULL
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  film_id INTEGER,
+  camera_id INTEGER,
+  date_loaded DATE,
+  date_finished DATE,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(film_id) REFERENCES films(id)
 );
 
 CREATE TABLE IF NOT EXISTS photos (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	roll_id INTEGER NOT NULL,
-	frame_number TEXT,
-	filename TEXT,
-	full_rel_path TEXT,
-	thumb_rel_path TEXT,
-	original_rel_path TEXT,
-	positive_rel_path TEXT,
-	positive_thumb_rel_path TEXT,
-	negative_thumb_rel_path TEXT,
-	is_negative_source INTEGER DEFAULT 0,
-	caption TEXT,
-	taken_at TEXT,
-	rating INTEGER,
-	negative_rel_path TEXT,
-	date_taken TEXT,
-	time_taken TEXT,
-	location_id INTEGER,
-	detail_location TEXT,
-	latitude REAL,
-	longitude REAL,
-	camera TEXT,
-	lens TEXT,
-	photographer TEXT,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	FOREIGN KEY (roll_id) REFERENCES rolls(id) ON DELETE CASCADE
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  roll_id INTEGER,
+  filename TEXT NOT NULL,
+  path TEXT,
+  aperture REAL,
+  shutter_speed TEXT,
+  iso INTEGER,
+  focal_length REAL,
+  rating INTEGER DEFAULT 0,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(roll_id) REFERENCES rolls(id)
 );
 
 CREATE TABLE IF NOT EXISTS tags (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	name TEXT NOT NULL UNIQUE,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS photo_tags (
-	photo_id INTEGER NOT NULL,
-	tag_id INTEGER NOT NULL,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	PRIMARY KEY (photo_id, tag_id),
-	FOREIGN KEY (photo_id) REFERENCES photos(id) ON DELETE CASCADE,
-	FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+  photo_id INTEGER,
+  tag_id INTEGER,
+  PRIMARY KEY (photo_id, tag_id),
+  FOREIGN KEY(photo_id) REFERENCES photos(id),
+  FOREIGN KEY(tag_id) REFERENCES tags(id)
 );
 
-CREATE TABLE IF NOT EXISTS roll_files (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	rollId INTEGER NOT NULL,
-	filename TEXT NOT NULL,
-	relPath TEXT NOT NULL,
-	createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
-	FOREIGN KEY (rollId) REFERENCES rolls(id) ON DELETE CASCADE
-);
- 
 CREATE TABLE IF NOT EXISTS presets (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	name TEXT NOT NULL,
-	category TEXT,
-	description TEXT,
-	params_json TEXT NOT NULL,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-	updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS locations (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	country_code TEXT,
-	country_name TEXT,
-	city_name TEXT NOT NULL,
-	city_lat REAL,
-	city_lng REAL,
-	created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS roll_locations (
-	roll_id INTEGER NOT NULL,
-	location_id INTEGER NOT NULL,
-	PRIMARY KEY (roll_id, location_id),
-	FOREIGN KEY (roll_id) REFERENCES rolls(id) ON DELETE CASCADE,
-	FOREIGN KEY (location_id) REFERENCES locations(id) ON DELETE CASCADE
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  params TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `;
 
-function ensureSchema() {
-	return new Promise((resolve, reject) => {
-		db.exec(schemaSQL, (err) => {
-			if (err) return reject(err);
-			resolve(true);
-		});
-	});
-}
-
-async function verifySchemaTables() {
-	return new Promise((resolve) => {
-		db.all("SELECT name FROM sqlite_master WHERE type='table'", (err, rows) => {
-			if (err) { console.error('Schema check failed', err.message); return resolve(false); }
-			const existing = new Set(rows.map(r => r.name));
-			const required = ['films','rolls','photos','tags','photo_tags','roll_files','presets'];
-			const missing = required.filter(t => !existing.has(t));
-			if (missing.length === 0) return resolve(true);
-			console.warn('Missing tables detected, creating:', missing.join(', '));
-			ensureSchema().then(() => resolve(true)).catch(e => { console.error('Recreate schema failed', e.message); resolve(false); });
-		});
-	});
-}
-
-// Ensure additional columns (non-breaking migrations) without separate migration files.
-async function ensureExtraColumns() {
-	// This now covered by schemaSQL explicit columns. Keep defensive checks for existing deployments.
-	return new Promise((resolve) => {
-		db.all("PRAGMA table_info(rolls)", async (err, cols) => {
-			if (err) { console.error('Inspect rolls failed', err.message); return resolve(); }
-			
-			// Check if we need to rename shooter to photographer
-			const hasShooter = cols.some(c => c.name === 'shooter');
-			const hasPhotographer = cols.some(c => c.name === 'photographer');
-			
-			if (hasShooter && !hasPhotographer) {
-				console.log('[MIGRATION] Renaming shooter to photographer in rolls table...');
-				try {
-					const migration = require('./migrations/2025-11-30-rename-shooter-to-photographer');
-					await migration.up();
-					console.log('[MIGRATION] Successfully renamed shooter to photographer');
-				} catch (e) {
-					console.error('[MIGRATION] Failed to rename shooter to photographer:', e.message);
-				}
-			}
-			
-			// Ensure other roll columns
-			const needed = ['develop_lab','develop_process','develop_date','purchase_cost','develop_cost','purchase_channel','batch_number','develop_note','preset_json'];
-			for (const col of needed) {
-				if (!cols.some(c => c.name === col)) {
-					db.run(`ALTER TABLE rolls ADD COLUMN ${col} TEXT`, (e) => {
-						if (e) console.error('Add column failed', col, e.message); else console.log('[MIGRATION] Added column', col);
-					});
-				}
-			}
-			
-			// Ensure photo columns
-			db.all("PRAGMA table_info(photos)", (err2, photoCols) => {
-				if (err2) { console.error('Inspect photos failed', err2.message); return resolve(); }
-				const photoNeeded = ['date_taken','time_taken','location_id','detail_location','latitude','longitude','camera','lens','photographer'];
-				for (const col of photoNeeded) {
-					if (!photoCols.some(c => c.name === col)) {
-						db.run(`ALTER TABLE photos ADD COLUMN ${col} TEXT`, (e) => {
-							if (e) console.error('Add photo column failed', col, e.message); else console.log('[MIGRATION] Added photo column', col);
-						});
-					}
-				}
-				resolve();
-			});
-		});
-	});
-}
-
-
-const { seedLocations } = require('./seed-locations');
-const { recomputeRollSequence } = require('./services/roll-service');
-
-async function cleanOrphanedPhotos() {
-	return new Promise((resolve) => {
-		db.run(`DELETE FROM photos WHERE roll_id NOT IN (SELECT id FROM rolls)`, function(err) {
-			if (err) {
-				console.error('[CLEANUP] Failed to remove orphaned photos:', err.message);
-			} else if (this.changes > 0) {
-				console.log(`[CLEANUP] Removed ${this.changes} orphaned photo(s)`);
-			}
-			resolve();
-		});
-	});
-}
-
-async function cleanInvalidRollGear() {
-	return new Promise((resolve) => {
-		db.run(`DELETE FROM roll_gear WHERE roll_id NOT IN (SELECT id FROM rolls)`, function(err) {
-			if (err) {
-				console.error('[CLEANUP] Failed to remove invalid roll_gear entries:', err.message);
-			} else if (this.changes > 0) {
-				console.log(`[CLEANUP] Removed ${this.changes} invalid roll_gear entry(ies)`);
-			}
-			resolve();
-		});
-	});
-}
+// Seed locations if needed
+const seedLocations = async () => {
+	// ... (implementation if needed, or keep empty if handled elsewhere)
+};
 
 (async () => {
 	try {
-		await verifySchemaTables();
-		await ensureExtraColumns();
-		// Clean orphaned photos before migrations
-		await cleanOrphanedPhotos();
-		// Run roll_gear migration once on startup
-		try {
-			const addGear = require('./migrations/2025-11-30-add-roll-gear');
-			await addGear.up();
-			console.log('[MIGRATION] roll_gear ensured and backfilled');
-		} catch(e){ console.error('[MIGRATION] roll_gear migration failed', e.message); }
-		// Clean invalid roll_gear entries after migration
-		await cleanInvalidRollGear();
-		// Ensure display_seq column exists and compute initial sequence
-		try {
-			await recomputeRollSequence();
-			console.log('[MIGRATION] display_seq column ensured and sequence computed');
-		} catch(e){ console.error('[MIGRATION] display_seq initialization failed', e.message); }
-		await seedLocations();
+		// 1. Run Migration BEFORE loading DB
+		console.log('[SERVER] Starting migration check...');
+		await runMigration();
+		console.log('[SERVER] Migration check complete.');
+
+        // 2. Run Schema Migration (Systematic Update)
+        console.log('[SERVER] Starting schema migration...');
+        await runSchemaMigration();
+        console.log('[SERVER] Schema migration complete.');
+
+		// 3. Load DB now that file is ready
+		const db = require('./db');
+
+		// 4. Ensure Schema (Legacy check, kept for safety but mostly handled by schema-migration)
+		await new Promise((resolve, reject) => {
+			db.exec(schemaSQL, (err) => {
+				if (err) reject(err);
+				else resolve();
+			});
+		});
+		console.log('DB schema ensured');
+
+        // 5. Recompute roll sequence on startup
+        console.log('[SERVER] Recomputing roll sequence...');
+        const { recomputeRollSequence } = require('./services/roll-service');
+        await recomputeRollSequence();
+        console.log('[SERVER] Roll sequence recomputed.');
+
+        // (Removed old ad-hoc ALTER TABLE blocks as they are now in schema-migration.js)
+		
 		mountRoutes();
 		
 		// Add graceful shutdown endpoint
@@ -327,8 +234,8 @@ async function cleanInvalidRollGear() {
 			res.json({ ok: true, message: 'Shutting down...' });
 			// Close DB and exit after sending response
 			setTimeout(() => {
-				if (db.closeDB) {
-					db.closeDB('shutdown_endpoint');
+				if (db.close) {
+					db.close();
 				} else {
 					process.exit(0);
 				}
@@ -344,8 +251,8 @@ async function cleanInvalidRollGear() {
 			console.log(`[SERVER] Received ${signal}, closing HTTP server...`);
 			server.close(() => {
 				console.log('[SERVER] HTTP server closed');
-				if (db.closeDB) {
-					db.closeDB(signal);
+				if (db.close) {
+					db.close();
 				} else {
 					process.exit(0);
 				}

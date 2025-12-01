@@ -1,62 +1,94 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { createLocation, searchLocations } from '../api';
+import React, { useEffect, useState } from 'react';
+import { createLocation, searchLocations, getCountries, getLocation } from '../api';
 
 // Location selector backed by DB (seed-locations + user additions)
 export default function LocationSelect({ value, onChange }) {
-  const [all, setAll] = useState([]); // full list from DB
+  const [countries, setCountries] = useState([]);
+  const [cities, setCities] = useState([]);
+  
   const [countryCode, setCountryCode] = useState('');
+  const [countryInput, setCountryInput] = useState('');
   const [cityName, setCityName] = useState('');
+  const [cityInput, setCityInput] = useState('');
   const [newCity, setNewCity] = useState('');
-  const countries = useMemo(() => {
-    const map = new Map();
-    for (const r of all) {
-      if (!r.country_code) continue; // skip blank codes to avoid 'Unknown'
-      const code = r.country_code;
-      const name = r.country_name || r.country_code;
-      if (!map.has(code)) map.set(code, name);
-    }
-    return Array.from(map.entries()).map(([code, name]) => ({ code, name })).sort((a,b)=>a.name.localeCompare(b.name));
-  }, [all]);
-  const cities = useMemo(() => all.filter(r => countryCode ? r.country_code === countryCode : false), [all, countryCode]);
-  const selectedCity = useMemo(() => cities.find(c => c.city_name === cityName), [cities, cityName]);
 
+  // Load countries on mount
   useEffect(() => {
-    // initial load
-    searchLocations({}).then(rows => setAll(Array.isArray(rows) ? rows : [])).catch(console.error);
+    getCountries().then(rows => {
+      // rows is [{country_code, country_name}]
+      // Sort by name
+      const sorted = (Array.isArray(rows) ? rows : []).sort((a, b) => (a.country_name || '').localeCompare(b.country_name || ''));
+      setCountries(sorted);
+    });
   }, []);
 
+  // Load cities when country changes
   useEffect(() => {
-    if (!value || !all.length) return;
-    const match = all.find(r => r.id === value);
-    if (match) {
-      setCountryCode(match.country_code || '');
-      setCityName(match.city_name || '');
+    if (!countryCode) {
+      setCities([]);
+      return;
     }
-  }, [value, all]);
+    console.log('[LocationSelect] Loading cities for country:', countryCode);
+    searchLocations({ country: countryCode }).then(rows => {
+      console.log('[LocationSelect] Received cities:', rows?.length || 0);
+      setCities(Array.isArray(rows) ? rows : []);
+    }).catch(err => {
+      console.error('[LocationSelect] Error loading cities:', err);
+      setCities([]);
+    });
+  }, [countryCode]);
 
+  // Handle initial value
   useEffect(() => {
-    if (selectedCity && onChange) {
-      onChange({
-        location_id: selectedCity.id,
-        country_code: selectedCity.country_code,
-        country_name: selectedCity.country_name,
-        city_name: selectedCity.city_name,
-        latitude: selectedCity.city_lat,
-        longitude: selectedCity.city_lng
+    if (!value) return;
+    getLocation(value).then(loc => {
+      if (loc && loc.country_code) {
+        setCountryCode(loc.country_code);
+        const countryObj = countries.find(c => c.country_code === loc.country_code);
+        setCountryInput(countryObj ? countryObj.country_name : loc.country_code);
+        setCityName(loc.city_name);
+        setCityInput(loc.city_name);
+      }
+    });
+  }, [value, countries]);
+
+  // Notify parent when selection changes
+  useEffect(() => {
+    // Find the selected city object
+    const selected = cities.find(c => c.city_name === cityName);
+    if (selected && onChange) {
+       // Avoid infinite loop if value matches
+       if (selected.id === value) return; 
+       
+       onChange({
+        location_id: selected.id,
+        country_code: selected.country_code,
+        country_name: selected.country_name,
+        city_name: selected.city_name,
+        latitude: selected.city_lat,
+        longitude: selected.city_lng
       });
     }
-  }, [selectedCity, onChange]);
+  }, [cityName, cities, onChange, value]);
 
   async function handleAddCity() {
     if (!countryCode || !newCity.trim()) return;
     try {
-      const countryName = countries.find(c => c.code === countryCode)?.name || countryCode;
-      const resp = await createLocation({ country_code: countryCode, country_name: countryName, city_name: newCity.trim() });
+      const countryObj = countries.find(c => c.country_code === countryCode);
+      const countryName = countryObj ? countryObj.country_name : countryCode;
+      
+      const resp = await createLocation({ 
+        country_code: countryCode, 
+        country_name: countryName, 
+        city_name: newCity.trim() 
+      });
+      
       if (resp && resp.id) {
-        // reload list
-        const rows = await searchLocations({});
-        setAll(Array.isArray(rows) ? rows : []);
+        // Reload cities
+        const rows = await searchLocations({ country: countryCode });
+        setCities(Array.isArray(rows) ? rows : []);
         setCityName(newCity.trim());
+        setCityInput(newCity.trim());
         setNewCity('');
       }
     } catch (e) {
@@ -64,17 +96,96 @@ export default function LocationSelect({ value, onChange }) {
     }
   }
 
+  function handleCountryInputChange(e) {
+    const input = e.target.value;
+    setCountryInput(input);
+    
+    // Find matching country
+    const match = countries.find(c => 
+      c.country_name.toLowerCase() === input.toLowerCase()
+    );
+    
+    if (match) {
+      setCountryCode(match.country_code);
+      setCityName('');
+      setCityInput('');
+    } else {
+      // Clear selection if no exact match
+      if (countryCode) {
+        setCountryCode('');
+        setCityName('');
+        setCityInput('');
+      }
+    }
+  }
+
+  function handleCityInputChange(e) {
+    const input = e.target.value;
+    setCityInput(input);
+    
+    // Find matching city
+    const match = cities.find(c => 
+      c.city_name.toLowerCase() === input.toLowerCase()
+    );
+    
+    if (match) {
+      setCityName(match.city_name);
+    } else {
+      // Clear selection if no exact match
+      if (cityName) {
+        setCityName('');
+      }
+    }
+  }
+  
+  // Filter countries and cities based on input
+  const filteredCountries = countries.filter(c =>
+    c.country_name.toLowerCase().startsWith(countryInput.toLowerCase())
+  );
+  
+  const filteredCities = cities.filter(c =>
+    c.city_name.toLowerCase().startsWith(cityInput.toLowerCase())
+  );
+  
+  const selectedCity = cities.find(c => c.city_name === cityName);
+
   return (
     <div className="fg-location-select" style={{ display: 'flex', flexDirection:'column', gap: 10 }}>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-        <select className="fg-select" value={countryCode} onChange={e => { setCountryCode(e.target.value); setCityName(''); }} style={{ minWidth: 0 }}>
-          <option value="">Country</option>
-          {countries.map(c => <option key={c.code || c.name} value={c.code}>{c.name || c.code}</option>)}
-        </select>
-        <select className="fg-select" value={cityName} onChange={e => setCityName(e.target.value)} disabled={!countryCode} style={{ minWidth: 0 }}>
-          <option value="">City</option>
-          {cities.map(ct => <option key={ct.id} value={ct.city_name}>{ct.city_name}</option>)}
-        </select>
+        <div style={{ position: 'relative' }}>
+          <input
+            className="fg-input"
+            list="country-list"
+            value={countryInput}
+            onChange={handleCountryInputChange}
+            placeholder="Country"
+            autoComplete="off"
+            style={{ width: '100%', boxSizing: 'border-box' }}
+          />
+          <datalist id="country-list">
+            {filteredCountries.slice(0, 100).map(c => (
+              <option key={c.country_code} value={c.country_name} />
+            ))}
+          </datalist>
+        </div>
+        
+        <div style={{ position: 'relative' }}>
+          <input
+            className="fg-input"
+            list="city-list"
+            value={cityInput}
+            onChange={handleCityInputChange}
+            placeholder="City"
+            autoComplete="off"
+            disabled={!countryCode}
+            style={{ width: '100%', boxSizing: 'border-box' }}
+          />
+          <datalist id="city-list">
+            {filteredCities.slice(0, 100).map(ct => (
+              <option key={ct.id} value={ct.city_name} />
+            ))}
+          </datalist>
+        </div>
       </div>
       <div style={{ display:'flex', gap:8, alignItems:'stretch' }}>
         <input className="fg-input" placeholder="Add city" value={newCity} onChange={e=>setNewCity(e.target.value)} style={{ flex: 1, minWidth: 0 }} />
