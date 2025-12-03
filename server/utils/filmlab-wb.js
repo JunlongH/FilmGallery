@@ -7,7 +7,7 @@ function computeWBGains(params = {}, opts = {}) {
   const temp = Number.isFinite(params.temp) ? params.temp : 0;
   const tint = Number.isFinite(params.tint) ? params.tint : 0;
   const minGain = opts.minGain ?? 0.05;
-  const maxGain = opts.maxGain ?? 8.0;
+  const maxGain = opts.maxGain ?? 50.0;
   let r = red + temp/200 + tint/200;
   let g = green + temp/200 - tint/200;
   let b = blue - temp/200;

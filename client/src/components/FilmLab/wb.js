@@ -3,7 +3,7 @@
 
 export function computeWBGains({ red = 1, green = 1, blue = 1, temp = 0, tint = 0 }, options = {}) {
   const minGain = options.minGain ?? 0.05;
-  const maxGain = options.maxGain ?? 8.0;
+  const maxGain = options.maxGain ?? 50.0;
   let r = red + (temp / 200) + (tint / 200);
   let g = green + (temp / 200) - (tint / 200);
   let b = blue - (temp / 200);
@@ -18,8 +18,10 @@ export function computeWBGains({ red = 1, green = 1, blue = 1, temp = 0, tint = 
 export function gainsFromSample(rgb) {
   const eps = 2.0; // avoid division by near-zero values
   const safe = [Math.max(eps, rgb[0]), Math.max(eps, rgb[1]), Math.max(eps, rgb[2])];
-  let k = [1 / safe[0], 1 / safe[1], 1 / safe[2]];
-  const avg = (k[0] + k[1] + k[2]) / 3;
-  if (avg > 0) k = k.map(v => v / avg);
-  return k;
+  // Target grey level = average of channels -> preserve luminance
+  const avg = (safe[0] + safe[1] + safe[2]) / 3;
+  const kR = avg / safe[0];
+  const kG = avg / safe[1];
+  const kB = avg / safe[2];
+  return [kR, kG, kB];
 }
