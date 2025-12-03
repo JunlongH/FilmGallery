@@ -349,9 +349,9 @@ function runJob(job) {
       const u_logMode = gl.getUniformLocation(prog, 'u_logMode');
       gl.uniform1f(u_logMode, (params && params.inversionMode === 'log') ? 1.0 : 0.0);
       const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-      const rBal = clamp((params?.red ?? 1.0) + (params?.temp ?? 0)/200.0 + (params?.tint ?? 0)/200.0, 0.05, 8.0);
-      const gBal = clamp((params?.green ?? 1.0) + (params?.temp ?? 0)/200.0 - (params?.tint ?? 0)/200.0, 0.05, 8.0);
-      const bBal = clamp((params?.blue ?? 1.0) - (params?.temp ?? 0)/200.0, 0.05, 8.0);
+      const rBal = clamp((params?.red ?? 1.0) + (params?.temp ?? 0)/200.0 + (params?.tint ?? 0)/200.0, 0.05, 50.0);
+      const gBal = clamp((params?.green ?? 1.0) + (params?.temp ?? 0)/200.0 - (params?.tint ?? 0)/200.0, 0.05, 50.0);
+      const bBal = clamp((params?.blue ?? 1.0) - (params?.temp ?? 0)/200.0, 0.05, 50.0);
       const u_gains = gl.getUniformLocation(prog, 'u_gains');
       gl.uniform3f(u_gains, rBal, gBal, bBal);
       const u_exposure = gl.getUniformLocation(prog, 'u_exposure');

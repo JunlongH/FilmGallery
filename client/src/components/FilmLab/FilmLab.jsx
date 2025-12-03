@@ -651,14 +651,16 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         }
       }
 
-        // Derive per-channel gains directly (normalized), then apply as base gains.
+        // Derive per-channel gains relative to the sampled patch.
+        // Apply multiplicatively so film-base calibration (if any) stays intact.
         // Uses luminance-preserving algorithm from wb.js
         const [kR, kG, kB] = gainsFromSample([rInv, gInv, bInv]);
         console.log('[FilmLab] WB Picker:', { rInv, gInv, bInv }, '->', { kR, kG, kB });
+        const clampGain = (val) => Math.max(0.05, Math.min(50, val));
         pushToHistory();
-        setRed(kR);
-        setGreen(kG);
-        setBlue(kB);
+        setRed(prev => clampGain(prev * kR));
+        setGreen(prev => clampGain(prev * kG));
+        setBlue(prev => clampGain(prev * kB));
         setTemp(0);
         setTint(0);
         setIsPickingWB(false);
