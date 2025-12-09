@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
-import { ActivityIndicator, Button, HelperText, IconButton, Text, TextInput, useTheme } from 'react-native-paper';
+import { ActivityIndicator, Button, HelperText, IconButton, Text, TextInput, useTheme, FAB } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import DatePickerField from '../components/DatePickerField';
+import ShotModeModal from '../components/ShotModeModal';
 import { parseISODate, toISODateString } from '../utils/date';
 import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations } from '../api/filmItems';
 import { spacing, radius } from '../theme';
@@ -62,6 +63,8 @@ export default function ShotLogScreen({ route, navigation }) {
   const [showLensOptions, setShowLensOptions] = useState(false);
   const [showCountryOptions, setShowCountryOptions] = useState(false);
   const [showCityOptions, setShowCityOptions] = useState(false);
+  const [showShotMode, setShowShotMode] = useState(false);
+  const [filmIso, setFilmIso] = useState(400);
 
   useEffect(() => {
     navigation.setOptions({ title: filmName ? `${filmName} Shot Log` : 'Shot Log' });
@@ -75,6 +78,7 @@ export default function ShotLogScreen({ route, navigation }) {
         if (!mounted) return;
         const base = data.item || data;
         setEntries(parseShotLog(base.shot_logs));
+        if (base.iso) setFilmIso(Number(base.iso));
       } catch (err) {
         console.log('Failed to load shot log', err);
         if (mounted) setError('Failed to load shot log');
@@ -96,6 +100,18 @@ export default function ShotLogScreen({ route, navigation }) {
       .catch(() => setLensOptions(dedupeAndSort(FALLBACK_LENSES)));
     return () => { mounted = false; };
   }, []);
+
+  const handleShotData = (data) => {
+    setShowShotMode(false);
+    if (data.f) setNewAperture(data.f.toString());
+    if (data.s) setNewShutter(data.s.toString());
+    if (data.location) {
+      setNewCountry(data.location.country || '');
+      setNewCity(data.location.city || '');
+      setNewDetail(data.location.detail || '');
+    }
+    setNewDate(new Date().toISOString().split('T')[0]);
+  };
 
   useEffect(() => {
     setLensOptions((prev) => dedupeAndSort([...prev, ...entries.map(e => e.lens).filter(Boolean)]));
@@ -447,11 +463,31 @@ export default function ShotLogScreen({ route, navigation }) {
           Save Changes
         </Button>
       </View>
+
+      <FAB
+        icon="camera-iris"
+        style={styles.fab}
+        onPress={() => setShowShotMode(true)}
+        label="Shot Mode"
+      />
+
+      <ShotModeModal
+        visible={showShotMode}
+        onClose={() => setShowShotMode(false)}
+        onUse={handleShotData}
+        filmIso={filmIso}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  fab: {
+    position: 'absolute',
+    margin: 16,
+    right: 0,
+    bottom: 380, // Position above the footer form
+  },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   statCard: { flex: 1, padding: spacing.md, borderRadius: radius.md, elevation: 2 },

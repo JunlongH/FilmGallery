@@ -46,6 +46,18 @@
           "saveToPhotosPermission": "Allow FilmGallery to save photos to your gallery.",
           "isAccessMediaLocationEnabled": false
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow FilmGallery to access your camera for metering."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow FilmGallery to use your location for tagging shots."
+        }
       ]
     ],
     "extra": {
