@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import DatePickerField from '../components/DatePickerField';
 import ShotModeModal from '../components/ShotModeModal';
 import { parseISODate, toISODateString } from '../utils/date';
-import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations } from '../api/filmItems';
+import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations, getFilms } from '../api/filmItems';
 import { spacing, radius } from '../theme';
 
 function parseShotLog(raw) {
@@ -78,7 +78,21 @@ export default function ShotLogScreen({ route, navigation }) {
         if (!mounted) return;
         const base = data.item || data;
         setEntries(parseShotLog(base.shot_logs));
-        if (base.iso) setFilmIso(Number(base.iso));
+        
+        if (base.iso) {
+          setFilmIso(Number(base.iso));
+        } else if (base.film_id) {
+          // Fallback: fetch film definition to get ISO
+          try {
+            const films = await getFilms();
+            const film = films.find(f => f.id === base.film_id);
+            if (film && film.iso) {
+              setFilmIso(Number(film.iso));
+            }
+          } catch (e) {
+            console.warn('Failed to fetch film ISO fallback', e);
+          }
+        }
       } catch (err) {
         console.log('Failed to load shot log', err);
         if (mounted) setError('Failed to load shot log');
