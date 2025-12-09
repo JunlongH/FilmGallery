@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, Modal, TouchableOpacity, Dimensions, Alert, ScrollView } from 'react-native';
-import { Text, Button, ActivityIndicator, IconButton, useTheme, Slider } from 'react-native-paper';
+import { Text, Button, ActivityIndicator, IconButton, useTheme } from 'react-native-paper';
+import Slider from '@react-native-community/slider';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system';
@@ -194,25 +195,25 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
           zoom={zoom}
           onCameraReady={() => console.log('Camera ready')}
           exposurePoint={exposurePoint} // For spot metering
+        />
+        
+        <TouchableOpacity 
+          style={[styles.touchLayer, StyleSheet.absoluteFill]} 
+          activeOpacity={1} 
+          onPress={handleTapToFocus}
         >
-          <TouchableOpacity 
-            style={styles.touchLayer} 
-            activeOpacity={1} 
-            onPress={handleTapToFocus}
-          >
-            {exposurePoint && (
-              <View 
-                style={[
-                  styles.focusBox, 
-                  { 
-                    left: exposurePoint.x * width - 25, 
-                    top: exposurePoint.y * (height * 0.7) - 25 
-                  }
-                ]} 
-              />
-            )}
-          </TouchableOpacity>
-        </CameraView>
+          {exposurePoint && (
+            <View 
+              style={[
+                styles.focusBox, 
+                { 
+                  left: exposurePoint.x * width - 25, 
+                  top: exposurePoint.y * (height * 0.7) - 25 
+                }
+              ]} 
+            />
+          )}
+        </TouchableOpacity>
 
         {/* Overlays */}
         <View style={styles.topOverlay}>
