@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ModalDialog from './ModalDialog';
-import { updateFilmItem, getMetadataOptions } from '../api';
+import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations } from '../api';
 
 const FALLBACK_LENSES = [
   '50mm f/1.8',
@@ -16,10 +16,20 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newCount, setNewCount] = useState('1');
   const [newLens, setNewLens] = useState('');
+  const [newAperture, setNewAperture] = useState('');
+  const [newShutter, setNewShutter] = useState('');
+  const [newCountry, setNewCountry] = useState('');
+  const [newCity, setNewCity] = useState('');
+  const [newDetail, setNewDetail] = useState('');
   const [selectedLens, setSelectedLens] = useState('');
   const [lensOptions, setLensOptions] = useState(FALLBACK_LENSES);
+  const [countries, setCountries] = useState([]);
+  const [citiesByCountry, setCitiesByCountry] = useState({}); // code -> cities
+  const [countryCode, setCountryCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [exporting, setExporting] = useState(false);
 
   const dedupeAndSort = (list) => Array.from(new Set((list || []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
@@ -36,7 +46,12 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           const normalized = parsed.map(entry => ({
             date: entry.date,
             count: Number(entry.count || entry.shots || 0) || 0,
-            lens: entry.lens || ''
+            lens: entry.lens || '',
+            aperture: entry.aperture !== undefined && entry.aperture !== null ? Number(entry.aperture) : null,
+            shutter_speed: entry.shutter_speed || '',
+            country: entry.country || '',
+            city: entry.city || '',
+            detail_location: entry.detail_location || ''
           })).filter(e => e.date && e.count > 0);
           setLogs(normalized);
           setLensOptions((prev) => dedupeAndSort([...prev, ...normalized.map(e => e.lens).filter(Boolean)]));
@@ -46,6 +61,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       }
     } else {
       setLogs([]);
+    }
+    if (item && item.shot_logs) {
+      const today = new Date().toISOString().split('T')[0];
+      setSelectedDate(today);
     }
   }, [item]);
 
@@ -58,6 +77,14 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
         setLensOptions(dedupeAndSort(base));
       })
       .catch(() => setLensOptions(dedupeAndSort(FALLBACK_LENSES)));
+
+    getCountries()
+      .then(rows => {
+        if (!mounted) return;
+        const sorted = (Array.isArray(rows) ? rows : []).sort((a, b) => (a.country_name || '').localeCompare(b.country_name || ''));
+        setCountries(sorted);
+      })
+      .catch(() => setCountries([]));
     return () => { mounted = false; };
   }, []);
 
@@ -65,16 +92,57 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     setLensOptions((prev) => dedupeAndSort([...prev, ...logs.map(l => l.lens).filter(Boolean)]));
   }, [logs]);
 
+  useEffect(() => {
+    const last = logs[logs.length - 1];
+    if (!last) return;
+    if (!newCountry) setNewCountry(last.country || '');
+    if (!newCity) setNewCity(last.city || '');
+    if (!newDetail) setNewDetail(last.detail_location || '');
+    if (!newAperture && (last.aperture || last.aperture === 0)) setNewAperture(String(last.aperture));
+    if (!newShutter && last.shutter_speed) setNewShutter(last.shutter_speed);
+    // derive country code for quick city lookup
+    const matched = countries.find(c => (c.country_name || '').toLowerCase() === (last.country || '').toLowerCase());
+    if (matched) setCountryCode(matched.country_code);
+  }, [logs.length]);
+
+  useEffect(() => {
+    const matched = countries.find(c => (c.country_name || '').toLowerCase() === (newCountry || '').toLowerCase());
+    const code = matched ? matched.country_code : '';
+    setCountryCode(code || '');
+    if (code && !citiesByCountry[code]) {
+      searchLocations({ country: code }).then(rows => {
+        setCitiesByCountry(prev => ({ ...prev, [code]: Array.isArray(rows) ? rows : [] }));
+      }).catch(() => {});
+    }
+  }, [newCountry, countries, citiesByCountry]);
+
   const handleAdd = () => {
     if (!newDate || !newCount || Number(newCount) <= 0) return;
     const lensVal = newLens.trim() || selectedLens || '';
-    const entry = { date: newDate, count: Number(newCount), lens: lensVal };
+    const last = logs[logs.length - 1] || {};
+    const apertureVal = newAperture !== '' ? Number(newAperture) : (last.aperture ?? null);
+    const shutterVal = newShutter || last.shutter_speed || '';
+    const entry = {
+      date: newDate,
+      count: Number(newCount),
+      lens: lensVal,
+      aperture: Number.isFinite(apertureVal) ? apertureVal : null,
+      shutter_speed: shutterVal,
+      country: newCountry || last.country || '',
+      city: newCity || last.city || '',
+      detail_location: newDetail || last.detail_location || ''
+    };
 
     const updatedLogs = [...logs, entry].sort((a, b) => a.date.localeCompare(b.date));
     setLogs(updatedLogs);
     if (lensVal) addLensToOptions(lensVal);
     setNewCount('1');
     setNewLens('');
+    setNewAperture(apertureVal !== null && apertureVal !== undefined && apertureVal !== '' ? String(apertureVal) : '');
+    setNewShutter(shutterVal || '');
+    setNewCountry(entry.country || '');
+    setNewCity(entry.city || '');
+    setNewDetail(entry.detail_location || '');
   };
 
   const handleRemoveIndex = (index) => {
@@ -102,77 +170,237 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     }
   };
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const blob = await exportShotLogsCsv(item.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `shot-logs-${item.id}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Export failed: ' + (err.message || err));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const totalShots = logs.reduce((acc, cur) => acc + cur.count, 0);
   const uniqueDays = new Set(logs.map(l => l.date)).size;
+  const selectedDayLogs = logs.map((entry, idx) => ({ ...entry, idx })).filter(l => l.date === selectedDate);
+  const dayEntries = logs
+    .map((entry, idx) => ({ ...entry, idx }))
+    .filter(entry => selectedDate && entry.date === selectedDate);
 
   if (!isOpen) return null;
 
   return (
     <div className="fg-modal-overlay">
-      <div className="fg-modal-content" style={{ maxWidth: 900, width: '90%', background: '#fff', color: '#333', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+      <div className="fg-modal-content" style={{ maxWidth: 1100, width: '94%', background: '#fff', color: '#333', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
         <div className="fg-modal-header" style={{ borderBottom: '1px solid #eee', paddingBottom: 16, marginBottom: 0 }}>
-          <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: '#1e293b' }}>Shot Log - {item.label || `Item #${item.id}`}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: '#1e293b' }}>Shot Log - {item.label || `Item #${item.id}`}</h3>
+            <button
+              type="button"
+              className="fg-btn fg-btn-sm"
+              onClick={handleExport}
+              disabled={exporting}
+              style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '6px 10px', fontSize: 12 }}
+            >
+              {exporting ? 'Exporting…' : 'Export CSV'}
+            </button>
+          </div>
           <button className="fg-modal-close" onClick={onClose} style={{ color: '#64748b' }}>&times;</button>
         </div>
         
         <div className="fg-modal-body" style={{ padding: 24, overflowY: 'auto' }}>
           
           {/* Quick Add Section */}
-          <div style={{ display: 'flex', gap: 16, alignItems: 'flex-end', marginBottom: 24, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: 20, borderRadius: 12, boxShadow: '0 4px 12px rgba(102, 126, 234, 0.25)' }}>
-            <div className="fg-field" style={{ flex: 1 }}>
-              <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Date</label>
-              <input 
-                type="date" 
-                className="fg-input" 
-                value={newDate} 
-                onChange={e => setNewDate(e.target.value)} 
-                style={{ background: '#fff', height: 40, border: 'none' }}
-              />
-            </div>
-            <div className="fg-field" style={{ width: 150 }}>
-              <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Shot Count</label>
-              <input 
-                type="number" 
-                className="fg-input" 
-                value={newCount} 
-                onChange={e => setNewCount(e.target.value)} 
-                placeholder="#"
-                min="1"
-                style={{ background: '#fff', height: 40, border: 'none' }}
-                onKeyDown={e => e.key === 'Enter' && handleAdd()}
-              />
-            </div>
-            <div className="fg-field" style={{ flex: 1 }}>
-              <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 8, fontSize: 13, fontWeight: 600 }}>Lens</label>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <select
+          <div style={{ marginBottom: 24, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: 20, borderRadius: 12, boxShadow: '0 4px 12px rgba(102, 126, 234, 0.25)' }}>
+            {/* Row 1: Date, Count, Aperture, Shutter */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+              <div className="fg-field" style={{ flex: '0 0 140px' }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Date</label>
+                <input 
+                  type="date" 
+                  className="fg-input" 
+                  value={newDate} 
+                  onChange={e => setNewDate(e.target.value)} 
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                />
+              </div>
+              <div className="fg-field" style={{ flex: '0 0 80px' }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Shots</label>
+                <input 
+                  type="number" 
+                  className="fg-input" 
+                  value={newCount} 
+                  onChange={e => setNewCount(e.target.value)} 
+                  placeholder="#"
+                  min="1"
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                />
+              </div>
+              <div className="fg-field" style={{ flex: '0 0 90px' }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>f/</label>
+                <input
+                  type="number"
+                  step="0.1"
                   className="fg-input"
-                  value={selectedLens}
-                  onChange={e => setSelectedLens(e.target.value)}
-                  style={{ background: '#fff', height: 40, border: 'none', flex: 1 }}
-                >
-                  <option value="">Common lenses...</option>
-                  {lensOptions.map(l => <option key={l} value={l}>{l}</option>)}
-                </select>
+                  value={newAperture}
+                  onChange={e => setNewAperture(e.target.value)}
+                  placeholder="1.8"
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                />
+              </div>
+              <div className="fg-field" style={{ flex: '0 0 100px' }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>s</label>
                 <input
                   type="text"
                   className="fg-input"
-                  value={newLens}
-                  onChange={e => setNewLens(e.target.value)}
-                  placeholder="Custom lens"
-                  style={{ background: '#fff', height: 40, border: 'none', flex: 1 }}
+                  value={newShutter}
+                  onChange={e => setNewShutter(e.target.value)}
+                  placeholder="1/125"
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  onKeyDown={e => e.key === 'Enter' && handleAdd()}
                 />
               </div>
+              <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Lens</label>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <select
+                    className="fg-input"
+                    value={selectedLens}
+                    onChange={e => setSelectedLens(e.target.value)}
+                    style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
+                  >
+                    <option value="">Select...</option>
+                    {lensOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                  <input
+                    type="text"
+                    className="fg-input"
+                    value={newLens}
+                    onChange={e => setNewLens(e.target.value)}
+                    placeholder="Custom"
+                    style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
+                    onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                  />
+                </div>
+              </div>
             </div>
-            <button 
-              type="button" 
-              className="fg-btn" 
-              onClick={handleAdd}
-              disabled={!newCount}
-              style={{ height: 40, padding: '0 24px', fontSize: 14, fontWeight: 600, background: '#fff', color: '#667eea', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}
-            >
-              Add Log
-            </button>
+            
+            {/* Row 2: Country, City, Detail, Add Button */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+              <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Country</label>
+                <input
+                  type="text"
+                  className="fg-input"
+                  list="fg-country-options"
+                  value={newCountry}
+                  onChange={e => setNewCountry(e.target.value)}
+                  placeholder="From DB"
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                />
+                <datalist id="fg-country-options">
+                  {countries.map(c => (
+                    <option key={c.country_code || c.country_name} value={c.country_name || c.country_code} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>City</label>
+                <input
+                  type="text"
+                  className="fg-input"
+                  list="fg-city-options"
+                  value={newCity}
+                  onChange={e => setNewCity(e.target.value)}
+                  placeholder={countryCode ? 'Filtered' : 'Country first'}
+                  disabled={!countryCode && !newCountry}
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                />
+                <datalist id="fg-city-options">
+                  {(citiesByCountry[countryCode] || []).map(ct => (
+                    <option key={ct.id} value={ct.city_name} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="fg-field" style={{ flex: 1.2, minWidth: 0 }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Detail</label>
+                <input
+                  type="text"
+                  className="fg-input"
+                  value={newDetail}
+                  onChange={e => setNewDetail(e.target.value)}
+                  placeholder="e.g. North Gate"
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                />
+              </div>
+              <button 
+                type="button" 
+                className="fg-btn" 
+                onClick={handleAdd}
+                disabled={!newCount}
+                style={{ height: 38, padding: '0 20px', fontSize: 13, fontWeight: 600, background: '#fff', color: '#667eea', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', whiteSpace: 'nowrap' }}
+              >
+                Add Log
+              </button>
+            </div>
+          </div>
+
+          {/* Selected Day Entries (above calendar) */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1e293b' }}>Selected Day</h4>
+              <span style={{ fontSize: 13, color: '#64748b' }}>{selectedDate || 'Pick a date'}</span>
+            </div>
+            {selectedDayLogs.length === 0 ? (
+              <div style={{ border: '1px dashed #e2e8f0', borderRadius: 8, padding: 12, color: '#94a3b8', fontSize: 13 }}>
+                No entries for this day. Click the calendar to choose a date, then add logs above.
+              </div>
+            ) : (
+              <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.6fr 0.5fr 0.7fr 1fr 1fr 1.1fr 80px', background: '#f8fafc', padding: '8px 12px', fontWeight: 600, color: '#475569', fontSize: 13 }}>
+                  <div>Date</div>
+                  <div>Shots</div>
+                  <div>f</div>
+                  <div>s</div>
+                  <div>Lens</div>
+                  <div>Country / City</div>
+                  <div>Detail</div>
+                  <div></div>
+                </div>
+                {selectedDayLogs.map((entry) => (
+                  <div key={`${entry.date}-${entry.idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 0.6fr 0.5fr 0.7fr 1fr 1fr 1.1fr 80px', padding: '8px 12px', alignItems: 'center', borderTop: '1px solid #e2e8f0' }}>
+                    <div style={{ fontFamily: 'monospace', fontSize: 13 }}>{entry.date}</div>
+                    <div style={{ fontSize: 13 }}>{entry.count}</div>
+                    <div style={{ fontSize: 13 }}>{entry.aperture || entry.aperture === 0 ? `f${entry.aperture}` : '-'}</div>
+                    <div style={{ fontSize: 13 }}>{entry.shutter_speed ? `s${entry.shutter_speed}` : '-'}</div>
+                    <div style={{ fontSize: 13 }}>{entry.lens || '-'}</div>
+                    <div style={{ fontSize: 13 }}>{[entry.country, entry.city].filter(Boolean).join(' / ') || '-'}</div>
+                    <div style={{ fontSize: 13 }}>{entry.detail_location || '-'}</div>
+                    <button
+                      className="fg-btn"
+                      style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#ef4444', padding: '6px 10px' }}
+                      onClick={() => {
+                        if (window.confirm('Delete this log entry?')) handleRemoveIndex(entry.idx);
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Calendar View */}
@@ -237,8 +465,9 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                       <div 
                         key={day}
                         onClick={() => {
-                          // Calendar click now just selects the date; deletion stays per-entry in the table below.
+                          // Calendar click selects date; per-entry deletion handled below.
                           setNewDate(dateStr);
+                          setSelectedDate(dateStr);
                         }}
                         style={{
                           aspectRatio: '1',
@@ -303,17 +532,21 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           <div style={{ marginTop: 24 }}>
             <h4 style={{ margin: '0 0 12px', color: '#1e293b' }}>Entries</h4>
             <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.4fr 80px', background: '#f8fafc', padding: '10px 12px', fontWeight: 600, color: '#475569', fontSize: 13 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.5fr 0.5fr 0.6fr 1fr 1fr 1.1fr 80px', background: '#f8fafc', padding: '10px 12px', fontWeight: 600, color: '#475569', fontSize: 13 }}>
                 <div>Date</div>
                 <div>Shots</div>
+                <div>f</div>
+                <div>s</div>
                 <div>Lens</div>
+                <div>Country / City</div>
+                <div>Detail</div>
                 <div></div>
               </div>
               {logs.length === 0 && (
                 <div style={{ padding: 12, color: '#94a3b8', fontSize: 13 }}>No entries yet.</div>
               )}
               {logs.map((entry, idx) => (
-                <div key={`${entry.date}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1.4fr 80px', padding: '10px 12px', alignItems: 'center', borderTop: '1px solid #e2e8f0' }}>
+                <div key={`${entry.date}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 0.5fr 0.5fr 0.6fr 1fr 1fr 1.1fr 80px', padding: '10px 12px', alignItems: 'center', borderTop: '1px solid #e2e8f0' }}>
                   <div style={{ fontFamily: 'monospace', fontSize: 13 }}>{entry.date}</div>
                   <input
                     type="number"
@@ -325,6 +558,37 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                       setLogs(prev => {
                         const next = [...prev];
                         next[idx] = { ...next[idx], count: val };
+                        return next;
+                      });
+                    }}
+                    style={{ width: '100%', padding: '6px 8px' }}
+                  />
+                  <input
+                    type="number"
+                    step="0.1"
+                    className="fg-input"
+                    value={entry.aperture ?? ''}
+                    placeholder="f"
+                    onChange={e => {
+                      const val = e.target.value === '' ? null : Number(e.target.value);
+                      setLogs(prev => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], aperture: Number.isFinite(val) ? val : null };
+                        return next;
+                      });
+                    }}
+                    style={{ width: '100%', padding: '6px 8px' }}
+                  />
+                  <input
+                    type="text"
+                    className="fg-input"
+                    value={entry.shutter_speed || ''}
+                    placeholder="s"
+                    onChange={e => {
+                      const val = e.target.value;
+                      setLogs(prev => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], shutter_speed: val };
                         return next;
                       });
                     }}
@@ -345,10 +609,59 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     placeholder="Lens model"
                     style={{ width: '100%', padding: '6px 8px' }}
                   />
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="text"
+                      className="fg-input"
+                      value={entry.country || ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setLogs(prev => {
+                          const next = [...prev];
+                          next[idx] = { ...next[idx], country: val };
+                          return next;
+                        });
+                      }}
+                      placeholder="Country"
+                      style={{ width: '100%', padding: '6px 8px' }}
+                    />
+                    <input
+                      type="text"
+                      className="fg-input"
+                      value={entry.city || ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setLogs(prev => {
+                          const next = [...prev];
+                          next[idx] = { ...next[idx], city: val };
+                          return next;
+                        });
+                      }}
+                      placeholder="City"
+                      style={{ width: '100%', padding: '6px 8px' }}
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    className="fg-input"
+                    value={entry.detail_location || ''}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setLogs(prev => {
+                        const next = [...prev];
+                        next[idx] = { ...next[idx], detail_location: val };
+                        return next;
+                      });
+                    }}
+                    placeholder="Detail location"
+                    style={{ width: '100%', padding: '6px 8px' }}
+                  />
                   <button
                     className="fg-btn"
                     style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#ef4444', padding: '6px 10px' }}
-                    onClick={() => handleRemoveIndex(idx)}
+                    onClick={() => {
+                      if (window.confirm('Delete this log entry?')) handleRemoveIndex(idx);
+                    }}
                   >
                     Delete
                   </button>

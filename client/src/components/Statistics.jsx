@@ -130,6 +130,49 @@ export default function Statistics({ mode = 'stats' }) {
     { name: 'Development', value: Number(costs.summary.total_develop || 0) }
   ] : [];
 
+  const monthlySeries = React.useMemo(() => {
+    const raw = Array.isArray(costs?.monthly) ? costs.monthly : [];
+    if (!raw.length) return [];
+
+    const parsed = raw
+      .map(d => {
+        const monthStr = (d.month || '').slice(0, 7);
+        const dt = new Date(`${monthStr}-01T00:00:00Z`);
+        if (!monthStr || Number.isNaN(dt.getTime())) return null;
+        return {
+          month: monthStr,
+          date: dt,
+          purchase: Number(d.purchase || 0),
+          develop: Number(d.develop || 0)
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.date - b.date);
+
+    if (!parsed.length) return [];
+
+    const start = parsed[0].date;
+    const end = parsed[parsed.length - 1].date;
+    const map = new Map(parsed.map(p => [p.month, p]));
+    const series = [];
+    const cursor = new Date(start);
+
+    while (cursor <= end) {
+      const key = cursor.toISOString().slice(0, 7);
+      const hit = map.get(key);
+      series.push({
+        month: key,
+        purchase: hit ? hit.purchase : 0,
+        develop: hit ? hit.develop : 0
+      });
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+
+    return series;
+  }, [costs?.monthly]);
+
+  const monthlyTicks = monthlySeries.filter((_, idx) => idx % 2 === 0).map(d => d.month);
+
   const chartCard = {
     background: 'linear-gradient(135deg, #ffffff 0%, #fafbfc 100%)',
     padding: '24px',
@@ -474,7 +517,7 @@ export default function Statistics({ mode = 'stats' }) {
               <h3 style={{ marginTop: 0, marginBottom: '24px', fontSize: '18px', fontWeight: 700, color: '#334155' }}>Monthly Spending Trend</h3>
               <div style={{ height: '360px', paddingBottom: 20 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={(costs?.monthly || []).map(d => ({ month: d.month, purchase: Number(d.purchase || 0), develop: Number(d.develop || 0) }))} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
+                  <AreaChart data={monthlySeries} margin={{ top: 10, right: 10, left: 0, bottom: 30 }}>
                     <defs>
                       <linearGradient id="colorPurchase" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
@@ -488,6 +531,7 @@ export default function Statistics({ mode = 'stats' }) {
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
                     <XAxis 
                       dataKey="month" 
+                      ticks={monthlyTicks}
                       tick={{ fontSize: 12, fill: '#64748b' }} 
                       tickLine={{ inside: true, stroke: '#cbd5e1' }}
                       axisLine={{ stroke: '#e2e8f0' }}

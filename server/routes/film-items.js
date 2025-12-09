@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
+const db = require('../db');
 const {
   createFilmItemsFromPurchase,
   listFilmItems,
@@ -55,6 +56,78 @@ router.get('/:id', async (req, res) => {
   } catch (err) {
     console.error('[film-items] get error', err);
     res.status(500).json({ ok: false, error: 'Failed to get film item' });
+  }
+});
+
+// Export shot logs as CSV
+router.get('/:id/shot-logs/export', async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const item = await getFilmItemById(id);
+    if (!item) return res.status(404).json({ ok: false, error: 'Film item not found' });
+
+    let filmIso = null;
+    if (item.film_id) {
+      try {
+        const row = await new Promise((resolve, reject) => {
+          db.get('SELECT iso FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
+        });
+        filmIso = row && row.iso ? row.iso : null;
+      } catch (isoErr) {
+        console.warn('[film-items] export iso lookup failed', isoErr.message || isoErr);
+      }
+    }
+
+    const raw = item.shot_logs;
+    if (!raw) return res.status(204).end();
+
+    let logs = [];
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(parsed)) logs = parsed;
+    } catch (e) {
+      console.error('[film-items] export parse error', e.message);
+      return res.status(500).json({ ok: false, error: 'Invalid shot_logs format' });
+    }
+
+    const escapeCsv = (val) => {
+      const v = val === undefined || val === null ? '' : String(val);
+      if (v.includes('"') || v.includes(',') || v.includes('\n')) {
+        return `"${v.replace(/"/g, '""')}"`;
+      }
+      return v;
+    };
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="shot-logs-${id}.csv"`);
+    res.write('date,count,lens,aperture,shutter_speed,country,city,detail_location,iso\r\n');
+    for (const entry of logs) {
+      const date = entry.date || '';
+      const count = entry.count || entry.shots || 0;
+      const lens = entry.lens || '';
+      const aperture = entry.aperture ?? '';
+      const shutter = entry.shutter_speed || '';
+      const country = entry.country || '';
+      const city = entry.city || '';
+      const detail = entry.detail_location || '';
+      const iso = filmIso ?? '';
+
+      res.write([
+        escapeCsv(date),
+        escapeCsv(count),
+        escapeCsv(lens),
+        escapeCsv(aperture),
+        escapeCsv(shutter),
+        escapeCsv(country),
+        escapeCsv(city),
+        escapeCsv(detail),
+        escapeCsv(iso)
+      ].join(',') + '\r\n');
+    }
+    res.end();
+  } catch (err) {
+    console.error('[film-items] export error', err);
+    res.status(500).json({ ok: false, error: 'Failed to export shot logs' });
   }
 });
 

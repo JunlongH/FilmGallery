@@ -34,6 +34,12 @@ export default function NewRollForm({ onCreated }) {
   const [useInventory, setUseInventory] = useState(false);
   const [shotLogs, setShotLogs] = useState([]);
   const [fileDates, setFileDates] = useState({}); // { filename: 'YYYY-MM-DD' }
+  const [fileMeta, setFileMeta] = useState({});   // { filename: { date, lens } }
+  const [applyShotLog, setApplyShotLog] = useState(false);
+
+  const totalShotLogCount = shotLogs.reduce((acc, cur) => acc + (Number(cur.count || cur.shots || 0) || 0), 0);
+  const filesCount = files.length;
+  const shotLogMismatch = applyShotLog && filesCount > 0 && totalShotLogCount !== filesCount;
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -94,24 +100,45 @@ export default function NewRollForm({ onCreated }) {
     }
   }, [useInventory, filmItemId, filmItems]);
 
-  const handleAutoAssignDates = () => {
+  useEffect(() => {
+    if (shotLogs.length > 0) {
+      setApplyShotLog(true);
+    }
+  }, [shotLogs.length]);
+
+  // Re-apply mapping when shot logs or files change while toggle is on
+  useEffect(() => {
+    if (applyShotLog) {
+      handleApplyShotLog();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [applyShotLog, shotLogs, files]);
+
+  const handleApplyShotLog = () => {
     if (!files.length || !shotLogs.length) return;
-    
-    // Sort files by name to ensure sequence
     const sortedFiles = [...files].sort((a, b) => a.name.localeCompare(b.name));
-    const newMap = {};
-    
+    const metaMap = {};
+    const dateMap = {};
     let fileIndex = 0;
     for (const log of shotLogs) {
-      const count = log.count;
-      const date = log.date;
+      const count = Number(log.count || log.shots || 0) || 0;
+      const date = log.date || '';
+      const lensFromLog = log.lens || '';
+      const aperture = Number.isFinite(log.aperture) ? log.aperture : (log.aperture !== undefined && log.aperture !== null ? Number(log.aperture) : null);
+      const shutter_speed = log.shutter_speed || '';
+      const country = log.country || '';
+      const city = log.city || '';
+      const detail_location = log.detail_location || '';
       for (let i = 0; i < count; i++) {
         if (fileIndex >= sortedFiles.length) break;
-        newMap[sortedFiles[fileIndex].name] = date;
+        const name = sortedFiles[fileIndex].name;
+        metaMap[name] = { date, lens: lensFromLog, country, city, detail_location, aperture, shutter_speed };
+        if (date) dateMap[name] = date;
         fileIndex++;
       }
     }
-    setFileDates(newMap);
+    setFileMeta(metaMap);
+    setFileDates(dateMap);
   };
 
   // create object URL previews
@@ -140,9 +167,32 @@ export default function NewRollForm({ onCreated }) {
         ? { ...fieldsBase, film_item_id: filmItemId }
         : { ...fieldsBase, filmId };
 
-      // Add file metadata (dates)
-      if (Object.keys(fileDates).length > 0) {
-        fields.fileMetadata = JSON.stringify(fileDates);
+      // Add file metadata (date + lens + location)
+      const metaToSend = {};
+      const keys = new Set([...Object.keys(fileDates), ...Object.keys(fileMeta)]);
+      keys.forEach((k) => {
+        const entry = fileMeta[k] || {};
+        const date = entry.date || fileDates[k] || '';
+        const lensFromMeta = entry.lens || '';
+        const country = entry.country || '';
+        const city = entry.city || '';
+        const detail_location = entry.detail_location || '';
+        const aperture = entry.aperture;
+        const shutter_speed = entry.shutter_speed;
+        if (date || lensFromMeta || country || city || detail_location || Number.isFinite(aperture) || !!shutter_speed) {
+          metaToSend[k] = {
+            ...(date ? { date } : {}),
+            ...(lensFromMeta ? { lens: lensFromMeta } : {}),
+            ...(Number.isFinite(aperture) ? { aperture } : {}),
+            ...(shutter_speed ? { shutter_speed } : {}),
+            ...(country ? { country } : {}),
+            ...(city ? { city } : {}),
+            ...(detail_location ? { detail_location } : {})
+          };
+        }
+      });
+      if (Object.keys(metaToSend).length > 0) {
+        fields.fileMetadata = JSON.stringify(metaToSend);
       }
 
       const res = await createRollUnified({
@@ -410,15 +460,29 @@ export default function NewRollForm({ onCreated }) {
               <div style={{ marginBottom: 12, padding: 12, background: '#f0f9ff', borderRadius: 6, border: '1px solid #bae6fd' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#0369a1' }}>
-                    Shot Logs Available: {shotLogs.reduce((a,b)=>a+b.count,0)} shots recorded
+                    Shot Logs Available: {totalShotLogCount} shots recorded
                   </div>
-                  <button 
-                    type="button" 
-                    className="fg-btn fg-btn-sm fg-btn-primary"
-                    onClick={handleAutoAssignDates}
-                  >
-                    Auto-Assign Dates
-                  </button>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                    <label style={{ display:'flex', alignItems:'center', gap:6, cursor: 'pointer', whiteSpace: 'nowrap', fontSize: 12 }}>
+                      <input 
+                        type="checkbox" 
+                        checked={applyShotLog} 
+                        onChange={e => {
+                          const v = e.target.checked;
+                          setApplyShotLog(v);
+                          if (v) handleApplyShotLog();
+                        }} 
+                      />
+                      <span>Apply shot log to photos (date + lens + location)</span>
+                    </label>
+                    <button 
+                      type="button" 
+                      className="fg-btn fg-btn-sm fg-btn-primary"
+                      onClick={handleApplyShotLog}
+                    >
+                      Re-Apply
+                    </button>
+                  </div>
                 </div>
                 <div style={{ fontSize: 11, color: '#0c4a6e', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {shotLogs.map((l, i) => (
@@ -427,6 +491,12 @@ export default function NewRollForm({ onCreated }) {
                     </span>
                   ))}
                 </div>
+                {applyShotLog && filesCount > 0 && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: shotLogMismatch ? '#b91c1c' : '#0f172a' }}>
+                    Mapping {filesCount} files with {totalShotLogCount} logged shots
+                    {shotLogMismatch ? ' (counts differ – adjust shot log or files)' : ''}
+                  </div>
+                )}
               </div>
             )}
 
@@ -498,7 +568,11 @@ export default function NewRollForm({ onCreated }) {
                     type="date" 
                     style={{ fontSize: 10, padding: 2, border: '1px solid #ddd', borderRadius: 3, width: '100%' }}
                     value={fileDates[p.name] || ''}
-                    onChange={e => setFileDates(prev => ({ ...prev, [p.name]: e.target.value }))}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setFileDates(prev => ({ ...prev, [p.name]: val }));
+                      setFileMeta(prev => ({ ...prev, [p.name]: { ...(prev[p.name] || {}), date: val } }));
+                    }}
                   />
                 </div>
               ))}

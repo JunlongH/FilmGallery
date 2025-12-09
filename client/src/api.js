@@ -257,6 +257,16 @@ export async function deleteFilmItem(id, hard = false) {
   return res.json();
 }
 
+export async function exportShotLogsCsv(id) {
+  const res = await fetch(`${API_BASE}/api/film-items/${id}/shot-logs/export`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(text || `Export failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  return blob;
+}
+
 export async function createFilm({ name, iso, category, thumbFile }) {
   const fd = new FormData();
   fd.append('name', name);

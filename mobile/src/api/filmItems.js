@@ -50,3 +50,14 @@ export async function getMetadataOptions() {
   const res = await axios.get('/api/metadata/options');
   return res.data || {};
 }
+
+// Locations (shared with desktop API semantics)
+export async function getCountries() {
+  const res = await axios.get('/api/locations/countries');
+  return res.data || [];
+}
+
+export async function searchLocations(params = {}) {
+  const res = await axios.get('/api/locations', { params });
+  return res.data || [];
+}

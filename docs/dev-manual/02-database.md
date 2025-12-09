@@ -133,10 +133,15 @@ CREATE TABLE photos (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(roll_id) REFERENCES rolls(id),
   FOREIGN KEY(location_id) REFERENCES locations(id)
-  > shot_logs JSON 结构：`[{ date: 'YYYY-MM-DD', count: 12, lens?: '50mm f/1.8' }]`
+  > shot_logs JSON 结构：`[{ date: 'YYYY-MM-DD', count: 12, lens?: '50mm f/1.8', aperture?: 1.8, shutter_speed?: '1/125' | '2s', country?: 'CN', city?: 'Shanghai', detail_location?: 'North Gate' }]`
   > - 每条对象是一条拍摄记录（可同一日期多条，新增时不覆盖旧记录）
   > - `count`：该条记录的拍摄张数
+  > - `aperture`：可选，数值光圈（f 值，例如 1.8/2/5.6）；UI 显示为 `f1.8`
+  > - `shutter_speed`：可选，快门速度（字符串，支持分数与长曝光，如 `1/125`、`0.5s`、`2s`），UI 显示为 `s1/125`
   > - `lens`：可选，镜头型号；镜头下拉从 rolls/photos/film_items.shot_logs 的历史值去重汇总，自定义输入保存后自动进入常用列表
+  > - `country` / `city` / `detail_location`：可选地点信息；在 UI 中新增条目时默认沿用上一条的国家/城市/详细地点以减少输入量，可手动覆盖
+  > - 导出：`GET /api/film-items/:id/shot-logs/export` CSV 列扩展为 `date,count,lens,aperture,shutter_speed,country,city,detail_location,iso`（旧列顺序兼容，缺失字段为空），其中 iso 来自胶片类型的 ISO 值
+  > - 映射到照片：创建胶卷时可选“按 shot log 应用日期+镜头+地点+曝光参数”，顺序遍历文件；若 lens 未提供则落地使用该 roll 的 lens；若提供地点，服务端会创建/复用 locations 记录并写入 photo.location_id 与 detail_location，并同步 roll_locations；若提供 aperture/shutter_speed 则写入照片；ISO 默认采用胶片类型 iso
 );
 ```
 

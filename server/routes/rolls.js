@@ -14,7 +14,7 @@ sharp.concurrency(1);
 const { uploadTmp, uploadDefault } = require('../config/multer');
 const { uploadsDir, tmpUploadDir, rollsDir } = require('../config/paths');
 const { moveFileSync, moveFileAsync } = require('../utils/file-helpers');
-const { runAsync, allAsync } = require('../utils/db-helpers');
+const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
 const { attachTagsToPhotos } = require('../services/tag-service');
 const { linkFilmItemToRoll } = require('../services/film/film-item-service');
 const PreparedStmt = require('../utils/prepared-statements');
@@ -39,6 +39,7 @@ router.post('/', (req, res) => {
       const filmIdRaw = body.filmId ? Number(body.filmId) : null;
       const film_item_id = body.film_item_id ? Number(body.film_item_id) : null;
       let filmId = filmIdRaw;
+      let filmIso = null;
       const notes = body.notes || null;
       const tmpFiles = body.tmpFiles ? (typeof body.tmpFiles === 'string' ? JSON.parse(body.tmpFiles) : body.tmpFiles) : null;
       const coverIndex = body.coverIndex ? Number(body.coverIndex) : null;
@@ -66,6 +67,18 @@ router.post('/', (req, res) => {
           if (itemRow && itemRow.film_id) filmId = itemRow.film_id;
         } catch (e) {
           console.error('[CREATE ROLL] Failed to load film_item for filmId override', e.message);
+        }
+      }
+
+      // Load film ISO (used as default ISO for photos)
+      if (filmId) {
+        try {
+          const isoRow = await new Promise((resolve, reject) => {
+            db.get('SELECT iso FROM films WHERE id = ?', [filmId], (err, row) => err ? reject(err) : resolve(row));
+          });
+          filmIso = isoRow && isoRow.iso ? isoRow.iso : null;
+        } catch (isoErr) {
+          console.warn('[CREATE ROLL] Failed to load film iso', isoErr.message || isoErr);
         }
       }
 
@@ -162,9 +175,69 @@ router.post('/', (req, res) => {
 
         const inserted = [];
         let frameCounter = 0;
-        
-        // Prepare statement for insertion
-        const stmt = db.prepare(`INSERT INTO photos (roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path, original_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path, is_negative_source, taken_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+
+        const resolveMeta = (metaMap, keys = []) => {
+          for (const k of keys) {
+            if (!k) continue;
+            const m = metaMap[k];
+            if (!m) continue;
+            if (typeof m === 'string') return { date: m, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null };
+            if (typeof m === 'object') return {
+              date: m.date || null,
+              lens: m.lens || null,
+              country: m.country || null,
+              city: m.city || null,
+              detail_location: m.detail_location || null,
+              aperture: m.aperture ?? null,
+              shutter_speed: m.shutter_speed || null
+            };
+          }
+          return { date: null, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null };
+        };
+
+        const locationCache = new Map(); // key: country||city -> id
+        const rollLocationIds = new Set();
+
+        const ensureLocationId = async (country, city) => {
+          const normCity = (city || '').trim();
+          const normCountry = (country || '').trim();
+          if (!normCity) return null;
+          const key = `${normCountry.toLowerCase()}||${normCity.toLowerCase()}`;
+          if (locationCache.has(key)) return locationCache.get(key);
+
+          // Try to match existing rows by city + (country_code or country_name) case-insensitive
+          const existing = await getAsync(
+            `SELECT id FROM locations
+             WHERE LOWER(city_name) = LOWER(?)
+               AND (
+                 LOWER(country_name) = LOWER(?) OR country_code = ? OR country_code IS NULL OR country_name IS NULL
+               )
+             LIMIT 1`,
+            [normCity, normCountry, normCountry]
+          );
+          if (existing && existing.id) {
+            locationCache.set(key, existing.id);
+            return existing.id;
+          }
+
+          // Insert new row with the provided country name (country_code unknown here)
+          const insertedId = await runAsync(
+            'INSERT INTO locations (country_name, city_name) VALUES (?, ?)',
+            [normCountry || null, normCity]
+          ).then(res => res.lastID).catch(() => null);
+          if (insertedId) locationCache.set(key, insertedId);
+          return insertedId;
+        };
+
+        // Prepare statement for insertion (includes date_taken/time_taken + camera/lens/photographer + location)
+        const stmt = db.prepare(`INSERT INTO photos (
+          roll_id, frame_number, filename,
+          full_rel_path, thumb_rel_path, negative_rel_path,
+          original_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
+          is_negative_source, taken_at, date_taken, time_taken,
+          location_id, detail_location,
+          camera, lens, photographer, aperture, shutter_speed, iso
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         
         const runInsert = (params) => new Promise((resolve, reject) => {
             stmt.run(params, function(err) {
@@ -314,8 +387,42 @@ router.post('/', (req, res) => {
 
           // Insert immediately to prevent data loss on crash
           try {
-              const takenAt = fileMetadata[finalName] ? `${fileMetadata[finalName]}T12:00:00` : null;
-              await runInsert([rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath, originalRelPath, positiveRelPath, positiveThumbRelPath, negativeThumbRelPath, isNegativeSource, takenAt]);
+              const meta = resolveMeta(fileMetadata, [f.originalName, f.tmpName, finalName]);
+              const dateTaken = meta.date || null;
+              const takenAt = dateTaken ? `${dateTaken}T12:00:00` : null;
+              const lensForPhoto = meta.lens || lens || null;
+              const cameraForPhoto = camera || null;
+              const photographerForPhoto = photographer || null;
+              const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' ? Number(meta.aperture) : null;
+              const shutterForPhoto = meta.shutter_speed || null;
+              const isoForPhoto = filmIso !== null && filmIso !== undefined ? filmIso : null;
+              const locationId = await ensureLocationId(meta.country, meta.city);
+              const detailLoc = meta.detail_location || null;
+              if (locationId) rollLocationIds.add(locationId);
+              await runInsert([
+                rollId,
+                frameNumber,
+                finalName,
+                fullRelPath,
+                thumbRelPath,
+                negativeRelPath,
+                originalRelPath,
+                positiveRelPath,
+                positiveThumbRelPath,
+                negativeThumbRelPath,
+                isNegativeSource,
+                takenAt,
+                dateTaken,
+                null, // time_taken unused here
+                locationId,
+                detailLoc,
+                cameraForPhoto,
+                lensForPhoto,
+                photographerForPhoto,
+                apertureForPhoto,
+                shutterForPhoto,
+                isoForPhoto
+              ]);
             inserted.push({ filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, positiveRelPath });
             console.log(`[CREATE ROLL] Inserted photo ${finalName} with date ${takenAt}`);
           } catch (dbErr) {
@@ -363,6 +470,15 @@ router.post('/', (req, res) => {
           fullRelPath: p.fullRelPath,
           thumbRelPath: p.thumbRelPath
         }));
+
+        // Attach roll_locations after photo insert completes
+        try {
+          for (const locId of rollLocationIds) {
+            await runAsync('INSERT OR IGNORE INTO roll_locations (roll_id, location_id) VALUES (?, ?)', [rollId, locId]);
+          }
+        } catch (locErr) {
+          console.error('[CREATE ROLL] Failed to upsert roll_locations', locErr.message || locErr);
+        }
 
         db.get('SELECT * FROM rolls WHERE id = ?', [rollId], (e2, row) => {
           if (e2) return res.status(500).json({ error: e2.message });
@@ -661,93 +777,100 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/rolls/:id
-router.delete('/:id', (req, res) => {
-  const id = req.params.id;
+router.delete('/:id', async (req, res) => {
+  const id = Number(req.params.id);
   console.log(`[DELETE] Request to delete roll id: ${id}`);
-  db.get('SELECT cover_photo, coverPath, folderName FROM rolls WHERE id = ?', [id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
-    
-    console.log(`[DELETE] DB Row for ${id}:`, row);
 
-    const performDelete = (folderName) => {
-      console.log(`[DELETE] performDelete called with folderName: ${folderName}`);
-      const cover = row && (row.cover_photo || row.coverPath);
-      // delete cover if it exists and is NOT inside the folder we are about to delete
-      if (cover) {
-        const coverAbs = path.join(uploadsDir, '../', cover.replace(/^\//, '')); // Assuming cover path is relative to server root or uploads?
-        // In server.js: path.join(__dirname, cover.replace(/^\//, ''))
-        // __dirname was server root.
-        // So path.join(uploadsDir, '../', ...) is roughly correct if uploadsDir is server/uploads.
-        // Let's use path.resolve(uploadsDir, '..', cover...)
-        
-        // Wait, if cover starts with /uploads/, we should strip it and use uploadsDir.
-        let coverPath;
-        if (cover.startsWith('/uploads/')) {
-            coverPath = path.join(uploadsDir, cover.replace(/^\/uploads\//, ''));
-        } else {
-            // Legacy path relative to server root?
-            // Let's assume it's relative to server root.
-            coverPath = path.join(uploadsDir, '../', cover.replace(/^\//, ''));
-        }
+  const toUploadAbs = (relPath) => {
+    if (!relPath) return null;
+    const trimmed = relPath.replace(/^\/+/, '').replace(/^uploads\//, '');
+    return path.join(uploadsDir, trimmed);
+  };
 
-        const targetFolder = folderName ? path.join(rollsDir, folderName) : null;
-        if (!targetFolder || !coverPath.startsWith(targetFolder)) {
-           fs.unlink(coverPath, () => {});
-        }
+  const deleteFilesSafe = (paths = []) => {
+    const unique = Array.from(new Set(paths.filter(Boolean)));
+    for (const p of unique) {
+      try {
+        const abs = path.resolve(p);
+        if (!abs.startsWith(path.resolve(uploadsDir))) continue; // safety guard
+        if (fs.existsSync(abs)) fs.rmSync(abs, { recursive: true, force: true });
+      } catch (err) {
+        console.warn('[DELETE] Failed to remove path', p, err.message);
       }
-
-      const deleteDb = () => {
-        console.log(`[DELETE] Deleting from DB for id: ${id}`);
-          db.run('DELETE FROM rolls WHERE id = ?', [id], async function(e){
-          if (e) return res.status(500).json({ error: e.message });
-            try { await recomputeRollSequence(); } catch(err){ console.error('recompute sequence failed', err); }
-            res.json({ deleted: this.changes });
-        });
-      };
-
-      if (folderName) {
-        const folderPath = path.join(rollsDir, folderName);
-        console.log(`[DELETE] Attempting to delete folder: ${folderPath}`);
-        if (fs.existsSync(folderPath)) {
-          console.log(`[DELETE] Folder exists. Calling fs.rm...`);
-          fs.rm(folderPath, { recursive: true, force: true }, (rmErr) => {
-            if (rmErr) console.error('[DELETE] Error deleting folder', folderPath, rmErr);
-            else console.log(`[DELETE] Folder deleted successfully: ${folderPath}`);
-            deleteDb();
-          });
-        } else {
-          console.log(`[DELETE] Folder does not exist on disk: ${folderPath}`);
-          deleteDb();
-        }
-      } else {
-        console.log(`[DELETE] No folderName provided to performDelete.`);
-        deleteDb();
-      }
-    };
-
-    if (row && row.folderName) {
-      performDelete(row.folderName);
-    } else {
-      // Try to deduce folder from photos if folderName missing
-      db.get('SELECT full_rel_path FROM photos WHERE roll_id = ? AND full_rel_path IS NOT NULL LIMIT 1', [id], (e2, pRow) => {
-        console.log(`[DELETE] Deduced photo row:`, pRow);
-        let deduced = null;
-        const candidatePath = pRow && pRow.full_rel_path;
-        if (candidatePath) {
-          const parts = candidatePath.split('/');
-          // expect rolls/<folder>/...
-          if (parts.length >= 2 && (parts[0] === 'rolls' || parts[0] === 'uploads')) {
-             deduced = parts[1] === 'rolls' ? parts[2] : parts[1]; // handle potential variations
-             if (parts[0] === 'rolls') deduced = parts[1];
-          }
-        }
-        // If still null, try ID as fallback for new system
-        if (!deduced) deduced = String(id);
-        console.log(`[DELETE] Deduced folder name: ${deduced}`);
-        performDelete(deduced);
-      });
     }
-  });
+  };
+
+  const deduceFolderName = (row, photos) => {
+    if (row && row.folderName) return row.folderName;
+    for (const p of photos || []) {
+      const rel = p.full_rel_path || p.positive_rel_path || p.negative_rel_path || p.thumb_rel_path;
+      if (!rel) continue;
+      const parts = rel.replace(/^\/+/, '').split('/');
+      const idx = parts.indexOf('rolls');
+      if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
+      if (parts[0]) return parts[0];
+    }
+    return String(id);
+  };
+
+  const deleteRollRecords = async (rollId) => {
+    await runAsync('BEGIN');
+    try {
+      await runAsync('DELETE FROM photo_tags WHERE photo_id IN (SELECT id FROM photos WHERE roll_id = ?)', [rollId]);
+      await runAsync('DELETE FROM roll_locations WHERE roll_id = ?', [rollId]);
+      await runAsync('DELETE FROM roll_gear WHERE roll_id = ?', [rollId]);
+      await runAsync('UPDATE film_items SET roll_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE roll_id = ?', [rollId]);
+      await runAsync('DELETE FROM photos WHERE roll_id = ?', [rollId]);
+      const result = await runAsync('DELETE FROM rolls WHERE id = ?', [rollId]);
+      await runAsync('COMMIT');
+      return result?.changes || 0;
+    } catch (err) {
+      try { await runAsync('ROLLBACK'); } catch (_) {}
+      throw err;
+    }
+  };
+
+  try {
+    const row = await getAsync('SELECT id, cover_photo, coverPath, folderName FROM rolls WHERE id = ?', [id]);
+    const photos = await allAsync(`
+      SELECT id, full_rel_path, positive_rel_path, negative_rel_path, thumb_rel_path, positive_thumb_rel_path, negative_thumb_rel_path
+      FROM photos WHERE roll_id = ?
+    `, [id]);
+
+    const folderName = deduceFolderName(row, photos);
+    const folderPath = path.join(rollsDir, folderName);
+
+    // Collect paths to clean up after DB delete succeeds
+    const photoPaths = [];
+    for (const p of photos || []) {
+      photoPaths.push(toUploadAbs(p.full_rel_path));
+      photoPaths.push(toUploadAbs(p.positive_rel_path));
+      photoPaths.push(toUploadAbs(p.negative_rel_path));
+      photoPaths.push(toUploadAbs(p.thumb_rel_path));
+      photoPaths.push(toUploadAbs(p.positive_thumb_rel_path));
+      photoPaths.push(toUploadAbs(p.negative_thumb_rel_path));
+    }
+
+    const cover = row && (row.cover_photo || row.coverPath);
+    if (cover) {
+      const coverAbs = toUploadAbs(cover);
+      // Only delete cover separately if it is outside the roll folder we remove later
+      if (coverAbs && (!folderPath || !path.resolve(coverAbs).startsWith(path.resolve(folderPath)))) {
+        photoPaths.push(coverAbs);
+      }
+    }
+
+    const deleted = await deleteRollRecords(id);
+    try { await recomputeRollSequence(); } catch(err){ console.error('recompute sequence failed', err); }
+
+    // Remove roll folder and leftover files (best-effort; DB already committed)
+    deleteFilesSafe([folderPath, ...photoPaths]);
+
+    res.json({ deleted });
+  } catch (err) {
+    console.error('[DELETE] Failed to delete roll', err.message || err);
+    res.status(500).json({ error: err.message || 'Delete failed' });
+  }
 });
 
 // Photos endpoints (now rely on full_rel_path in uploads/rolls)

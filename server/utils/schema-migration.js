@@ -226,6 +226,7 @@ function runSchemaMigration() {
         { table: 'photos', col: 'thumb_rel_path', type: 'TEXT' },
         { table: 'photos', col: 'positive_thumb_rel_path', type: 'TEXT' },
         { table: 'photos', col: 'negative_thumb_rel_path', type: 'TEXT' },
+        { table: 'photos', col: 'is_negative_source', type: 'INTEGER DEFAULT 0' },
         // Photos - Metadata
         { table: 'photos', col: 'display_seq', type: 'INTEGER DEFAULT 0' },
         { table: 'photos', col: 'photographer', type: 'TEXT' },
