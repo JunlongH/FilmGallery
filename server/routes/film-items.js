@@ -52,6 +52,21 @@ router.get('/:id', async (req, res) => {
     const id = Number(req.params.id);
     const item = await getFilmItemById(id);
     if (!item) return res.status(404).json({ ok: false, error: 'Film item not found' });
+
+    // Fetch ISO from films table if available
+    if (item.film_id) {
+      try {
+        const filmRow = await new Promise((resolve, reject) => {
+          db.get('SELECT iso FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
+        });
+        if (filmRow && filmRow.iso) {
+          item.iso = filmRow.iso;
+        }
+      } catch (e) {
+        console.warn('[film-items] failed to fetch iso', e);
+      }
+    }
+
     res.json({ ok: true, item });
   } catch (err) {
     console.error('[film-items] get error', err);
