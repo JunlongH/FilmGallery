@@ -3,6 +3,10 @@ module.exports = function(api) {
   return {
     presets: ['babel-preset-expo'],
     // IMPORTANT: Reanimated plugin must be last
-    plugins: ['react-native-paper/babel', 'react-native-reanimated/plugin'],
+    plugins: [
+      'react-native-paper/babel',
+      'react-native-worklets-core/plugin',
+      'react-native-reanimated/plugin',
+    ],
   };
 };

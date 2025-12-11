@@ -1,9 +1,10 @@
-/**
+const fs = require('fs');
+const path = require('path');
+
+const content = `/**
  * ShotModeModal - Professional Light Meter
  * Powered by react-native-vision-camera
- * Real-time exposure monitoring with Frame Processor support
- * 
- * VERSION: 2025-12-11-v7-FP-FIXED
+ * Real-time exposure monitoring with spot metering support
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -23,12 +24,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // Import our custom utilities
 import { 
   APERTURES, SHUTTERS, 
-  calculateEV,
+  generateValidPairs, 
+  calculatePSExposure,
   getBestFormat 
 } from './camera/cameraUtils';
 import { useExposureMonitor } from './camera/ExposureMonitor';
-import { calculateExposure, formatExposureForDisplay } from './camera/ExposureCalculations';
-import { getTapCoordinates } from './camera/SpotMeteringHandler';
+import { focusAndMeter, getTapCoordinates } from './camera/SpotMeteringHandler';
 
 // Picker Modal Component
 const PickerModal = ({ visible, onClose, data, onSelect, title }) => {
@@ -74,45 +75,12 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
   const device = useCameraDevice('back');
   const formats = device?.formats || [];
   const format = getBestFormat(formats);
-  const minZoom = device?.minZoom ?? 1;
-  const maxZoom = device?.maxZoom ?? Math.max(4, minZoom + 3);
   
   // Camera state
   const [isActive, setIsActive] = useState(false);
-  const [zoom, setZoom] = useState(minZoom);
+  const [zoom, setZoom] = useState(0);
   const [meteringMode, setMeteringMode] = useState('average');
-  
-  // Common focal lengths for snap-to feature (in mm)
-  const SNAP_FOCAL_LENGTHS = [24, 28, 35, 50, 70, 85, 105, 135, 200];
-  const SNAP_THRESHOLD = 0.08; // Snap when within 8% of slider range
-  
-  // Convert focal length to zoom (base focal length is 24mm)
-  const focalToZoom = (focal) => focal / 24;
-  
-  // Handle zoom with snap-to common focal lengths
-  const handleZoomChange = (value) => {
-    const focalLength = 24 * value;
-    const range = maxZoom - minZoom;
-    
-    // Check if close to any common focal length
-    for (const snapFocal of SNAP_FOCAL_LENGTHS) {
-      const snapZoom = focalToZoom(snapFocal);
-      // Only snap to values within our zoom range
-      if (snapZoom >= minZoom && snapZoom <= maxZoom) {
-        const distance = Math.abs(value - snapZoom);
-        if (distance < range * SNAP_THRESHOLD) {
-          setZoom(snapZoom);
-          return;
-        }
-      }
-    }
-    setZoom(value);
-  };
   const [focusPoint, setFocusPoint] = useState(null);
-
-  // Exposure modes
-  const [selectedAperture, setSelectedAperture] = useState(5.6);
-  const [selectedShutter, setSelectedShutter] = useState('1/125');
   
   // Location state
   const [location, setLocation] = useState(null);
@@ -121,113 +89,47 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
   // Measurement state
   const [measuring, setMeasuring] = useState(false);
   const [measuredEV, setMeasuredEV] = useState(null);
+  const [validPairs, setValidPairs] = useState([]);
+  const [pairIndex, setPairIndex] = useState(0);
   const [spotInfo, setSpotInfo] = useState(null);
   
   // Real-time exposure monitoring
   const [liveExposure, setLiveExposure] = useState(null);
-  const [diagnosticInfo, setDiagnosticInfo] = useState({ frames: 0, fpRunning: false, brightness: 0, ev: 0 });
   
   // Camera mode state
-  const [cameraMode, setCameraMode] = useState('av'); // av | tv | ps
+  const [cameraMode, setCameraMode] = useState('manual');
   const [psFlashMode, setPsFlashMode] = useState('off');
   const [psMaxAperture, setPsMaxAperture] = useState(2.8);
+  const [psResult, setPsResult] = useState(null);
 
   // Picker state
   const [pickerVisible, setPickerVisible] = useState(false);
   const [pickerType, setPickerType] = useState(null);
 
-  // Frame Processor callback - receives brightness/EV data
-  const handleExposureUpdate = useCallback((data) => {
-    if (data?.fpActive) {
-      setDiagnosticInfo(prev => ({
-        ...prev,
-        frames: data.frameNumber || prev.frames + 1,
-        fpRunning: true,
-        brightness: data.brightness || 0,
-        ev: data.ev || 0
-      }));
-      setLiveExposure(data);
-    }
+  // Exposure monitoring callback
+  const handleExposureUpdate = useCallback((exposureData) => {
+    setLiveExposure(exposureData);
   }, []);
 
-  // Use Frame Processor + EXIF sampling for exposure monitoring
-  // Pass cameraRef and filmIso for accurate EXIF-based EV calculation
-  const { frameProcessor, exposureData, triggerMeasurement, setSpotPoint } = useExposureMonitor(
-    handleExposureUpdate,
-    cameraRef,
-    filmIso
-  );
-  
-  // Calculate exposure settings based on measured EV
-  // Use the EV from liveExposure OR exposureData (which comes from EXIF or brightness analysis)
-  // Priority: liveExposure (from callback) > exposureData (from hook state) > diagnosticInfo
-  const measuredSceneEV = liveExposure?.ev ?? exposureData?.ev ?? diagnosticInfo.ev ?? null;
-  
-  // Debug: Log EV sources only when source changes (reduce log spam)
-  const sourceRef = React.useRef(null);
-  if (exposureData?.source !== sourceRef.current) {
-    sourceRef.current = exposureData?.source;
-    __DEV__ && console.log('[ShotModeModal] EV source changed to:', exposureData?.source, 'EV:', measuredSceneEV);
-  }
-  
-  const calculatedExposure = React.useMemo(() => {
-    if (measuredSceneEV === null || measuredSceneEV === undefined || measuredSceneEV === 0) {
-      return { isValid: false };
-    }
-    
-    const result = calculateExposure(
-      measuredSceneEV,
-      filmIso,
-      cameraMode,
-      cameraMode === 'av' ? selectedAperture : selectedShutter,
-      cameraMode === 'ps' ? { maxAperture: psMaxAperture } : undefined
-    );
-    
-    __DEV__ && console.log('[Exposure] Calculated:', result);
-    return result;
-  }, [measuredSceneEV, filmIso, cameraMode, selectedAperture, selectedShutter]);
-
-  // Auto-update UI based on calculator result (Av/Tv linkage)
-  // Only update when no fixed measurement exists
-  useEffect(() => {
-    if (!calculatedExposure.isValid || measuredEV !== null) return;
-
-    if (cameraMode === 'av') {
-      setSelectedShutter(calculatedExposure.targetShutter);
-    } else if (cameraMode === 'tv') {
-      setSelectedAperture(calculatedExposure.targetAperture);
-    }
-  }, [calculatedExposure, cameraMode, measuredEV]);
-
-  const activeEV = measuredEV ?? calculatedExposure.ev;
-
-  // Diagnostic logging (reduced frequency - only log once on mount)
-  const hasLoggedRef = React.useRef(false);
-  if (!hasLoggedRef.current && visible) {
-    hasLoggedRef.current = true;
-    __DEV__ && console.log('[ShotModeModal] Version: 2025-12-11-v9-FAST-SPOT');
-    __DEV__ && console.log('[ShotModeModal] Device:', device ? `${device.name} (${device.position})` : 'null');
-  }
+  // Setup exposure monitor
+  const { frameProcessor } = useExposureMonitor(filmIso, handleExposureUpdate);
 
   // Reset state when modal opens
   useEffect(() => {
     if (visible) {
-      __DEV__ && console.log('[ShotModeModal] Modal opened - device:', !!device, 'hasPermission:', hasPermission);
       setIsActive(true);
       setMeasuredEV(null);
-      setZoom(minZoom);
+      setValidPairs([]);
+      setPsResult(null);
+      setZoom(0);
       setFocusPoint(null);
       setMeteringMode('average');
       setLiveExposure(null);
-      setSelectedAperture(5.6);
-      setSelectedShutter('1/125');
-      setCameraMode('av');
-      setDiagnosticInfo({ frames: 0, fpRunning: false });
       fetchLocation();
     } else {
       setIsActive(false);
     }
-  }, [visible, minZoom, device, hasPermission]);
+  }, [visible]);
 
   // Fetch location
   const fetchLocation = async () => {
@@ -253,7 +155,7 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
         setLocation({
           country: addr.country,
           city: addr.city || addr.subregion,
-          detail: `${addr.street || ''} ${addr.name || ''}`.trim()
+          detail: \`\${addr.street || ''} \${addr.name || ''}\`.trim()
         });
       }
     } catch (e) {
@@ -263,113 +165,69 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
     }
   };
 
-  // When switching modes, unlock live flow
-  useEffect(() => {
-    setMeasuredEV(null);
-  }, [cameraMode]);
-
-  // Handle single-shot measurement (triggered by meter button)
-  // This replaces the old lock/unlock toggle
-  const handleMeasure = useCallback(async () => {
-    if (!cameraRef.current) {
-      Alert.alert('错误', '相机未就绪');
+  // Handle measurement (capture current exposure)
+  const handleMeasure = useCallback(() => {
+    if (!liveExposure || !liveExposure.ev) {
+      Alert.alert('Error', 'No exposure data available. Please wait a moment.');
       return;
     }
 
     setMeasuring(true);
     
     try {
-      // Use triggerMeasurement from ExposureMonitor for EXIF-based EV
-      const measuredEV = await triggerMeasurement();
+      const targetEV = liveExposure.ev;
+      setMeasuredEV(targetEV);
       
-      if (measuredEV !== null && measuredEV !== undefined) {
-        setMeasuredEV(measuredEV);
-        __DEV__ && console.log('[ShotModeModal] Measured EV:', measuredEV);
+      if (cameraMode === 'ps') {
+        // Point & Shoot mode
+        const res = calculatePSExposure(targetEV, psFlashMode, psMaxAperture);
+        setPsResult(res);
       } else {
-        Alert.alert('测光失败', '无法获取曝光数据，请重试');
+        // Manual mode
+        const pairs = generateValidPairs(targetEV);
+        setValidPairs(pairs);
+        
+        // Default to middle aperture
+        const defaultF = 5.6;
+        const defaultIndex = pairs.findIndex(p => p.f >= defaultF);
+        setPairIndex(defaultIndex !== -1 ? defaultIndex : Math.floor(pairs.length / 2));
       }
-    } catch (e) {
-      __DEV__ && console.warn('Measure failed:', e);
-      Alert.alert('测光失败', e.message || '未知错误');
+
+      // Show spot metering feedback
+      if (meteringMode === 'spot' && focusPoint) {
+        setSpotInfo({ 
+          active: true, 
+          message: '✓ Spot metering applied' 
+        });
+        setTimeout(() => setSpotInfo(null), 2500);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to measure exposure');
+      console.error('Measurement error:', error);
     } finally {
       setMeasuring(false);
     }
-  }, [triggerMeasurement]);
+  }, [liveExposure, cameraMode, psFlashMode, psMaxAperture, meteringMode, focusPoint, filmIso]);
 
-  // Handle tap to focus/meter (for spot metering mode)
-  // Strategy: Set spot point for Frame Processor to calculate brightness at that location,
-  // then use brightness ratio to adjust the EXIF-based EV
+  // Handle tap to focus/meter
   const handleTapToFocus = useCallback(async (event) => {
-    if (!cameraRef.current) return;
-    
-    // In average mode, just trigger standard measurement
-    if (meteringMode !== 'spot') {
-      handleMeasure();
-      return;
-    }
+    if (meteringMode !== 'spot' || !cameraRef.current) return;
     
     const point = getTapCoordinates(event, width, cameraHeight);
     setFocusPoint(point);
     
-    console.log('[ShotModeModal] Spot metering at:', point);
+    // Apply focus and metering
+    const success = await focusAndMeter(cameraRef, point);
     
-    // Visual feedback immediately
-    setSpotInfo({ 
-      active: true, 
-      message: '点测光中...' 
-    });
-    setMeasuring(true);
-    
-    try {
-      // Step 1: Set spot point for Frame Processor to calculate spot brightness
-      if (setSpotPoint) {
-        setSpotPoint({ x: point.x, y: point.y });
-        console.log('[ShotModeModal] Spot point set for brightness calculation');
-      }
-      
-      // Step 2: Try to apply focus at the point (for better camera response)
-      try {
-        await cameraRef.current.focus({ x: point.x, y: point.y });
-      } catch (focusErr) {
-        // Focus not supported - that's ok
-      }
-      
-      // Step 3: Wait for Frame Processor to calculate brightness at spot point
-      // Need ~200-300ms for a few frames to be processed
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      // Step 4: Take measurement with spot point - triggerMeasurement will use stored brightness
-      const spotEV = await triggerMeasurement({ x: point.x, y: point.y });
-      
-      if (spotEV !== null && spotEV !== undefined) {
-        setMeasuredEV(spotEV);
-        setSpotInfo({ 
-          active: true, 
-          message: `点测光完成 EV ${spotEV.toFixed(1)}` 
-        });
-        console.log('[ShotModeModal] Spot meter result:', spotEV.toFixed(1));
-      } else {
-        setSpotInfo({ 
-          active: true, 
-          message: '点测光失败' 
-        });
-      }
-    } catch (e) {
-      console.warn('Spot metering failed:', e);
+    if (success) {
+      // Visual feedback
       setSpotInfo({ 
         active: true, 
-        message: '点测光失败' 
+        message: 'Metering point set' 
       });
-    } finally {
-      setMeasuring(false);
-      // Clear spot point after measurement (return to average mode visualization)
-      if (setSpotPoint) {
-        setSpotPoint(null);
-      }
-      // Clear feedback after 1.5s
       setTimeout(() => setSpotInfo(null), 1500);
     }
-  }, [meteringMode, width, cameraHeight, triggerMeasurement, handleMeasure, setSpotPoint]);
+  }, [meteringMode, width, cameraHeight]);
 
   // Handle manual value selection
   const handleManualSelect = useCallback((value) => {
@@ -378,12 +236,35 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
       return;
     }
 
-    if (pickerType === 'aperture') {
-      setSelectedAperture(value);
-    } else if (pickerType === 'shutter') {
-      setSelectedShutter(value);
-    }
-  }, [pickerType]);
+    if (!validPairs.length) return;
+    
+    let bestIndex = pairIndex;
+    let minDiff = Infinity;
+
+    validPairs.forEach((pair, index) => {
+      let diff;
+      if (pickerType === 'aperture') {
+        diff = Math.abs(pair.f - value);
+      } else {
+        const v1 = parseFloat(pair.s.includes('/') 
+          ? pair.s.split('/')[0] / pair.s.split('/')[1] 
+          : pair.s);
+        const v2 = parseFloat(value.includes('/') 
+          ? value.split('/')[0] / value.split('/')[1] 
+          : value);
+        diff = Math.abs(v1 - v2);
+      }
+
+      if (diff < minDiff) {
+        minDiff = diff;
+        bestIndex = index;
+      }
+    });
+
+    setPairIndex(bestIndex);
+  }, [pickerType, validPairs, pairIndex]);
+
+  const currentPair = validPairs[pairIndex];
 
   // Permission handling
   if (!hasPermission) {
@@ -428,18 +309,6 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
             format={format}
             zoom={zoom}
             frameProcessor={frameProcessor}
-            onInitialized={() => {
-              __DEV__ && console.log('[Camera] ✅ Initialized successfully');
-            }}
-            onStarted={() => {
-              __DEV__ && console.log('[Camera] ✅ Camera started (preview active)');
-            }}
-            onStopped={() => {
-              __DEV__ && console.log('[Camera] Camera stopped');
-            }}
-            onError={(error) => {
-              console.error('[Camera] ❌ Error:', error.code, error.message);
-            }}
           />
           
           {/* Touch layer for spot metering */}
@@ -476,14 +345,11 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
             </View>
           )}
 
-          {/* Live exposure indicator with diagnostics */}
-          {!measuredEV && (
+          {/* Live exposure indicator */}
+          {liveExposure && !measuredEV && (
             <View style={styles.liveExposureIndicator}>
-              <Text style={styles.waitingText}>
-                FP Status: {frameProcessor ? 'Assigned' : 'NULL'}
-              </Text>
-              <Text style={styles.diagnosticText}>
-                Check Metro console for [FP] logs
+              <Text style={styles.liveEvText}>
+                EV {liveExposure.ev?.toFixed(1) || 'N/A'}
               </Text>
             </View>
           )}
@@ -517,8 +383,6 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 onPress={() => {
                   setMeteringMode(m => m === 'average' ? 'spot' : 'average');
                   setFocusPoint(null);
-                  // Clear any existing measurement when switching modes
-                  setMeasuredEV(null);
                 }}
               >
                 <MaterialCommunityIcons 
@@ -531,43 +395,39 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 </Text>
               </TouchableOpacity>
 
-              {/* Camera mode cycle: Av -> Tv -> P&S */}
+              {/* Camera mode toggle */}
               <TouchableOpacity 
                 style={styles.modeButton} 
                 onPress={() => {
-                  const order = ['av', 'tv', 'ps'];
-                  const next = order[(order.indexOf(cameraMode) + 1) % order.length];
-                  setCameraMode(next);
+                  setCameraMode(m => m === 'manual' ? 'ps' : 'manual');
+                  setMeasuredEV(null);
                 }}
               >
                 <MaterialCommunityIcons 
-                  name={
-                    cameraMode === 'av' ? 'alpha-a-circle' :
-                    cameraMode === 'tv' ? 'alpha-t-circle' : 'camera-gopro'
-                  } 
+                  name={cameraMode === 'manual' ? 'camera-iris' : 'camera-gopro'} 
                   size={24} 
                   color="white" 
                 />
                 <Text style={styles.modeText}>
-                  {cameraMode === 'av' ? 'Av' : cameraMode === 'tv' ? 'Tv' : 'P&S'}
+                  {cameraMode === 'manual' ? 'MANUAL' : 'P&S'}
                 </Text>
               </TouchableOpacity>
             </View>
 
-            {/* Zoom control with snap-to common focal lengths */}
+            {/* Zoom control */}
             <View style={styles.zoomControl}>
-              <Text style={[styles.zoomText, SNAP_FOCAL_LENGTHS.includes(Math.round(24 * zoom)) && styles.zoomTextSnapped]}>
-                {Math.round(24 * zoom)}mm
+              <Text style={styles.zoomText}>
+                {(zoom * 10).toFixed(1)}x
               </Text>
               <Slider
-                style={{ width: 140, height: 40 }}
-                minimumValue={minZoom}
-                maximumValue={maxZoom}
+                style={{ width: 120, height: 40 }}
+                minimumValue={0}
+                maximumValue={1}
                 minimumTrackTintColor="#fff"
                 maximumTrackTintColor="rgba(255,255,255,0.3)"
                 thumbTintColor="#fff"
                 value={zoom}
-                onValueChange={handleZoomChange}
+                onValueChange={setZoom}
               />
             </View>
           </View>
@@ -576,8 +436,8 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
         {/* Control Deck Section */}
         <Surface style={[styles.controlDeck, { paddingBottom: Math.max(20, insets.bottom + 10) }]} elevation={4}>
           
-          {measuredEV === null ? (
-            /* Live State - show real-time EV and lock */
+          {!measuredEV ? (
+            /* Idle State - Show live reading and measure button */
             <View style={styles.idleContainer}>
               <Text style={styles.instructionText}>
                 {cameraMode === 'ps' ? 'Point & Shoot Mode' : 'Point camera at subject'}
@@ -624,25 +484,16 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
               <TouchableOpacity 
                 style={styles.measureButtonBig} 
                 onPress={handleMeasure}
-                disabled={measuring}
+                disabled={measuring || !liveExposure}
               >
                 {measuring ? (
                   <ActivityIndicator size="large" color="black" />
                 ) : (
-                  <MaterialCommunityIcons name="camera-metering-spot" size={48} color="black" />
+                  <MaterialCommunityIcons name="camera-iris" size={48} color="black" />
                 )}
               </TouchableOpacity>
               
-              <Text style={styles.isoLabel}>
-                {diagnosticInfo.brightness > 0
-                  ? `亮度: ${diagnosticInfo.brightness.toFixed(0)} · ISO ${filmIso}`
-                  : diagnosticInfo.frames > 0
-                    ? `准备中... (${diagnosticInfo.frames})`
-                    : '启动相机...'}
-              </Text>
-              <Text style={styles.instructionSubText}>
-                {meteringMode === 'spot' ? '点击画面进行点测光' : '点击测光按钮进行测光'}
-              </Text>
+              <Text style={styles.isoLabel}>Film ISO {filmIso}</Text>
             </View>
           ) : (
             /* Result State */
@@ -651,48 +502,23 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
               {/* Info header */}
               <View style={styles.resultHeader}>
                 <View style={styles.evBadge}>
-                  <Text style={styles.evValue}>EV {measuredEV?.toFixed(1)}</Text>
+                  <Text style={styles.evValue}>EV {measuredEV.toFixed(1)}</Text>
                 </View>
-                <TouchableOpacity 
-                  style={styles.remeasureButton}
-                  onPress={handleMeasure}
-                  disabled={measuring}
-                >
-                  {measuring ? (
-                    <ActivityIndicator size="small" color="white" />
-                  ) : (
-                    <MaterialCommunityIcons name="camera-metering-spot" size={24} color="white" />
-                  )}
-                  <Text style={styles.remeasureText}>重新测光</Text>
-                </TouchableOpacity>
-                {/* 闪光灯设置按钮，仅在PS模式显示 */}
-                {cameraMode === 'ps' && (
-                  <TouchableOpacity 
-                    style={[styles.remeasureButton, { marginLeft: 8 }]}
-                    onPress={() => {
-                      const modes = ['auto', 'on', 'off'];
-                      const next = modes[(modes.indexOf(psFlashMode) + 1) % 3];
-                      setPsFlashMode(next);
-                    }}
-                  >
-                    <MaterialCommunityIcons 
-                      name={
-                        psFlashMode === 'auto' ? 'flash-auto' : 
-                        psFlashMode === 'on' ? 'flash' : 'flash-off'
-                      }
-                      size={22}
-                      color={psFlashMode === 'off' ? '#888' : '#FFD700'}
-                    />
-                    <Text style={styles.remeasureText}>闪光灯: {psFlashMode.toUpperCase()}</Text>
-                  </TouchableOpacity>
-                )}
+                <IconButton 
+                  icon="refresh" 
+                  size={24} 
+                  onPress={() => {
+                    setMeasuredEV(null);
+                    setPsResult(null);
+                  }} 
+                />
               </View>
 
               {/* Main values display */}
               <View style={styles.valuesDisplay}>
                 <TouchableOpacity 
                   style={styles.valueBox}
-                  disabled={cameraMode === 'ps' || cameraMode === 'tv'}
+                  disabled={cameraMode === 'ps'}
                   onPress={() => {
                     setPickerType('aperture');
                     setPickerVisible(true);
@@ -700,9 +526,9 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 >
                   <Text style={styles.valueLabel}>Aperture</Text>
                   <Text style={styles.valueMain}>
-                    f/{calculatedExposure.targetAperture}
+                    f/{cameraMode === 'ps' ? psResult?.f : currentPair?.f}
                   </Text>
-                  {cameraMode === 'av' && (
+                  {cameraMode !== 'ps' && (
                     <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
                   )}
                 </TouchableOpacity>
@@ -711,7 +537,7 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 
                 <TouchableOpacity 
                   style={styles.valueBox}
-                  disabled={cameraMode === 'ps' || cameraMode === 'av'}
+                  disabled={cameraMode === 'ps'}
                   onPress={() => {
                     setPickerType('shutter');
                     setPickerVisible(true);
@@ -719,29 +545,43 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 >
                   <Text style={styles.valueLabel}>Shutter</Text>
                   <Text style={styles.valueMain}>
-                    {calculatedExposure.targetShutter}
+                    {cameraMode === 'ps' ? psResult?.s : currentPair?.s}
                   </Text>
-                  {cameraMode === 'tv' && (
+                  {cameraMode !== 'ps' && (
                     <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
                   )}
                 </TouchableOpacity>
               </View>
 
-              {/* Info Text */}
-              <View style={styles.psResultInfo}>
-                <MaterialCommunityIcons 
-                  name={cameraMode === 'av' ? 'alpha-a-circle-outline' : cameraMode === 'tv' ? 'alpha-t-circle-outline' : 'camera-gopro'} 
-                  size={24} 
-                  color="#FFD700" 
-                />
-                <Text style={{ color: 'white', marginLeft: 10, fontSize: 16 }}>
-                  {cameraMode === 'av'
-                    ? `Av: f/${selectedAperture} → ${calculatedExposure.targetShutter}`
-                    : cameraMode === 'tv'
-                      ? `Tv: ${selectedShutter} → f/${calculatedExposure.targetAperture}`
-                      : `P&S: f/${calculatedExposure.targetAperture} - ${calculatedExposure.targetShutter}`}
-                </Text>
-              </View>
+              {/* Slider or flash info */}
+              {cameraMode === 'ps' ? (
+                <View style={styles.psResultInfo}>
+                  <MaterialCommunityIcons 
+                    name={psResult?.flash ? 'flash' : 'flash-off'} 
+                    size={24} 
+                    color={psResult?.flash ? '#FFD700' : '#666'} 
+                  />
+                  <Text style={{ color: 'white', marginLeft: 10, fontSize: 16 }}>
+                    Flash {psResult?.flash ? 'Required' : 'Off'}
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.sliderContainer}>
+                  <MaterialCommunityIcons name="camera-iris" size={20} color="#888" />
+                  <Slider
+                    style={{ flex: 1, marginHorizontal: 10, height: 40 }}
+                    minimumValue={0}
+                    maximumValue={validPairs.length - 1}
+                    step={1}
+                    value={pairIndex}
+                    onValueChange={setPairIndex}
+                    minimumTrackTintColor="#FFD700"
+                    maximumTrackTintColor="#444"
+                    thumbTintColor="white"
+                  />
+                  <MaterialCommunityIcons name="timer-outline" size={20} color="#888" />
+                </View>
+              )}
 
               {/* Use button */}
               <Button 
@@ -751,8 +591,8 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 labelStyle={{ fontSize: 18, fontWeight: 'bold' }}
                 textColor="#000"
                 onPress={() => onUse({ 
-                  f: calculatedExposure.targetAperture,
-                  s: calculatedExposure.targetShutter,
+                  f: cameraMode === 'ps' ? psResult.f : currentPair.f, 
+                  s: cameraMode === 'ps' ? psResult.s : currentPair.s, 
                   location 
                 })}
               >
@@ -847,12 +687,8 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
     marginRight: 5,
-    width: 45,
+    width: 35,
     textAlign: 'right',
-  },
-  zoomTextSnapped: {
-    color: '#FFD700',
-    fontWeight: 'bold',
   },
   focusBox: {
     position: 'absolute',
@@ -899,26 +735,13 @@ const styles = StyleSheet.create({
     right: 20,
     backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 12,
-    minWidth: 120,
   },
   liveEvText: {
     color: '#FFD700',
     fontWeight: 'bold',
-    fontSize: 16,
-    textAlign: 'center',
-  },
-  waitingText: {
-    color: '#FFA500',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  diagnosticText: {
-    color: '#888',
-    fontSize: 10,
-    marginTop: 4,
-    textAlign: 'center',
+    fontSize: 14,
   },
   controlDeck: {
     flex: 1,
@@ -943,12 +766,6 @@ const styles = StyleSheet.create({
   instructionText: {
     color: '#888',
     fontSize: 16,
-  },
-  instructionSubText: {
-    color: '#555',
-    fontSize: 12,
-    marginTop: 5,
-    textAlign: 'center',
   },
   isoLabel: {
     color: '#666',
@@ -1004,20 +821,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 14,
   },
-  remeasureButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#444',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-  },
-  remeasureText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
-  },
   valuesDisplay: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -1048,6 +851,12 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: '300',
     fontVariant: ['tabular-nums'],
+  },
+  sliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 10,
   },
   useButton: {
     backgroundColor: '#fff',
@@ -1084,3 +893,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
 });
+`;
+
+const filePath = path.join(__dirname, 'src', 'components', 'ShotModeModal.js');
+fs.writeFileSync(filePath, content, 'utf8');
+console.log('✓ ShotModeModal.js created successfully');

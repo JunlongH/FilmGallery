@@ -2,7 +2,7 @@
   "expo": {
     "name": "FilmGallery",
     "slug": "film-gallery-mobile",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +19,7 @@
     },
     "android": {
       "package": "com.filmgallery.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -35,7 +35,8 @@
         "expo-build-properties",
         {
           "android": {
-            "usesCleartextTraffic": true
+            "usesCleartextTraffic": true,
+            "minSdkVersion": 26
           }
         }
       ],
@@ -48,9 +49,11 @@
         }
       ],
       [
-        "expo-camera",
+        "react-native-vision-camera",
         {
-          "cameraPermission": "Allow FilmGallery to access your camera for metering."
+          "cameraPermissionText": "Allow FilmGallery to access your camera for professional light metering.",
+          "enableMicrophonePermission": false,
+          "enableFrameProcessors": true
         }
       ],
       [
