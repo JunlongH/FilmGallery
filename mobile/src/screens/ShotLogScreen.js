@@ -117,6 +117,8 @@ export default function ShotLogScreen({ route, navigation }) {
 
   const handleShotData = (data) => {
     setShowShotMode(false);
+    if (data.iso) setFilmIso(Number(data.iso));
+    if (data.lens) setNewLens(data.lens);
     if (data.f) setNewAperture(data.f.toString());
     if (data.s) setNewShutter(data.s.toString());
     if (data.location) {
@@ -154,6 +156,7 @@ export default function ShotLogScreen({ route, navigation }) {
   useEffect(() => {
     const last = entries[entries.length - 1];
     if (!last) return;
+    if (!newLens) setNewLens(last.lens || '');
     if (!newCountry) setNewCountry(last.country || '');
     if (!newCity) setNewCity(last.city || '');
     if (!newDetail) setNewDetail(last.detail_location || '');

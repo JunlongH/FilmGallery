@@ -195,7 +195,7 @@ export function calculateExposure(sceneEV, filmISO, mode, fixedValue, options = 
   const isoAdjustment = Math.log2(filmISO / 100);
   const effectiveEV = sceneEV + isoAdjustment;
 
-  let aperture, shutter, shutterDisplay;
+  let aperture, shutter, shutterDisplay, useFlash = false;
 
   if (mode === 'av') {
     // 光圈优先: 用户设置光圈，计算快门
@@ -234,27 +234,81 @@ export function calculateExposure(sceneEV, filmISO, mode, fixedValue, options = 
     shutterDisplay = secondsToShutterDisplay(shutter);
     
   } else {
-    // 程序模式 (ps): 自动平衡，支持最大光圈
+    // 程序模式 (ps): Point & Shoot 自动曝光算法
+    // 注意：测光始终使用 flash OFF，然后根据环境光 EV 值推算是否需要闪光灯
+    // 这样可以避免打开手机闪光灯，纯粹通过算法推算 PS 机的曝光策略
     const maxAperture = options.maxAperture || 2.8;
-    // 选择一个中等光圈 f/5.6，计算相应快门
-    aperture = 5.6;
-    shutter = (aperture * aperture) / Math.pow(2, effectiveEV);
-
-    // 如果快门太慢，开大光圈（但不超过最大光圈）
-    if (shutter > 1/60) {
-      aperture = Math.min(maxAperture, 5.6);
+    const flashMode = options.flashMode || 'off'; // 用户设置: 'auto' | 'on' | 'off'
+    
+    // 定义阈值 (基于环境光 effectiveEV)
+    const BRIGHT_THRESHOLD = 12;  // 光线充足阈值
+    const DARK_THRESHOLD = 8;     // 光线不足阈值
+    const MIN_SHUTTER = 1/30;     // 最慢快门速度（手持防抖）
+    const SYNC_SHUTTER = 1/60;    // 闪光同步速度
+    
+    let useFlash = false;
+    
+    if (effectiveEV >= BRIGHT_THRESHOLD) {
+      // 场景1：光线充足 (EV >= 12)
+      // 收小光圈以获得更大景深，快门较快
+      aperture = 8;
       shutter = (aperture * aperture) / Math.pow(2, effectiveEV);
-    }
-
-    // 如果快门太快，缩小光圈
-    if (shutter < 1/4000) {
-      aperture = 11;
+      
+      // 如果快门过快，可以进一步缩小光圈
+      if (shutter < 1/1000) {
+        aperture = 11;
+        shutter = (aperture * aperture) / Math.pow(2, effectiveEV);
+      }
+      useFlash = false;
+      
+    } else if (effectiveEV >= DARK_THRESHOLD) {
+      // 场景2：光线不足但尚可 (8 <= EV < 12)
+      // 开大光圈，降低快门
+      aperture = Math.min(maxAperture, 4);
       shutter = (aperture * aperture) / Math.pow(2, effectiveEV);
+      
+      // 检查是否需要/使用闪光灯
+      if (flashMode === 'on' || (flashMode === 'auto' && shutter > MIN_SHUTTER)) {
+        useFlash = true;
+        shutter = SYNC_SHUTTER;
+        // 闪光灯补光，可以收小光圈增加景深
+        aperture = 5.6;
+      } else {
+        // 不用闪光灯，确保快门不低于手持极限
+        if (shutter > MIN_SHUTTER) {
+          shutter = MIN_SHUTTER;
+          // 反推所需光圈
+          aperture = Math.sqrt(shutter * Math.pow(2, effectiveEV));
+          aperture = Math.max(maxAperture, Math.min(aperture, 5.6));
+        }
+      }
+      
+    } else {
+      // 场景3：光线严重不足 (EV < 8)
+      if (flashMode === 'auto' || flashMode === 'on') {
+        // 使用闪光灯
+        useFlash = true;
+        shutter = SYNC_SHUTTER;
+        aperture = 5.6; // 闪光灯模式下的标准光圈
+      } else {
+        // 禁止闪光：只能延长快门或开大光圈
+        aperture = maxAperture;
+        shutter = (aperture * aperture) / Math.pow(2, effectiveEV);
+        
+        // 快门可能会很慢，需要提示用户使用三脚架
+        if (shutter > 1) {
+          // 限制在 1 秒以内（除非特殊情况）
+          shutter = Math.min(shutter, 1);
+        }
+        useFlash = false;
+      }
     }
-
+    
+    // 限制在合理范围内
     shutter = Math.max(1/8000, Math.min(30, shutter));
+    aperture = Math.max(1.0, Math.min(22, aperture));
     aperture = findClosestStandardAperture(aperture);
-
+    
     const closestShutter = findClosestStandardShutter(shutter);
     shutterDisplay = closestShutter.display;
     shutter = closestShutter.value;
@@ -271,7 +325,8 @@ export function calculateExposure(sceneEV, filmISO, mode, fixedValue, options = 
     targetShutter: shutterDisplay,
     isValid: true,
     filmISO: filmISO,
-    mode: mode
+    mode: mode,
+    useFlash: useFlash  // PS 模式下的闪光灯使用建议
   };
 }
 

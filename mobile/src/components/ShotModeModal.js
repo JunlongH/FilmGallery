@@ -81,10 +81,25 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
   const [isActive, setIsActive] = useState(false);
   const [zoom, setZoom] = useState(minZoom);
   const [meteringMode, setMeteringMode] = useState('average');
+  const [iso, setIso] = useState(filmIso || 400);
+
+  useEffect(() => {
+    setIso(filmIso || 400);
+  }, [filmIso]);
   
   // Common focal lengths for snap-to feature (in mm)
   const SNAP_FOCAL_LENGTHS = [24, 28, 35, 50, 70, 85, 105, 135, 200];
   const SNAP_THRESHOLD = 0.08; // Snap when within 8% of slider range
+
+  const ISO_STEPS = [25, 50, 64, 100, 125, 160, 200, 250, 320, 400, 500, 640, 800, 1000, 1250, 1600, 2000, 2500, 3200, 4000, 5000, 6400, 8000, 12800];
+  const bumpIso = (direction) => {
+    if (!iso) return;
+    const list = ISO_STEPS;
+    const idx = list.findIndex(v => v >= iso);
+    const currentIdx = idx === -1 ? list.length - 1 : (list[idx] === iso ? idx : Math.max(0, idx - 1));
+    const nextIdx = Math.min(Math.max(0, currentIdx + direction), list.length - 1);
+    setIso(list[nextIdx]);
+  };
   
   // Convert focal length to zoom (base focal length is 24mm)
   const focalToZoom = (focal) => focal / 24;
@@ -155,7 +170,7 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
   const { frameProcessor, exposureData, triggerMeasurement, setSpotPoint } = useExposureMonitor(
     handleExposureUpdate,
     cameraRef,
-    filmIso
+    iso
   );
   
   // Calculate exposure settings based on measured EV
@@ -177,15 +192,15 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
     
     const result = calculateExposure(
       measuredSceneEV,
-      filmIso,
+      iso,
       cameraMode,
       cameraMode === 'av' ? selectedAperture : selectedShutter,
-      cameraMode === 'ps' ? { maxAperture: psMaxAperture } : undefined
+      cameraMode === 'ps' ? { maxAperture: psMaxAperture, flashMode: psFlashMode } : undefined
     );
     
     __DEV__ && console.log('[Exposure] Calculated:', result);
     return result;
-  }, [measuredSceneEV, filmIso, cameraMode, selectedAperture, selectedShutter]);
+  }, [measuredSceneEV, iso, cameraMode, selectedAperture, selectedShutter, psMaxAperture, psFlashMode]);
 
   // Auto-update UI based on calculator result (Av/Tv linkage)
   // Only update when no fixed measurement exists
@@ -229,36 +244,51 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
     }
   }, [visible, minZoom, device, hasPermission]);
 
-  // Fetch location
+  // Fetch location with timeout and graceful fallback
   const fetchLocation = async () => {
+    setLocLoading(true);
+    let timeoutId;
     try {
-      setLocLoading(true);
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setLocLoading(false);
+        setLocation(null);
         return;
       }
-      
-      const loc = await Location.getCurrentPositionAsync({ 
-        accuracy: Location.Accuracy.Balanced 
+
+      // Position with timeout protection
+      const locPromise = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('定位超时')), 12000);
       });
-      
-      const reverse = await Location.reverseGeocodeAsync({
+      const loc = await Promise.race([locPromise, timeoutPromise]);
+      clearTimeout(timeoutId);
+
+      // Reverse geocode: English for DB, local for detail
+      const reverseEN = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude
+      }, { locale: 'en-US' });
+      const reverseLocal = await Location.reverseGeocodeAsync({
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude
       });
-      
-      if (reverse && reverse.length > 0) {
-        const addr = reverse[0];
+
+      if (reverseEN && reverseEN.length > 0) {
+        const addrEN = reverseEN[0];
+        const addrLocal = (reverseLocal && reverseLocal.length > 0) ? reverseLocal[0] : addrEN;
         setLocation({
-          country: addr.country,
-          city: addr.city || addr.subregion,
-          detail: `${addr.street || ''} ${addr.name || ''}`.trim()
+          country: addrEN.country || '',
+          city: addrEN.city || addrEN.subregion || '',
+          detail: `${addrLocal.street || ''} ${addrLocal.name || ''}`.trim()
         });
+      } else {
+        setLocation(null);
       }
     } catch (e) {
-      console.log('Location error:', e);
+      console.warn('Location error:', e?.message || e);
+      setLocation(null);
     } finally {
+      clearTimeout(timeoutId);
       setLocLoading(false);
     }
   };
@@ -280,6 +310,7 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
     
     try {
       // Use triggerMeasurement from ExposureMonitor for EXIF-based EV
+      // Always measure with flash OFF, algorithm will calculate flash exposure
       const measuredEV = await triggerMeasurement();
       
       if (measuredEV !== null && measuredEV !== undefined) {
@@ -339,7 +370,8 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
       await new Promise(resolve => setTimeout(resolve, 300));
       
       // Step 4: Take measurement with spot point - triggerMeasurement will use stored brightness
-      const spotEV = await triggerMeasurement({ x: point.x, y: point.y });
+      // Always measure with flash OFF, algorithm will calculate flash exposure
+      const spotEV = await triggerMeasurement({ spotPoint: { x: point.x, y: point.y } });
       
       if (spotEV !== null && spotEV !== undefined) {
         setMeasuredEV(spotEV);
@@ -621,6 +653,29 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 </View>
               )}
 
+              {/* ISO control */}
+              <View style={styles.psSettingsRow}>
+                <TouchableOpacity 
+                  style={styles.psSettingBtn}
+                  onPress={() => bumpIso(-1)}
+                >
+                  <MaterialCommunityIcons name="minus" size={20} color="white" />
+                  <Text style={styles.psSettingText}>ISO -</Text>
+                </TouchableOpacity>
+
+                <View style={[styles.psSettingBtn, { justifyContent: 'center' }]}> 
+                  <Text style={[styles.psSettingText, { fontWeight: 'bold' }]}>ISO {iso}</Text>
+                </View>
+
+                <TouchableOpacity 
+                  style={styles.psSettingBtn}
+                  onPress={() => bumpIso(1)}
+                >
+                  <MaterialCommunityIcons name="plus" size={20} color="white" />
+                  <Text style={styles.psSettingText}>ISO +</Text>
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity 
                 style={styles.measureButtonBig} 
                 onPress={handleMeasure}
@@ -635,7 +690,7 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
               
               <Text style={styles.isoLabel}>
                 {diagnosticInfo.brightness > 0
-                  ? `亮度: ${diagnosticInfo.brightness.toFixed(0)} · ISO ${filmIso}`
+                  ? `亮度: ${diagnosticInfo.brightness.toFixed(0)} · ISO ${iso}`
                   : diagnosticInfo.frames > 0
                     ? `准备中... (${diagnosticInfo.frames})`
                     : '启动相机...'}
@@ -734,13 +789,27 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                   size={24} 
                   color="#FFD700" 
                 />
-                <Text style={{ color: 'white', marginLeft: 10, fontSize: 16 }}>
-                  {cameraMode === 'av'
-                    ? `Av: f/${selectedAperture} → ${calculatedExposure.targetShutter}`
-                    : cameraMode === 'tv'
-                      ? `Tv: ${selectedShutter} → f/${calculatedExposure.targetAperture}`
-                      : `P&S: f/${calculatedExposure.targetAperture} - ${calculatedExposure.targetShutter}`}
-                </Text>
+                <View style={{ marginLeft: 10 }}>
+                  <Text style={{ color: 'white', fontSize: 16 }}>
+                    {cameraMode === 'av'
+                      ? `Av: f/${selectedAperture} → ${calculatedExposure.targetShutter}`
+                      : cameraMode === 'tv'
+                        ? `Tv: ${selectedShutter} → f/${calculatedExposure.targetAperture}`
+                        : `P&S: f/${calculatedExposure.targetAperture} - ${calculatedExposure.targetShutter}`}
+                  </Text>
+                  {cameraMode === 'ps' && calculatedExposure.useFlash && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                      <MaterialCommunityIcons 
+                        name="flash" 
+                        size={16} 
+                        color="#FFD700" 
+                      />
+                      <Text style={{ color: '#FFD700', fontSize: 13, marginLeft: 4 }}>
+                        建议使用闪光灯
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
 
               {/* Use button */}
@@ -750,11 +819,12 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 contentStyle={{ height: 50 }}
                 labelStyle={{ fontSize: 18, fontWeight: 'bold' }}
                 textColor="#000"
-                onPress={() => onUse({ 
-                  f: calculatedExposure.targetAperture,
-                  s: calculatedExposure.targetShutter,
-                  location 
-                })}
+                  onPress={() => onUse({ 
+                    f: calculatedExposure.targetAperture,
+                    s: calculatedExposure.targetShutter,
+                    iso,
+                    location 
+                  })}
               >
                 Use Settings
               </Button>

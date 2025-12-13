@@ -1,0 +1,94 @@
+{
+  "kodak": {
+    "name": "Kodak Gold",
+    "description": "Classic Kodak Gold look with orange borders and yellow frame numbers",
+    "background": "#1a1a1a",
+    "borderColor": "#d97706",
+    "frameNumberColor": "#fbbf24",
+    "sprocketHoleColor": "#0a0a0a",
+    "showSprockets": true,
+    "borderWidth": 8,
+    "sprocketSize": { "width": 16, "height": 24, "radius": 4 },
+    "sprocketSpacing": 40,
+    "frameNumberFont": {
+      "family": "Arial, sans-serif",
+      "size": 24,
+      "weight": "bold"
+    },
+    "metadata": {
+      "show": true,
+      "color": "#d97706",
+      "fontSize": 18,
+      "position": "bottom"
+    }
+  },
+  "fuji": {
+    "name": "Fujifilm C200",
+    "description": "Fuji film look with green edge text and white frame numbers",
+    "background": "#0f1e0f",
+    "borderColor": "#22c55e",
+    "frameNumberColor": "#ffffff",
+    "sprocketHoleColor": "#050a05",
+    "showSprockets": true,
+    "borderWidth": 8,
+    "sprocketSize": { "width": 16, "height": 24, "radius": 4 },
+    "sprocketSpacing": 40,
+    "frameNumberFont": {
+      "family": "Arial, sans-serif",
+      "size": 22,
+      "weight": "normal"
+    },
+    "metadata": {
+      "show": true,
+      "color": "#22c55e",
+      "fontSize": 16,
+      "position": "bottom"
+    }
+  },
+  "ilford": {
+    "name": "Ilford HP5",
+    "description": "Black and white minimalist with classic sprockets",
+    "background": "#000000",
+    "borderColor": "#ffffff",
+    "frameNumberColor": "#cccccc",
+    "sprocketHoleColor": "#000000",
+    "showSprockets": true,
+    "borderWidth": 6,
+    "sprocketSize": { "width": 14, "height": 22, "radius": 3 },
+    "sprocketSpacing": 38,
+    "frameNumberFont": {
+      "family": "Georgia, serif",
+      "size": 20,
+      "weight": "normal"
+    },
+    "metadata": {
+      "show": true,
+      "color": "#999999",
+      "fontSize": 16,
+      "position": "bottom"
+    }
+  },
+  "minimal": {
+    "name": "Minimal",
+    "description": "Clean black background with small frame numbers, no sprockets",
+    "background": "#000000",
+    "borderColor": "#333333",
+    "frameNumberColor": "#666666",
+    "sprocketHoleColor": "#000000",
+    "showSprockets": false,
+    "borderWidth": 4,
+    "sprocketSize": { "width": 0, "height": 0, "radius": 0 },
+    "sprocketSpacing": 0,
+    "frameNumberFont": {
+      "family": "Arial, sans-serif",
+      "size": 16,
+      "weight": "normal"
+    },
+    "metadata": {
+      "show": false,
+      "color": "#666666",
+      "fontSize": 14,
+      "position": "bottom"
+    }
+  }
+}

@@ -360,15 +360,20 @@ export function useExposureMonitor(onExposureUpdate, cameraRef, filmIso = 100, s
   });
 
   // Trigger measurement with optional spot point
+  // Always uses flash: 'off' for measurement, then algorithm will calculate flash exposure separately
   // If spotPoint is provided, will calculate EV adjustment based on spot vs average brightness
-  const triggerMeasurement = useCallback(async (spotPoint = null) => {
+  // options: { spotPoint }
+  const triggerMeasurement = useCallback(async (options = {}) => {
     if (!cameraRef?.current || measurementInProgress.current) {
       return null;
     }
     
+    const { spotPoint = null } = options;
+    
     measurementInProgress.current = true;
     
     try {
+      // Always measure with flash OFF - we calculate flash exposure from ambient light
       const photo = await cameraRef.current.takePhoto({
         flash: 'off',
         enableShutterSound: false,

@@ -9,6 +9,7 @@ import TagEditModal from './TagEditModal';
 import ModalDialog from './ModalDialog';
 import LocationSelect from './LocationSelect.jsx';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
+import ContactSheetModal from './ContactSheetModal.jsx';
 import '../styles/sidebar.css';
 import '../styles/forms.css';
 import '../styles/roll-detail-card.css';
@@ -29,6 +30,7 @@ export default function RollDetail() {
   const [selectedPhotos, setSelectedPhotos] = useState([]);
   const [showBatchSidebar, setShowBatchSidebar] = useState(false);
   const [showRollSidebar, setShowRollSidebar] = useState(false);
+  const [showContactSheet, setShowContactSheet] = useState(false);
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -375,6 +377,12 @@ export default function RollDetail() {
               {multiSelect && selectedPhotos.length > 0 && (
                 <button className="primary-btn" style={{ background:'#2563eb' }} onClick={() => setShowBatchSidebar(true)}>Edit Selected ({selectedPhotos.length})</button>
               )}
+              {!multiSelect && photos.length > 0 && (
+                <button className="primary-btn" style={{ background:'#059669' }} onClick={() => setShowContactSheet(true)}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+                  Contact Sheet
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -633,6 +641,14 @@ export default function RollDetail() {
           </div>
         )}
       
+      {/* Contact Sheet Modal */}
+      <ContactSheetModal 
+        isOpen={showContactSheet} 
+        onClose={() => setShowContactSheet(false)}
+        roll={roll}
+        photos={photos}
+      />
+
       <input type="file" multiple ref={fileInputRef} style={{ display: 'none' }} onChange={onUpload} />
     </div>
   );

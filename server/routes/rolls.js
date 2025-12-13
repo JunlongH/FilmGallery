@@ -18,6 +18,7 @@ const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
 const { attachTagsToPhotos } = require('../services/tag-service');
 const { linkFilmItemToRoll } = require('../services/film/film-item-service');
 const PreparedStmt = require('../utils/prepared-statements');
+const { generateContactSheet, STYLES } = require('../services/contactSheetGenerator');
 
 // Create roll
 const cpUpload = uploadTmp.array('files', 200);
@@ -1095,6 +1096,115 @@ router.post('/:id/cover', (req, res) => {
     });
   } else {
     setCover(filename);
+  }
+});
+
+// Contact Sheet Export
+router.post('/:id/contact-sheet', async (req, res) => {
+  const rollId = req.params.id;
+  const { 
+    style = 'kodak',
+    columns = 6,
+    maxTotalWidth = 4800,
+    maxPhotoWidth = 400,
+    quality = 95
+  } = req.body;
+
+  try {
+    // Validate style
+    if (!STYLES[style]) {
+      return res.status(400).json({ error: `Invalid style: ${style}. Available styles: ${Object.keys(STYLES).join(', ')}` });
+    }
+
+    // Fetch roll metadata
+    const roll = await getAsync(
+      `SELECT r.*, f.name as film_name_joined, f.iso as film_iso_joined
+       FROM rolls r
+       LEFT JOIN films f ON r.filmId = f.id
+       WHERE r.id = ?`,
+      [rollId]
+    );
+
+    if (!roll) {
+      return res.status(404).json({ error: 'Roll not found' });
+    }
+
+    // Fetch photos (only those with valid paths)
+    const photos = await allAsync(
+      `SELECT id, frame_number, thumb_rel_path, full_rel_path
+       FROM photos
+       WHERE roll_id = ?
+       ORDER BY frame_number ASC, id ASC`,
+      [rollId]
+    );
+
+    if (photos.length === 0) {
+      return res.status(400).json({ error: 'No photos found in this roll' });
+    }
+
+    // Filter out photos without paths
+    const validPhotos = photos.filter(p => p.thumb_rel_path || p.full_rel_path);
+
+    if (validPhotos.length === 0) {
+      return res.status(400).json({ error: 'No valid photos with paths found' });
+    }
+
+    // Set response headers for streaming
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Transfer-Encoding', 'chunked');
+
+    let progressSent = false;
+
+    // Progress callback
+    const onProgress = (current, total, message) => {
+      const progressData = {
+        type: 'progress',
+        current,
+        total,
+        percentage: Math.round((current / total) * 100),
+        message
+      };
+      
+      // Send progress as newline-delimited JSON
+      res.write(JSON.stringify(progressData) + '\n');
+      progressSent = true;
+    };
+
+    // Generate contact sheet
+    const imageBuffer = await generateContactSheet({
+      photos: validPhotos,
+      rollMetadata: roll,
+      uploadsDir,
+      columns: Number(columns),
+      maxTotalWidth: Number(maxTotalWidth),
+      maxPhotoWidth: Number(maxPhotoWidth),
+      styleName: style,
+      quality: Number(quality),
+      onProgress
+    });
+
+    // Send final result
+    const finalData = {
+      type: 'complete',
+      image: imageBuffer.toString('base64'),
+      filename: `${roll.title || 'Roll-' + rollId}_contact-sheet_${style}.jpg`,
+      size: imageBuffer.length,
+      photoCount: validPhotos.length
+    };
+
+    res.write(JSON.stringify(finalData) + '\n');
+    res.end();
+
+  } catch (error) {
+    console.error('[Contact Sheet] Error:', error);
+    
+    // Send error as JSON if possible
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    } else {
+      res.write(JSON.stringify({ type: 'error', message: error.message }) + '\n');
+      res.end();
+    }
   }
 });
 
