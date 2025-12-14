@@ -28,6 +28,46 @@ const STYLE_PRESETS = {
 
 const COLUMNS = 6; // Fixed 6 columns per row
 
+/**
+ * Generate DX code barcode pattern based on real film information
+ * @param {Object} rollInfo - Roll metadata containing film_name, iso, photo_count
+ * @param {number} frameIndex - Current frame index for variation
+ * @returns {boolean[]} - Array of 14 booleans representing bar/no-bar
+ */
+function generateDXCode(rollInfo, frameIndex = 0) {
+  const filmName = (rollInfo?.film_name_joined || rollInfo?.film_type || 'KODAK').toUpperCase();
+  const iso = parseInt(rollInfo?.iso) || 400;
+  const photoCount = rollInfo?.photo_count || 36;
+  
+  // Film brand/model encoding (6 bits) - hash based on film name
+  const filmHash = filmName.split('').reduce((acc, char, i) => acc + char.charCodeAt(0) * (i + 1), 0);
+  const brandBits = [];
+  for (let i = 0; i < 6; i++) {
+    brandBits.push(((filmHash >> i) & 1) === 1);
+  }
+  
+  // ISO encoding (4 bits)
+  const isoMap = { 25: 0, 50: 1, 100: 2, 200: 3, 400: 4, 800: 5, 1600: 6, 3200: 7 };
+  const isoValues = Object.keys(isoMap).map(Number);
+  const closestIso = isoValues.reduce((prev, curr) => Math.abs(curr - iso) < Math.abs(prev - iso) ? curr : prev);
+  const isoCode = isoMap[closestIso] || 4;
+  const isoBits = [];
+  for (let i = 0; i < 4; i++) {
+    isoBits.push(((isoCode >> i) & 1) === 1);
+  }
+  
+  // Exposure count encoding (4 bits)
+  const countCode = Math.floor(photoCount / 12);
+  const countBits = [];
+  for (let i = 0; i < 4; i++) {
+    countBits.push(((countCode >> i) & 1) === 1);
+  }
+  
+  // Combine all bits with frame-based variation
+  const allBits = [...brandBits, ...isoBits, ...countBits];
+  return allBits.map((bit, i) => (i >= 10 && (frameIndex + i) % 7 === 0) ? !bit : bit);
+}
+
 export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }) {
   const [selectedStyle, setSelectedStyle] = useState('kodak');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -59,13 +99,15 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
     const FILM = {
       edgeTextHeight: selectedStyle !== 'minimal' ? 14 : 0,
       sprocketHeight: selectedStyle !== 'minimal' ? 10 : 0,
-      rowGap: 20
+      rowGap: selectedStyle !== 'minimal' ? 8 : 0  // Gap between rows
     };
     
     // Row height: edge text + sprockets + photo + sprockets + edge text
     const rowHeight = frameHeight + (FILM.edgeTextHeight + FILM.sprocketHeight) * 2;
+    const rowTotalHeight = rowHeight + FILM.rowGap;
     
     const totalWidth = 2 * padding + COLUMNS * frameWidth + (COLUMNS - 1) * frameGap;
+    // Total height: rows * rowHeight + (rows-1) * rowGap
     const totalHeight = 2 * padding + rows * rowHeight + (rows - 1) * FILM.rowGap;
     
     canvas.width = totalWidth;
@@ -73,10 +115,10 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
     // Style colors - unified text color
     const styleColors = {
-      kodak: { bg: '#1a1a1a', text: '#fbbf24', sprocket: '#0a0a0a' },
-      fuji: { bg: '#0f1e0f', text: '#22c55e', sprocket: '#050a05' },
-      ilford: { bg: '#000000', text: '#cccccc', sprocket: '#1a1a1a' },
-      minimal: { bg: '#000000', text: '#666666', sprocket: '#000000' }
+      kodak: { bg: '#1a1a1a', text: '#fbbf24', sprocket: '#0a0a0a', filmBg: '#2a2520' },
+      fuji: { bg: '#0f1e0f', text: '#22c55e', sprocket: '#050a05', filmBg: '#1a2e1a' },
+      ilford: { bg: '#000000', text: '#cccccc', sprocket: '#1a1a1a', filmBg: '#1a1a1a' },
+      minimal: { bg: '#000000', text: '#666666', sprocket: '#000000', filmBg: '#000000' }
     };
     
     const colors = styleColors[selectedStyle];
@@ -91,21 +133,25 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
     const drawPhotos = () => {
       // Draw each row as a film strip
       for (let rowIdx = 0; rowIdx < rows; rowIdx++) {
-        const rowY = padding + rowIdx * (rowHeight + FILM.rowGap);
+        const rowY = padding + rowIdx * rowTotalHeight;
         const photosInRow = photos.slice(rowIdx * COLUMNS, (rowIdx + 1) * COLUMNS);
         const filmName = roll?.film_name_joined || roll?.film_type || 'FILM';
         
         if (selectedStyle !== 'minimal') {
+          // Draw film strip background (slightly different for visual separation)
+          ctx.fillStyle = colors.filmBg;
+          ctx.fillRect(padding - 2, rowY - 1, totalWidth - 2*padding + 4, rowHeight + 2);
+          
           // ===== TOP EDGE TEXT (outside sprockets) =====
           ctx.fillStyle = colors.text;
           
           // Film stock name on the left
-          ctx.font = '9px monospace';
+          ctx.font = "500 9px 'Helvetica Neue', Helvetica, Arial, sans-serif";
           ctx.textAlign = 'left';
           ctx.fillText(filmName, padding + 4, rowY + FILM.edgeTextHeight - 3);
           
           // Frame numbers+A positioned at the edge/separator area (between photos)
-          ctx.font = '8px monospace';
+          ctx.font = "500 8px 'Helvetica Neue', Helvetica, Arial, sans-serif";
           photosInRow.forEach((p, col) => {
             const num = p.frame_number || String(rowIdx * COLUMNS + col + 1).padStart(2, '0');
             const frameX = padding + col * (frameWidth + frameGap);
@@ -117,9 +163,9 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
               ctx.fillText(`${num}A`, separatorX - 8, rowY + FILM.edgeTextHeight - 3);
               // Separator symbol
               ctx.textAlign = 'center';
-              ctx.font = '7px monospace';
+              ctx.font = '7px Arial, sans-serif';
               ctx.fillText('◄►', separatorX, rowY + FILM.edgeTextHeight - 3);
-              ctx.font = '8px monospace';
+              ctx.font = "500 8px 'Helvetica Neue', Helvetica, Arial, sans-serif";
             } else {
               // Last photo: put frameNum+A at the right edge
               ctx.textAlign = 'right';
@@ -147,12 +193,34 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           // ===== BOTTOM EDGE TEXT (outside sprockets) =====
           // Frame numbers (without A) centered below each photo
           ctx.fillStyle = colors.text;
-          ctx.font = '8px monospace';
+          ctx.font = "500 8px 'Helvetica Neue', Helvetica, Arial, sans-serif";
           ctx.textAlign = 'center';
+          
+          // DX barcode dimensions - sized to fit within frame
+          const dxBarWidth = 2;
+          const dxBarGap = 1.5;
+          const dxBarHeight = 10;
+          const dxTotalWidth = 14 * (dxBarWidth + dxBarGap);  // Total width of barcode
+          
           photosInRow.forEach((p, col) => {
             const num = p.frame_number || String(rowIdx * COLUMNS + col + 1).padStart(2, '0');
             const frameX = padding + col * (frameWidth + frameGap);
             ctx.fillText(num, frameX + frameWidth / 2, rowY + rowHeight - 2);
+            
+            // DX barcode after each frame number on bottom edge - limit to stay within frame
+            ctx.globalAlpha = 0.9;
+            const barcodeStartX = frameX + frameWidth / 2 + 10;
+            // Only draw if barcode fits within frame boundary
+            const maxBarcodeEnd = frameX + frameWidth - 2;
+            const frameIdx = rowIdx * COLUMNS + col;
+            const dxCode = generateDXCode(roll, frameIdx);
+            for (let i = 0; i < dxCode.length && i < 14; i++) {
+              const barX = barcodeStartX + i * (dxBarWidth + dxBarGap);
+              if (barX + dxBarWidth <= maxBarcodeEnd && dxCode[i]) {
+                ctx.fillRect(barX, rowY + rowHeight - dxBarHeight - 2, dxBarWidth, dxBarHeight);
+              }
+            }
+            ctx.globalAlpha = 1;
           });
         }
         
@@ -163,7 +231,21 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           
           if (loadedImages[rowIdx * COLUMNS + col]) {
             const img = loadedImages[rowIdx * COLUMNS + col];
-            ctx.drawImage(img, frameX, photoY, frameWidth, frameHeight);
+            const isPortrait = img.naturalHeight > img.naturalWidth;
+            
+            if (isPortrait) {
+              // Rotate portrait image 90° clockwise
+              ctx.save();
+              ctx.translate(frameX + frameWidth / 2, photoY + frameHeight / 2);
+              ctx.rotate(Math.PI / 2);
+              // After rotation, swap width/height for drawing
+              const drawW = frameHeight;
+              const drawH = frameWidth;
+              ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+              ctx.restore();
+            } else {
+              ctx.drawImage(img, frameX, photoY, frameWidth, frameHeight);
+            }
           } else {
             ctx.fillStyle = '#2a2a2a';
             ctx.fillRect(frameX, photoY, frameWidth, frameHeight);
