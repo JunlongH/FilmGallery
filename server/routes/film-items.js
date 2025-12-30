@@ -34,7 +34,26 @@ router.get('/', async (req, res) => {
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       offset: req.query.offset ? Number(req.query.offset) : undefined,
     };
-    const items = await listFilmItems(filters);
+    let items = await listFilmItems(filters);
+    
+    // Enrich each item with film name and ISO from films table
+    items = await Promise.all(items.map(async (item) => {
+      if (item.film_id) {
+        try {
+          const filmRow = await new Promise((resolve, reject) => {
+            db.get('SELECT name, iso FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
+          });
+          if (filmRow) {
+            item.film_name = filmRow.name || undefined;
+            item.iso = filmRow.iso || undefined;
+          }
+        } catch (e) {
+          console.warn(`[film-items] failed to fetch film data for film_id ${item.film_id}:`, e.message);
+        }
+      }
+      return item;
+    }));
+    
     const duration = Date.now() - startTime;
     if (duration > 100) {
       console.warn(`[PERF] GET /api/film-items took ${duration}ms - consider optimization`);

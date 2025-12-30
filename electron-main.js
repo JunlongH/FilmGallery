@@ -162,15 +162,17 @@ async function startServer() {
     const cmd = process.execPath;
     const args = [serverEntry];
     LOG('attempt spawn', cmd, args.join(' '));
-    const env = {
-      ...process.env,
-      USER_DATA: app.getPath('userData'),
-      DATA_ROOT: (appConfig && appConfig.dataRoot) ? appConfig.dataRoot : undefined,
-      UPLOADS_ROOT: (appConfig && appConfig.uploadsRoot) ? appConfig.uploadsRoot : undefined,
-      DB_WRITE_THROUGH: appConfig && appConfig.writeThrough ? '1' : undefined,
-      DB_ONEDRIVE_WRITE_THROUGH: appConfig && appConfig.writeThrough ? '1' : undefined,
-      ELECTRON_RUN_AS_NODE: '1'
-    };
+    const env = { ...process.env, USER_DATA: app.getPath('userData'), ELECTRON_RUN_AS_NODE: '1' };
+    if (appConfig && typeof appConfig.dataRoot === 'string' && appConfig.dataRoot.trim()) {
+      env.DATA_ROOT = appConfig.dataRoot.trim();
+    }
+    if (appConfig && typeof appConfig.uploadsRoot === 'string' && appConfig.uploadsRoot.trim()) {
+      env.UPLOADS_ROOT = appConfig.uploadsRoot.trim();
+    }
+    if (appConfig && appConfig.writeThrough) {
+      env.DB_WRITE_THROUGH = '1';
+      env.DB_ONEDRIVE_WRITE_THROUGH = '1';
+    }
     serverProcess = spawn(cmd, args, {
       cwd: serverDir,
       shell: false,

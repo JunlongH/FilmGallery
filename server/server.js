@@ -250,7 +250,10 @@ const seedLocations = async () => {
 			// Close DB and exit after sending response
 			setTimeout(() => {
 				console.log('[SERVER] Closing database connection...');
-				PreparedStmt.finalizeAll(); // Finalize prepared statements
+        // Ensure WAL is checkpointed (or no-op in write-through) before exit
+        PreparedStmt.finalizeAllWithCheckpoint().catch((err) => {
+          console.error('[SERVER] finalizeAllWithCheckpoint error:', err && err.message ? err.message : err);
+        });
 				if (db && typeof db.close === 'function') {
 					db.close((err) => {
 						if (err) console.error('[SERVER] Error closing DB:', err);

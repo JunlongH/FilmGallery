@@ -80,10 +80,22 @@ router.get('/database', (req, res) => {
     }
   }
   
-  res.json({
-    status,
-    warnings: warnings.length > 0 ? warnings : undefined,
-    ...health
+
+  // Query actual PRAGMA state from the live connection (best-effort)
+  db.get('PRAGMA journal_mode', (err1, row1) => {
+    db.get('PRAGMA synchronous', (err2, row2) => {
+      const pragma = {
+        journal_mode: row1 && (row1.journal_mode || row1['journal_mode']) ? (row1.journal_mode || row1['journal_mode']) : null,
+        synchronous: row2 && (row2.synchronous || row2['synchronous']) !== undefined ? (row2.synchronous || row2['synchronous']) : null,
+        error: (err1 || err2) ? `${(err1 && err1.message) || ''}${(err1 && err2) ? ' | ' : ''}${(err2 && err2.message) || ''}`.trim() : undefined
+      };
+      res.json({
+        status,
+        warnings: warnings.length > 0 ? warnings : undefined,
+        pragma,
+        ...health
+      });
+    });
   });
 });
 
