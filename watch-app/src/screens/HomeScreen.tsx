@@ -17,17 +17,19 @@ const { width, height } = Dimensions.get('window');
 
 const HomeScreen: React.FC = () => {
   const navigation = useNavigation<any>();
-  const [photo, setPhoto] = useState<Photo | null>(null);
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchRandomPhoto = async () => {
+  const fetchRandomPhotos = async () => {
     try {
       setLoading(true);
       setError(null);
-      const photos = await api.getRandomPhotos(1);
-      if (photos.length > 0) {
-        setPhoto(photos[0]);
+      const result = await api.getRandomPhotos(5);
+      if (result.length > 0) {
+        setPhotos(result);
+        setCurrentIndex(0);
       } else {
         setError('No photos available');
       }
@@ -40,26 +42,36 @@ const HomeScreen: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchRandomPhoto();
+    fetchRandomPhotos();
   }, []);
 
   const onGestureEvent = (event: any) => {
-    const { state, translationY } = event.nativeEvent;
-    
+    const { state, translationY, translationX } = event.nativeEvent;
+
     if (state === State.END) {
-      // Swipe down to refresh
-      if (translationY > 50) {
-        fetchRandomPhoto();
+      const isHorizontal = Math.abs(translationX) > Math.abs(translationY);
+
+      // Horizontal swipe: cycle photos left/right
+      if (isHorizontal && Math.abs(translationX) > 40 && photos.length > 0) {
+        setCurrentIndex((prev) => {
+          const next = translationX < 0 ? prev + 1 : prev - 1;
+          const total = photos.length;
+          return ((next % total) + total) % total; // wrap around
+        });
+        return;
       }
-      // Swipe up to open menu
-      else if (translationY < -50) {
+
+      // Vertical swipe: refresh or open menu
+      if (translationY > 50) {
+        fetchRandomPhotos();
+      } else if (translationY < -50) {
         navigation.navigate('MainMenu');
       }
     }
   };
 
-  const imageUrl = photo
-    ? api.getImageURL(photo.full_rel_path)
+  const imageUrl = photos.length > 0
+    ? api.getImageURL(photos[currentIndex]?.full_rel_path)
     : null;
 
   return (
@@ -74,7 +86,7 @@ const HomeScreen: React.FC = () => {
           {error && (
             <View style={styles.errorContainer}>
               <Text style={styles.errorText}>{error}</Text>
-              <TouchableOpacity onPress={fetchRandomPhoto} style={styles.retryButton}>
+              <TouchableOpacity onPress={fetchRandomPhotos} style={styles.retryButton}>
                 <Text style={styles.retryText}>Retry</Text>
               </TouchableOpacity>
             </View>
@@ -87,7 +99,7 @@ const HomeScreen: React.FC = () => {
             />
           )}
           <View style={styles.hint}>
-            <Text style={styles.hintText}>↓ Refresh  ↑ Menu</Text>
+            <Text style={styles.hintText}>←/→ Photo  ↓ Refresh  ↑ Menu</Text>
           </View>
         </View>
       </PanGestureHandler>
