@@ -17,7 +17,10 @@ import { api } from '../services/api';
 const ShotLogLocationScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { roll, count, shutterSpeed, aperture } = route.params;
+  const { roll, filmName, filmIso, count, shutterSpeed, aperture } = route.params;
+
+  const filmDisplayName = roll?.film_type || roll?.film_name || filmName || 'Unknown Film';
+  const isoDisplay = roll?.iso || filmIso;
 
   const [country, setCountry] = useState('');
   const [city, setCity] = useState('');
@@ -88,6 +91,10 @@ const ShotLogLocationScreen: React.FC = () => {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Location</Text>
+      
+      <Text style={[styles.filmInfo, { marginBottom: 24 }]}>
+        {filmDisplayName}{isoDisplay ? ` • ISO ${isoDisplay}` : ''}
+      </Text>
 
       <TouchableOpacity
         style={[styles.detectButton, detecting && styles.detectButtonDisabled]}
@@ -166,7 +173,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 24,
+    marginBottom: 8,
+  },
+  filmInfo: {
+    color: '#999',
+    fontSize: 14,
+    textAlign: 'center',
   },
   detectButton: {
     backgroundColor: '#2196F3',

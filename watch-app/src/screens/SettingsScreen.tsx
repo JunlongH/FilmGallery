@@ -73,7 +73,7 @@ const SettingsScreen: React.FC = () => {
           style={styles.input}
           value={serverURL}
           onChangeText={setServerURL}
-          placeholder="http://166.111.42.221:4000"
+          placeholder="http://xxx.xxx.xx.xxx:4000"
           placeholderTextColor="#666"
           keyboardType="url"
           autoCapitalize="none"

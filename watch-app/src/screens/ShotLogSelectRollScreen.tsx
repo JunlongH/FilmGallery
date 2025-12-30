@@ -9,11 +9,12 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
-import { FilmItem } from '../types';
+import { FilmItem, Film } from '../types';
 
 const ShotLogSelectRollScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const [rolls, setRolls] = useState<FilmItem[]>([]);
+  const [filmById, setFilmById] = useState<Map<number, Film>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,7 +27,14 @@ const ShotLogSelectRollScreen: React.FC = () => {
       setLoading(true);
       setError(null);
       // Only fetch 'loaded' items for shot logging
-      const data = await api.getFilmItems('loaded');
+      const [data, films] = await Promise.all([
+        api.getFilmItems('loaded'),
+        api.getFilms(),
+      ]);
+
+      const map = new Map<number, Film>();
+      films.forEach(f => map.set(f.id, f));
+      setFilmById(map);
       setRolls(data);
     } catch (err: any) {
       console.error('Failed to load rolls:', err);
@@ -37,20 +45,35 @@ const ShotLogSelectRollScreen: React.FC = () => {
   };
 
   const handleSelectRoll = (roll: FilmItem) => {
-    navigation.navigate('ShotLogParams', { roll });
+    const film = roll.film_id ? filmById.get(roll.film_id) : undefined;
+    const filmName = roll.film_type || roll.film_name || film?.name;
+    const filmIsoRaw = roll.iso || (film?.iso != null ? String(film.iso) : undefined);
+    navigation.navigate('ShotLogParams', { roll, filmName, filmIso: filmIsoRaw });
   };
 
-  const renderItem = ({ item }: { item: FilmItem }) => (
-    <TouchableOpacity
-      style={styles.rollItem}
-      onPress={() => handleSelectRoll(item)}
-    >
-      <Text style={styles.rollTitle}>{item.title}</Text>
-      <Text style={styles.rollSubtitle}>
-        {item.film_name || item.iso || 'Film'} • {item.loaded_camera || 'Camera'}
-      </Text>
-    </TouchableOpacity>
-  );
+  const renderItem = ({ item }: { item: FilmItem }) => {
+    // Prepare film type display
+    const film = item.film_id ? filmById.get(item.film_id) : undefined;
+    const filmType = item.film_type || item.film_name || film?.name || 'Unknown';
+    const cameraInfo = item.loaded_camera || 'Camera';
+    const isoValue = item.iso || (film?.iso != null ? String(film.iso) : undefined);
+    const isoInfo = isoValue ? ` ISO ${isoValue}` : '';
+    
+    return (
+      <TouchableOpacity
+        style={styles.rollItem}
+        onPress={() => handleSelectRoll(item)}
+      >
+        <Text style={styles.rollTitle}>#{item.id}</Text>
+        <Text style={styles.rollSubtitle}>
+          {filmType}{isoInfo}
+        </Text>
+        <Text style={styles.rollCamera}>
+          {cameraInfo}
+        </Text>
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (
@@ -113,6 +136,11 @@ const styles = StyleSheet.create({
   rollSubtitle: {
     color: '#999',
     fontSize: 12,
+    marginBottom: 2,
+  },
+  rollCamera: {
+    color: '#666',
+    fontSize: 11,
   },
   loadingContainer: {
     flex: 1,

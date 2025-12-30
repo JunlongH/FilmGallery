@@ -25,6 +25,15 @@ export interface FilmItem {
   // These are populated from the films table by the API
   iso?: string | null;
   film_name?: string | null;
+  film_type?: string | null;
+}
+
+export interface Film {
+  id: number;
+  name: string;
+  iso?: number | string | null;
+  category?: string | null;
+  thumbPath?: string | null;
 }
 
 export interface Roll {

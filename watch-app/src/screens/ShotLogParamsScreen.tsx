@@ -23,6 +23,8 @@ const ShotLogParamsScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const roll: FilmItem = route.params?.roll;
+  const filmNameParam: string | undefined = route.params?.filmName;
+  const filmIsoParam: string | undefined = route.params?.filmIso;
 
   const [count, setCount] = useState(1);
   const [shutterSpeed, setShutterSpeed] = useState('1/125');
@@ -40,19 +42,27 @@ const ShotLogParamsScreen: React.FC = () => {
   const handleNext = () => {
     navigation.navigate('ShotLogLocation', {
       roll,
+      filmName: filmNameParam,
+      filmIso: filmIsoParam,
       count,
       shutterSpeed,
       aperture,
     });
   };
 
+  const filmDisplayName = roll?.film_type || roll?.film_name || filmNameParam || 'Unknown Film';
+  const isoDisplay = roll?.iso || filmIsoParam;
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Shot Parameters</Text>
       
       <Text style={styles.rollInfo}>{roll?.title}</Text>
+      <Text style={[styles.rollInfo, { fontSize: 14, marginBottom: 4, fontWeight: '600' }]}>
+        {filmDisplayName}
+      </Text>
       <Text style={[styles.rollInfo, { fontSize: 12, marginBottom: 24 }]}>
-        {roll?.iso ? `ISO ${roll.iso}` : ''} {roll?.loaded_camera ? `• ${roll.loaded_camera}` : ''}
+        {isoDisplay ? `ISO ${isoDisplay}` : ''} {roll?.loaded_camera ? `• ${roll.loaded_camera}` : ''}
       </Text>
 
       {/* Shot Count */}

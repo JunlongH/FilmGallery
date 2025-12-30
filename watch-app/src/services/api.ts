@@ -1,13 +1,15 @@
 import axios, { AxiosInstance } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Photo, FilmItem, ShotLog, Roll } from '../types';
+import { Photo, FilmItem, ShotLog, Roll, Film } from '../types';
 
 const SERVER_URL_KEY = '@server_url';
-const DEFAULT_URL = 'http://166.111.42.221:4000';
+const DEFAULT_URL = 'http://xxx.xxx.xx.xxx:4000';
 
 class ApiService {
   private client: AxiosInstance;
   private baseURL: string = DEFAULT_URL;
+  private filmsCache: Film[] | null = null;
+  private filmsCacheAt: number = 0;
 
   private unwrapList<T>(data: any): T[] {
     if (Array.isArray(data)) return data as T[];
@@ -69,6 +71,20 @@ class ApiService {
       params: { limit },
     });
     return response.data;
+  }
+
+  async getFilms(options?: { force?: boolean }): Promise<Film[]> {
+    const force = Boolean(options?.force);
+    const now = Date.now();
+    // cache for 5 minutes
+    if (!force && this.filmsCache && now - this.filmsCacheAt < 5 * 60 * 1000) {
+      return this.filmsCache;
+    }
+    const response = await this.client.get('/api/films');
+    const films = this.unwrapList<Film>(response.data);
+    this.filmsCache = films;
+    this.filmsCacheAt = now;
+    return films;
   }
 
   async getFilmItems(status?: string | string[]): Promise<FilmItem[]> {
