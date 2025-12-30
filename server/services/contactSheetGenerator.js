@@ -43,8 +43,8 @@ const FILM_BASE = {
   rowGap: 8
 };
 
-// Helper to get scaled FILM dimensions based on actual frameWidth
-function getScaledFilm(frameWidth) {
+// Helper to get scaled FILM dimensions based on actual frameWidth and style
+function getScaledFilm(frameWidth, styleName = DEFAULT_STYLE) {
   const scale = frameWidth / BASE_FRAME_WIDTH;
   return {
     edgeMargin: Math.round(FILM_BASE.edgeMargin * scale),
@@ -53,7 +53,8 @@ function getScaledFilm(frameWidth) {
     sprocketWidth: Math.round(FILM_BASE.sprocketWidth * scale),
     sprocketsPerFrame: FILM_BASE.sprocketsPerFrame,
     frameGap: Math.round(FILM_BASE.frameGap * scale),
-    rowGap: Math.round(FILM_BASE.rowGap * scale),
+    // minimal模式下行间距更大，防止编号被遮挡
+    rowGap: styleName === 'minimal' ? Math.max(18, Math.round(FILM_BASE.rowGap * scale)) : Math.round(FILM_BASE.rowGap * scale),
     // Font sizes (scaled)
     filmNameFontSize: Math.round(9 * scale),
     frameNumFontSize: Math.round(8 * scale),
@@ -215,16 +216,16 @@ function generateFilmStripRowSVG({
   // Film stock name on the left, frame numbers+A near separators between photos
   const filmStock = rollInfo.film_name || 'KODAK';
   
-  // Film stock label on the far left
+  // Film stock label on the far left - using monospace for film strip look
   svg += `
     <text 
       x="${Math.round(FILM.frameGap * 2)}" 
       y="${topEdgeY + FILM.edgeTextHeight - Math.round(FILM.edgeTextHeight * 0.2)}" 
-      font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" 
-      font-weight="500"
-      font-size="${FILM.filmNameFontSize}" 
+      font-family="'Courier New', Courier, monospace" 
+      font-weight="bold"
+      font-size="${Math.round(FILM.filmNameFontSize * 0.9)}" 
       fill="${textColor}"
-      letter-spacing="0.3"
+      letter-spacing="1.2"
     >${filmStock}</text>
   `;
   
@@ -242,10 +243,11 @@ function generateFilmStripRowSVG({
           x="${separatorX - Math.round(FILM.frameGap * 4)}" 
           y="${topEdgeY + FILM.edgeTextHeight - Math.round(FILM.edgeTextHeight * 0.2)}" 
           text-anchor="end"
-          font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" 
-          font-weight="500"
-          font-size="${FILM.frameNumFontSize}" 
+          font-family="'Courier New', Courier, monospace" 
+          font-weight="bold"
+          font-size="${Math.round(FILM.frameNumFontSize * 1.1)}" 
           fill="${textColor}"
+          letter-spacing="0.8"
         >${frameNum}A</text>
       `;
       // Separator symbol
@@ -254,8 +256,9 @@ function generateFilmStripRowSVG({
           x="${separatorX}" 
           y="${topEdgeY + FILM.edgeTextHeight - Math.round(FILM.edgeTextHeight * 0.2)}" 
           text-anchor="middle"
-          font-family="Arial, sans-serif" 
-          font-size="${FILM.separatorFontSize}" 
+          font-family="'Courier New', Courier, monospace" 
+          font-weight="bold"
+          font-size="${Math.round(FILM.separatorFontSize * 1.2)}" 
           fill="${textColor}"
         >◄►</text>
       `;
@@ -266,10 +269,11 @@ function generateFilmStripRowSVG({
           x="${frameX + frameWidth - Math.round(FILM.frameGap * 2)}" 
           y="${topEdgeY + FILM.edgeTextHeight - Math.round(FILM.edgeTextHeight * 0.2)}" 
           text-anchor="end"
-          font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" 
-          font-weight="500"
-          font-size="${FILM.frameNumFontSize}" 
+          font-family="'Courier New', Courier, monospace" 
+          font-weight="bold"
+          font-size="${Math.round(FILM.frameNumFontSize * 1.1)}" 
           fill="${textColor}"
+          letter-spacing="0.8"
         >${frameNum}A</text>
       `;
     }
@@ -306,10 +310,11 @@ function generateFilmStripRowSVG({
         x="${centerX}" 
         y="${bottomEdgeY + FILM.edgeTextHeight - Math.round(FILM.edgeTextHeight * 0.15)}" 
         text-anchor="middle"
-        font-family="'Helvetica Neue', Helvetica, Arial, sans-serif" 
-        font-weight="500"
-        font-size="${FILM.frameNumFontSize}" 
+        font-family="'Courier New', Courier, monospace" 
+        font-weight="bold"
+        font-size="${Math.round(FILM.frameNumFontSize * 1.1)}" 
         fill="${textColor}"
+        letter-spacing="0.6"
       >${frameNum}</text>
     `;
   });
@@ -504,7 +509,7 @@ async function generateContactSheet({
   let frameHeight = Math.round(frameWidth / FRAME_ASPECT_RATIO);
   
   // Get scaled FILM dimensions based on actual frameWidth
-  const FILM = getScaledFilm(frameWidth);
+  const FILM = getScaledFilm(frameWidth, styleName);
   
   // Recalculate with scaled values
   const padding = FILM.edgeMargin;

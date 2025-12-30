@@ -99,7 +99,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
     const FILM = {
       edgeTextHeight: selectedStyle !== 'minimal' ? 14 : 0,
       sprocketHeight: selectedStyle !== 'minimal' ? 10 : 0,
-      rowGap: selectedStyle !== 'minimal' ? 8 : 0  // Gap between rows
+      rowGap: selectedStyle === 'minimal' ? 18 : 8  // minimal模式下行间距更大，防止编号被遮挡
     };
     
     // Row height: edge text + sprockets + photo + sprockets + edge text
@@ -146,12 +146,12 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           ctx.fillStyle = colors.text;
           
           // Film stock name on the left
-          ctx.font = "500 9px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+          ctx.font = "bold 8px 'Courier New', monospace";
           ctx.textAlign = 'left';
           ctx.fillText(filmName, padding + 4, rowY + FILM.edgeTextHeight - 3);
           
           // Frame numbers+A positioned at the edge/separator area (between photos)
-          ctx.font = "500 8px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+          ctx.font = "bold 8px 'Courier New', monospace";
           photosInRow.forEach((p, col) => {
             const num = p.frame_number || String(rowIdx * COLUMNS + col + 1).padStart(2, '0');
             const frameX = padding + col * (frameWidth + frameGap);
@@ -163,9 +163,9 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
               ctx.fillText(`${num}A`, separatorX - 8, rowY + FILM.edgeTextHeight - 3);
               // Separator symbol
               ctx.textAlign = 'center';
-              ctx.font = '7px Arial, sans-serif';
+              ctx.font = 'bold 7px Courier New, monospace';
               ctx.fillText('◄►', separatorX, rowY + FILM.edgeTextHeight - 3);
-              ctx.font = "500 8px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+              ctx.font = "bold 8px 'Courier New', monospace";
             } else {
               // Last photo: put frameNum+A at the right edge
               ctx.textAlign = 'right';
@@ -193,7 +193,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           // ===== BOTTOM EDGE TEXT (outside sprockets) =====
           // Frame numbers (without A) centered below each photo
           ctx.fillStyle = colors.text;
-          ctx.font = "500 8px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+          ctx.font = "bold 8px 'Courier New', monospace";
           ctx.textAlign = 'center';
           
           // DX barcode dimensions - sized to fit within frame
