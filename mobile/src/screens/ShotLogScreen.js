@@ -3,6 +3,7 @@ import { View, FlatList, StyleSheet } from 'react-native';
 import { ActivityIndicator, Button, HelperText, IconButton, Text, TextInput, useTheme, FAB } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import DatePickerField from '../components/DatePickerField';
+import DraggableFab from '../components/DraggableFab';
 import ShotModeModal from '../components/ShotModeModal';
 import { parseISODate, toISODateString } from '../utils/date';
 import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations, getFilms } from '../api/filmItems';
@@ -43,7 +44,7 @@ const dedupeAndSort = (list) => Array.from(new Set((list || []).filter(Boolean))
 
 export default function ShotLogScreen({ route, navigation }) {
   const theme = useTheme();
-  const { itemId, filmName } = route.params;
+  const { itemId, filmName, autoOpenShotMode } = route.params || {};
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -65,15 +66,26 @@ export default function ShotLogScreen({ route, navigation }) {
   const [showCityOptions, setShowCityOptions] = useState(false);
   const [showShotMode, setShowShotMode] = useState(false);
   const [filmIso, setFilmIso] = useState(400);
+  const [didAutoOpen, setDidAutoOpen] = useState(false);
 
   useEffect(() => {
     navigation.setOptions({ title: filmName ? `${filmName} Shot Log` : 'Shot Log' });
   }, [navigation, filmName]);
 
   useEffect(() => {
+    if (!loading && autoOpenShotMode && !didAutoOpen) {
+      setShowShotMode(true);
+      setDidAutoOpen(true);
+    }
+  }, [loading, autoOpenShotMode, didAutoOpen]);
+
+  useEffect(() => {
     let mounted = true;
     (async () => {
       try {
+        if (!itemId) {
+          throw new Error('Missing film item id');
+        }
         const data = await getFilmItem(itemId);
         if (!mounted) return;
         const base = data.item || data;
@@ -235,6 +247,14 @@ export default function ShotLogScreen({ route, navigation }) {
     return (
       <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
         <ActivityIndicator animating size="large" />
+      </View>
+    );
+  }
+
+  if (!itemId) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.colors.background }]}>
+        <Text style={{ color: theme.colors.error }}>Missing film item.</Text>
       </View>
     );
   }
@@ -481,12 +501,13 @@ export default function ShotLogScreen({ route, navigation }) {
         </Button>
       </View>
 
-      <FAB
-        icon="camera-iris"
-        style={styles.fab}
-        onPress={() => setShowShotMode(true)}
-        label="Shot Mode"
-      />
+      <DraggableFab initialRight={16} initialBottom={380}>
+        <FAB
+          icon="camera-iris"
+          onPress={() => setShowShotMode(true)}
+          label="Shot Mode"
+        />
+      </DraggableFab>
 
       <ShotModeModal
         visible={showShotMode}
@@ -499,12 +520,6 @@ export default function ShotLogScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 380, // Position above the footer form
-  },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   statCard: { flex: 1, padding: spacing.md, borderRadius: radius.md, elevation: 2 },
