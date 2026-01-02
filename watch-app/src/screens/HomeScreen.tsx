@@ -12,6 +12,7 @@ import { GestureHandlerRootView, PanGestureHandler, State } from 'react-native-g
 import { useNavigation } from '@react-navigation/native';
 import { api } from '../services/api';
 import { Photo } from '../types';
+import { imageCache } from '../utils/imageCache';
 
 const { width, height } = Dimensions.get('window');
 
@@ -21,6 +22,8 @@ const HomeScreen: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [imageState, setImageState] = useState<'thumb' | 'full'>('thumb');
+  const [fullImageLoaded, setFullImageLoaded] = useState(false);
 
   const fetchRandomPhotos = async () => {
     try {
@@ -30,6 +33,23 @@ const HomeScreen: React.FC = () => {
       if (result.length > 0) {
         setPhotos(result);
         setCurrentIndex(0);
+        setImageState('thumb');
+        setFullImageLoaded(false);
+        
+        // 预加载所有缩略图
+        const thumbUrls = result
+          .map(p => api.getImageURL(p.thumb_rel_path || p.full_rel_path))
+          .filter(url => url !== null) as string[];
+        await imageCache.preloadBatch(thumbUrls);
+        
+        // 预加载前3张原图（避免一次加载太多）
+        const fullUrls = result
+          .slice(0, 3)
+          .map(p => api.getImageURL(p.full_rel_path))
+          .filter(url => url !== null) as string[];
+        imageCache.preloadBatch(fullUrls).catch(err => 
+          console.warn('Background full image preload failed:', err)
+        );
       } else {
         setError('No photos available');
       }
@@ -44,6 +64,28 @@ const HomeScreen: React.FC = () => {
   useEffect(() => {
     fetchRandomPhotos();
   }, []);
+
+  // 当切换照片时，重置图片加载状态并预加载下一张
+  useEffect(() => {
+    if (photos.length === 0) return;
+
+    setImageState('thumb');
+    setFullImageLoaded(false);
+
+    // 预加载当前和下一张的原图
+    const currentPhoto = photos[currentIndex];
+    const nextIndex = (currentIndex + 1) % photos.length;
+    const nextPhoto = photos[nextIndex];
+
+    const urlsToPreload = [
+      api.getImageURL(currentPhoto?.full_rel_path),
+      api.getImageURL(nextPhoto?.full_rel_path),
+    ].filter(url => url !== null) as string[];
+
+    imageCache.preloadBatch(urlsToPreload).catch(err => 
+      console.warn('Failed to preload images:', err)
+    );
+  }, [currentIndex, photos]);
 
   const onGestureEvent = (event: any) => {
     const { state, translationY, translationX } = event.nativeEvent;
@@ -70,9 +112,17 @@ const HomeScreen: React.FC = () => {
     }
   };
 
-  const imageUrl = photos.length > 0
-    ? api.getImageURL(photos[currentIndex]?.full_rel_path)
+  // 获取当前照片的缩略图和原图URL
+  const currentPhoto = photos[currentIndex];
+  const thumbUrl = currentPhoto 
+    ? api.getImageURL(currentPhoto.thumb_rel_path || currentPhoto.full_rel_path)
     : null;
+  const fullUrl = currentPhoto
+    ? api.getImageURL(currentPhoto.full_rel_path)
+    : null;
+
+  // 根据当前状态决定显示哪张图
+  const displayUrl = imageState === 'full' && fullImageLoaded ? fullUrl : thumbUrl;
 
   return (
     <GestureHandlerRootView style={styles.container}>
@@ -91,12 +141,36 @@ const HomeScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           )}
-          {!loading && !error && imageUrl && (
-            <Image
-              source={{ uri: imageUrl }}
-              style={styles.image}
-              resizeMode="cover"
-            />
+          {!loading && !error && displayUrl && (
+            <>
+              {/* 显示缩略图或原图 */}
+              <Image
+                source={{ uri: displayUrl }}
+                style={styles.image}
+                resizeMode="cover"
+              />
+              {/* 在后台加载原图 */}
+              {fullUrl && fullUrl !== displayUrl && (
+                <Image
+                  source={{ uri: fullUrl }}
+                  style={styles.hiddenImage}
+                  resizeMode="cover"
+                  onLoad={() => {
+                    setFullImageLoaded(true);
+                    setImageState('full');
+                  }}
+                  onError={(error) => {
+                    console.warn('Failed to load full image:', error.nativeEvent.error);
+                  }}
+                />
+              )}
+              {/* 显示加载指示器当原图还在加载时 */}
+              {imageState === 'thumb' && !fullImageLoaded && (
+                <View style={styles.loadingOverlay}>
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              )}
+            </>
           )}
           <View style={styles.hint}>
             <Text style={styles.hintText}>←/→ Photo  ↓ Refresh  ↑ Menu</Text>
@@ -161,6 +235,20 @@ const styles = StyleSheet.create({
   hintText: {
     color: '#fff',
     fontSize: 12,
+  },
+  hiddenImage: {
+    width: 0,
+    height: 0,
+    position: 'absolute',
+    opacity: 0,
+  },
+  loadingOverlay: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    padding: 8,
+    borderRadius: 20,
   },
 });
 
