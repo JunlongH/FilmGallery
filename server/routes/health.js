@@ -4,8 +4,28 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { getDbPath } = require('../config/db-config');
+const { uploadsDir, rollsDir } = require('../config/paths');
 const PreparedStmt = require('../utils/prepared-statements');
 const db = require('../db');
+
+/**
+ * GET /api/health
+ * Returns current storage configuration (useful for Settings verification)
+ */
+router.get('/', (req, res) => {
+  const dbPath = getDbPath();
+  res.json({
+    ok: true,
+    storage: {
+      databasePath: dbPath,
+      uploadsDir: uploadsDir,
+      rollsDir: rollsDir,
+      dataRoot: process.env.DATA_ROOT || null,
+      uploadsRoot: process.env.UPLOADS_ROOT || null
+    },
+    timestamp: new Date().toISOString()
+  });
+});
 
 /**
  * GET /api/health/database

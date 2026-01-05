@@ -208,23 +208,43 @@ export default function NewRollForm({ onCreated }) {
         try {
           await updateRoll(res.roll.id, { locations: rollLocations.map(l => l.location_id), ...develop });
           
-          // If created from inventory item, update its status to developed
-          if (useInventory && filmItemId) {
-            await updateFilmItem(filmItemId, { status: 'developed' });
-          }
-
+          // Film item status is already updated by the server based on its current state:
+          // - If was 'sent_to_lab' -> becomes 'developed' (scans uploaded)
+          // - If was 'loaded' or 'shot' -> becomes 'shot' (just finished shooting)
+          // No need to manually update here as linkFilmItemToRoll handles it
+          
           showAlert('Success', 'Roll created and fields saved');
         } catch (err) {
           showAlert('Warning', 'Roll created but additional fields failed to save: ' + (err.message || err));
         }
         onCreated && onCreated(res.roll);
       } else {
-        showAlert('Error', 'Create roll failed: ' + (res && res.error));
+        // Enhanced error display with details
+        const errorMsg = res && res.error ? res.error : 'Unknown error';
+        const errorDetails = res && res.details ? JSON.stringify(res.details, null, 2) : '';
+        console.error('Roll creation failed:', { error: errorMsg, details: errorDetails, response: res });
+        showAlert('Error', 'Create roll failed: ' + errorMsg + (errorDetails ? '\n\nDetails: ' + errorDetails : ''));
       }
     } catch (err) {
       setUploadProgress(null);
-      console.error(err);
-      showAlert('Error', 'Upload error: ' + (err.message || err));
+      console.error('Upload error:', err);
+      console.error('Error stack:', err.stack);
+      
+      // Provide more user-friendly error messages
+      let errorMessage = err.message || String(err);
+      
+      // Check for common OneDrive/TIF upload issues
+      if (errorMessage.includes('timeout') || errorMessage.includes('timed out')) {
+        errorMessage = '上传超时。请检查：\n1. TIF文件是否过大（建议<100MB）\n2. OneDrive是否正在同步（可暂停同步后重试）\n3. 网络连接是否稳定';
+      } else if (errorMessage.includes('EBUSY') || errorMessage.includes('EPERM') || errorMessage.includes('locked')) {
+        errorMessage = '文件被占用，无法上传。可能原因：\n1. OneDrive正在同步该文件夹\n2. 其他程序正在访问文件\n\n建议：暂停OneDrive同步，稍后重试';
+      } else if (errorMessage.includes('Failed to process') || errorMessage.includes('Sharp')) {
+        errorMessage = '图片处理失败。可能原因：\n1. TIF文件损坏或格式不支持\n2. 文件过大导致内存不足\n\n建议：尝试较小的文件或转换为JPEG格式';
+      } else if (errorMessage.includes('OneDrive')) {
+        errorMessage = 'OneDrive同步冲突。建议：\n1. 暂停OneDrive同步\n2. 稍等片刻后重试\n3. 或将文件移动到非OneDrive目录';
+      }
+      
+      showAlert('上传错误', errorMessage);
     }
   }
 

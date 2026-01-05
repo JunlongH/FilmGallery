@@ -102,25 +102,28 @@ function probeBackend(url, timeout = 1200) {
   });
 }
 
-async function startServer() {
+async function startServer(forceRestart = false) {
   if (serverProcess) {
     LOG('startServer: server already running, skipping spawn');
     return;
   }
 
-  // [ZOMBIE KILLER]
-  // Since we hold the Single Instance Lock, ANY process on port 4000 is a zombie or conflict.
-  // We must kill it to ensure we can bind the port and control the DB.
   const apiProbeUrl = 'http://127.0.0.1:4000/api/rolls';
-  const alreadyUp = await probeBackend(apiProbeUrl, 500);
-  
-  if (alreadyUp) {
-    LOG('startServer: Port 4000 is in use. Attempting to kill zombie process...');
+  const backendUp = await probeBackend(apiProbeUrl, 500);
+
+  // If not forcing restart and backend is already up, skip spawn
+  if (!forceRestart && backendUp) {
+    LOG('startServer: Backend already responding on port 4000, skipping spawn');
+    return;
+  }
+
+  // If forceRestart or port is occupied (stale process), we need to kill whatever is on :4000
+  // This applies to BOTH dev and prod modes when forceRestart=true
+  if (backendUp || forceRestart) {
+    LOG('startServer: Need to take over port 4000, attempting to kill existing process...');
     try {
       if (process.platform === 'win32') {
-        // Find PID using netstat and kill it
         const { execSync } = require('child_process');
-        // This command finds the PID listening on port 4000
         const findCmd = 'netstat -ano | findstr :4000';
         try {
           const output = execSync(findCmd).toString();
@@ -129,18 +132,17 @@ async function startServer() {
             const parts = lines[0].trim().split(/\s+/);
             const pid = parts[parts.length - 1];
             if (pid && parseInt(pid) > 0) {
-              LOG(`startServer: Found zombie PID ${pid}. Killing...`);
+              LOG(`startServer: Found PID ${pid} on :4000. Killing...`);
               execSync(`taskkill /F /PID ${pid}`);
-              // Wait a moment for OS to release port
-              await new Promise(r => setTimeout(r, 1000));
+              await new Promise(r => setTimeout(r, 1500)); // wait for port release
             }
           }
         } catch (e) {
-          LOG('startServer: Failed to find/kill zombie via netstat:', e.message);
+          LOG('startServer: Failed to find/kill via netstat:', e.message);
         }
       }
     } catch (e) {
-      LOG('startServer: Error during zombie cleanup:', e.message);
+      LOG('startServer: Error during port cleanup:', e.message);
     }
   }
 
@@ -165,14 +167,17 @@ async function startServer() {
     const env = { ...process.env, USER_DATA: app.getPath('userData'), ELECTRON_RUN_AS_NODE: '1' };
     if (appConfig && typeof appConfig.dataRoot === 'string' && appConfig.dataRoot.trim()) {
       env.DATA_ROOT = appConfig.dataRoot.trim();
+      LOG('startServer: DATA_ROOT set to', env.DATA_ROOT);
     }
     if (appConfig && typeof appConfig.uploadsRoot === 'string' && appConfig.uploadsRoot.trim()) {
       env.UPLOADS_ROOT = appConfig.uploadsRoot.trim();
+      LOG('startServer: UPLOADS_ROOT set to', env.UPLOADS_ROOT);
     }
     if (appConfig && appConfig.writeThrough) {
       env.DB_WRITE_THROUGH = '1';
       env.DB_ONEDRIVE_WRITE_THROUGH = '1';
     }
+    LOG('startServer: spawning with env DATA_ROOT=', env.DATA_ROOT, 'UPLOADS_ROOT=', env.UPLOADS_ROOT);
     serverProcess = spawn(cmd, args, {
       cwd: serverDir,
       shell: false,
@@ -201,54 +206,78 @@ async function startServer() {
 
 
 function stopServer() {
-  return new Promise((resolve) => {
-    if (!serverProcess || serverProcess.killed) {
-      return resolve();
-    }
+  return new Promise(async (resolve) => {
+    LOG('[stopServer] Starting shutdown...');
     
-    LOG('[stopServer] Requesting graceful shutdown...');
-    
-    // Try graceful shutdown via HTTP endpoint
-    const req = http.request({
-      hostname: '127.0.0.1',
-      port: 4000,
-      path: '/api/shutdown',
-      method: 'POST',
-      timeout: 2000
-    }, (res) => {
-      LOG('[stopServer] Shutdown endpoint responded:', res.statusCode);
-      res.resume(); // consume response
+    // If we have a managed serverProcess, try graceful shutdown first
+    if (serverProcess && !serverProcess.killed) {
+      LOG('[stopServer] Stopping managed serverProcess...');
       
-      // Wait for process to exit naturally
-      const gracefulTimeout = setTimeout(() => {
-        LOG('[stopServer] Graceful timeout, force killing...');
+      // Try graceful shutdown via HTTP endpoint
+      const req = http.request({
+        hostname: '127.0.0.1',
+        port: 4000,
+        path: '/api/shutdown',
+        method: 'POST',
+        timeout: 2000
+      }, (res) => {
+        LOG('[stopServer] Shutdown endpoint responded:', res.statusCode);
+        res.resume();
+        
+        const gracefulTimeout = setTimeout(() => {
+          LOG('[stopServer] Graceful timeout, force killing...');
+          if (serverProcess && !serverProcess.killed) {
+            try { serverProcess.kill('SIGKILL'); } catch (e) {}
+          }
+          serverProcess = null;
+          resolve();
+        }, 3000);
+        
+        if (serverProcess) {
+          serverProcess.once('exit', () => {
+            clearTimeout(gracefulTimeout);
+            LOG('[stopServer] Server process exited gracefully');
+            serverProcess = null;
+            resolve();
+          });
+        }
+      });
+      
+      req.on('error', (e) => {
+        LOG('[stopServer] Shutdown endpoint error:', e.message, '- force killing');
         if (serverProcess && !serverProcess.killed) {
           try { serverProcess.kill('SIGKILL'); } catch (e) {}
         }
         serverProcess = null;
         resolve();
-      }, 3000);
+      });
       
-      if (serverProcess) {
-        serverProcess.once('exit', () => {
-          clearTimeout(gracefulTimeout);
-          LOG('[stopServer] Server process exited gracefully');
-          serverProcess = null;
-          resolve();
-        });
+      req.end();
+    } else {
+      // No managed process, but there might be an external server on :4000
+      // (e.g., started via npm run dev:server manually)
+      LOG('[stopServer] No managed serverProcess, checking for external process on :4000...');
+      
+      if (process.platform === 'win32') {
+        try {
+          const { execSync } = require('child_process');
+          const findCmd = 'netstat -ano | findstr :4000';
+          const output = execSync(findCmd).toString();
+          const lines = output.split('\n').filter(l => l.includes('LISTENING'));
+          if (lines.length > 0) {
+            const parts = lines[0].trim().split(/\s+/);
+            const pid = parts[parts.length - 1];
+            if (pid && parseInt(pid) > 0) {
+              LOG(`[stopServer] Found external PID ${pid} on :4000. Killing...`);
+              execSync(`taskkill /F /PID ${pid}`);
+            }
+          }
+        } catch (e) {
+          LOG('[stopServer] No process found on :4000 or failed to kill:', e.message);
+        }
       }
-    });
-    
-    req.on('error', (e) => {
-      LOG('[stopServer] Shutdown endpoint error:', e.message, '- force killing');
-      if (serverProcess && !serverProcess.killed) {
-        try { serverProcess.kill('SIGKILL'); } catch (e) {}
-      }
-      serverProcess = null;
       resolve();
-    });
-    
-    req.end();
+    }
   });
 }
 
@@ -768,6 +797,7 @@ function loadConfig() {
 }
 function saveConfig(next) {
   appConfig = { ...(appConfig||{}), ...(next||{}) };
+  LOG('saveConfig: updated appConfig=', JSON.stringify(appConfig));
   try { fs.writeFileSync(CONFIG_PATH(), JSON.stringify(appConfig, null, 2)); } catch(e) { LOG('saveConfig error', e && e.message); }
 }
 
@@ -783,7 +813,8 @@ ipcMain.handle('config-set-uploads-root', async (e, dir) => {
   saveConfig({ uploadsRoot: dir });
   // restart backend server with new env so static mounts change
   await stopServer();
-  startServer();
+  await new Promise(r => setTimeout(r, 1000)); // wait for port release
+  await startServer(true); // force restart to apply new config
   return { ok:true, config: appConfig };
 });
 
@@ -797,7 +828,8 @@ ipcMain.handle('config-set-data-root', async (e, dir) => {
   saveConfig({ dataRoot: dir });
   // restart backend server with new env
   await stopServer();
-  startServer();
+  await new Promise(r => setTimeout(r, 1000)); // wait for port release
+  await startServer(true); // force restart to apply new config
   return { ok:true, config: appConfig };
 });
 
@@ -805,7 +837,8 @@ ipcMain.handle('config-set-write-through', async (e, flag) => {
   const enabled = !!flag;
   saveConfig({ writeThrough: enabled });
   await stopServer();
-  startServer();
+  await new Promise(r => setTimeout(r, 1000)); // wait for port release
+  await startServer(true); // force restart to apply new config
   return { ok:true, config: appConfig };
 });
 

@@ -197,8 +197,16 @@ async function linkFilmItemToRoll({ filmItemId, rollId, loadedCamera, targetStat
   if (item.roll_id && item.roll_id !== rollId) {
     throw new Error('Film item already linked to another roll');
   }
-  if (item.status !== 'in_stock' && item.status !== 'loaded') {
-    throw new Error(`Film item status must be in_stock or loaded to link, got ${item.status}`);
+  
+  // Allow linking from these valid states:
+  // - in_stock: unused roll, first time linking
+  // - loaded: roll loaded in camera, linking when creating roll
+  // - shot: roll shot but not yet sent to lab, now uploading scans
+  // - sent_to_lab: roll at lab, now received and uploading scans
+  // DO NOT allow: developed (already linked), archived (completed)
+  const validSourceStatuses = ['in_stock', 'loaded', 'shot', 'sent_to_lab'];
+  if (!validSourceStatuses.includes(item.status)) {
+    throw new Error(`Film item status must be one of [${validSourceStatuses.join(', ')}] to link, got ${item.status}`);
   }
 
   const now = new Date().toISOString();
@@ -207,14 +215,16 @@ async function linkFilmItemToRoll({ filmItemId, rollId, loadedCamera, targetStat
     roll_id: rollId,
   };
 
+  // Only set loaded_camera and loaded_at if not already set
   if (loadedCamera && !item.loaded_camera) {
     patch.loaded_camera = loadedCamera;
     patch.loaded_at = now;
   }
 
-  if (targetStatus === 'shot') patch.shot_at = now;
-  if (targetStatus === 'sent_to_lab') patch.sent_to_lab_at = now;
-  if (targetStatus === 'developed') patch.developed_at = now;
+  // Only set timestamp if transitioning TO that status (don't overwrite existing timestamps)
+  if (targetStatus === 'shot' && !item.shot_at) patch.shot_at = now;
+  if (targetStatus === 'sent_to_lab' && !item.sent_to_lab_at) patch.sent_to_lab_at = now;
+  if (targetStatus === 'developed' && !item.developed_at) patch.developed_at = now;
 
   await updateFilmItem(filmItemId, patch);
 

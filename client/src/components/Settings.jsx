@@ -4,6 +4,10 @@ export default function Settings() {
   const [config, setConfig] = useState({});
   const [saving, setSaving] = useState(false);
   const [savingWriteThrough, setSavingWriteThrough] = useState(false);
+  const [actualPaths, setActualPaths] = useState(null);
+
+  const isElectron = !!window.__electron;
+  const canPickDirs = !!window.__electron?.pickDataRoot && !!window.__electron?.setDataRoot;
 
   useEffect(() => {
     let mounted = true;
@@ -11,6 +15,12 @@ export default function Settings() {
       try {
         const cfg = await (window.__electron?.getConfig?.() || {});
         if (mounted) setConfig(cfg || {});
+        // Fetch actual backend paths for verification
+        const res = await fetch('http://127.0.0.1:4000/api/health');
+        if (res.ok) {
+          const data = await res.json();
+          if (mounted && data.storage) setActualPaths(data.storage);
+        }
       } catch {}
     })();
     return () => { mounted = false; };
@@ -18,6 +28,7 @@ export default function Settings() {
 
   async function chooseUploadsRoot() {
     try {
+      if (!canPickDirs) return;
       const dir = await window.__electron?.pickUploadsRoot?.();
       if (!dir) return;
       setSaving(true);
@@ -36,12 +47,21 @@ export default function Settings() {
 
   async function chooseDataRoot() {
     try {
+      if (!canPickDirs) return;
       const dir = await window.__electron?.pickDataRoot?.();
       if (!dir) return;
       setSaving(true);
       const res = await window.__electron?.setDataRoot?.(dir);
       if (res && res.ok) {
         setConfig(res.config || {});
+        // Refresh actual paths after change
+        try {
+          const healthRes = await fetch('http://127.0.0.1:4000/api/health');
+          if (healthRes.ok) {
+            const data = await healthRes.json();
+            if (data.storage) setActualPaths(data.storage);
+          }
+        } catch {}
         alert('Data location updated. The server has been restarted.');
       } else {
         alert('Failed to save.');
@@ -74,6 +94,13 @@ export default function Settings() {
   return (
     <div>
       <h2>Settings</h2>
+
+      {!isElectron && (
+        <div className="card" style={{ padding: 16, marginBottom: 16, color: '#555' }}>
+          Storage path settings are only available in the Electron desktop app.
+        </div>
+      )}
+
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <h3>Data Location (Database & Uploads)</h3>
         <p style={{ color: '#555' }}>Choose where the database (film.db) and uploads are stored. Useful for OneDrive/Dropbox syncing.</p>
@@ -81,10 +108,19 @@ export default function Settings() {
           <code style={{ background: '#f2efe8', padding: '6px 8px', borderRadius: 4 }}>
             {config.dataRoot || '(default) %APPDATA%/FilmGallery'}
           </code>
-          <button disabled={saving} onClick={chooseDataRoot}>
+          <button disabled={saving || !canPickDirs} onClick={chooseDataRoot}>
             {saving ? 'Saving…' : 'Change...'}
           </button>
         </div>
+        {actualPaths && (
+          <div style={{ marginTop: 12, padding: 8, background: '#f9f9f9', borderRadius: 4, fontSize: 13 }}>
+            <strong>Backend is currently using:</strong>
+            <div style={{ marginTop: 4, color: '#555' }}>
+              <div><strong>Database:</strong> {actualPaths.databasePath}</div>
+              <div><strong>Uploads:</strong> {actualPaths.uploadsDir}</div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
@@ -113,7 +149,7 @@ export default function Settings() {
           <code style={{ background: '#f2efe8', padding: '6px 8px', borderRadius: 4 }}>
             {config.uploadsRoot || '(default)'}
           </code>
-          <button disabled={saving} onClick={chooseUploadsRoot}>
+          <button disabled={saving || !canPickDirs} onClick={chooseUploadsRoot}>
             {saving ? 'Saving…' : 'Change...'}
           </button>
         </div>

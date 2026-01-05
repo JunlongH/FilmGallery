@@ -1,7 +1,7 @@
 const multer = require('multer');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-const { uploadsDir, tmpUploadDir, filmDir } = require('./paths');
+const { uploadsDir, localTmpDir, filmDir } = require('./paths');
 
 const storageDefault = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
@@ -13,7 +13,8 @@ const storageDefault = multer.diskStorage({
 const uploadDefault = multer({ storage: storageDefault });
 
 const storageTmp = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, tmpUploadDir),
+  // IMPORTANT: keep temp uploads in local OS temp, not in cloud-synced storage.
+  destination: (req, file, cb) => cb(null, localTmpDir),
   filename: (req, file, cb) => {
     const unique = `${Date.now()}-${uuidv4()}${path.extname(file.originalname) || ''}`;
     cb(null, unique);

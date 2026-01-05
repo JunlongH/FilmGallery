@@ -10,10 +10,23 @@ const sharp = require('sharp');
 sharp.cache(false);
 // Limit concurrency to 1 to prevent memory spikes/crashes with large TIFFs
 sharp.concurrency(1);
+// Increase timeout for large TIF files (30 seconds)
+// This is especially important for TIF files in OneDrive which may be slow to read
+const SHARP_TIMEOUT = 30000;
+
+// Helper: Run sharp operation with timeout protection
+const sharpWithTimeout = (sharpOp, timeoutMs = SHARP_TIMEOUT) => {
+  return Promise.race([
+    sharpOp,
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Sharp operation timed out')), timeoutMs)
+    )
+  ]);
+};
 
 const { uploadTmp, uploadDefault } = require('../config/multer');
-const { uploadsDir, tmpUploadDir, rollsDir } = require('../config/paths');
-const { moveFileSync, moveFileAsync } = require('../utils/file-helpers');
+const { uploadsDir, tmpUploadDir, localTmpDir, rollsDir } = require('../config/paths');
+const { moveFileSync, moveFileAsync, copyFileAsyncWithRetry } = require('../utils/file-helpers');
 const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
 const { attachTagsToPhotos } = require('../services/tag-service');
 const { linkFilmItemToRoll } = require('../services/film/film-item-service');
@@ -84,95 +97,113 @@ router.post('/', (req, res) => {
       }
 
       const sql = `INSERT INTO rolls (title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id) VALUES (?,?,?,?,?,?,?,?,?,?)`;
-      await new Promise((resolve, reject) => {
-        db.run(sql, [title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id], function(err) {
-          if (err) reject(err);
-          else {
-            this.lastID; // access this context
-            resolve(this.lastID);
-          }
-        });
-      }).then(async (rollId) => {
-        // If a film_item_id is provided, link it to this roll and
-        // synchronize purchase/develop metadata.
-        if (film_item_id) {
+
+      // ==============================
+      // ATOMIC CREATE (DB + FILES)
+      // ==============================
+      let rollId = null;
+      let folderName = null;
+      let rollFolderPath = null;
+      const createdPaths = []; // absolute paths created under uploads/rolls
+
+      const rmWithRetry = async (absPath, retries = 3) => {
+        for (let i = 0; i < retries; i++) {
           try {
-            await linkFilmItemToRoll({
-              filmItemId: film_item_id,
-              rollId,
-              loadedCamera: camera,
-              targetStatus: 'shot',
-            });
-          } catch (linkErr) {
-            console.error('[CREATE ROLL] Failed to link film_item to roll', linkErr.message || linkErr);
+            await fs.promises.rm(absPath, { recursive: true, force: true });
+            return;
+          } catch (e) {
+            if (i === retries - 1) return;
+            await new Promise(r => setTimeout(r, 300 * (i + 1)));
           }
         }
-        const folderName = String(rollId); // numeric folder naming scheme
-        const rollFolderPath = path.join(rollsDir, folderName);
-        fs.mkdirSync(rollFolderPath, { recursive: true });
-        db.run('UPDATE rolls SET folderName = ? WHERE id = ?', [folderName, rollId]);
+      };
 
-        const fullDir = path.join(rollFolderPath, 'full');
-        const thumbDir = path.join(rollFolderPath, 'thumb');
-        const originalsDir = path.join(rollFolderPath, 'originals');
-        // Ensure subdirectories exist before writing files / thumbnails
-        try {
-          if (!fs.existsSync(fullDir)) fs.mkdirSync(fullDir, { recursive: true });
-          if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
-          if (!fs.existsSync(originalsDir)) fs.mkdirSync(originalsDir, { recursive: true });
-        } catch (mkErr) {
-          console.error('Failed to create roll subdirectories', mkErr);
-        }
-
+      let stmtToFinalize = null;
+      try {
         // Collect incoming files from Multer and any tmpFiles provided
         const incoming = [];
         const reqFilesCount = (req.files && req.files.length) ? req.files.length : 0;
         const tmpFilesCount = (tmpFiles && Array.isArray(tmpFiles)) ? tmpFiles.length : 0;
         console.log(`[CREATE ROLL] Received files: req.files=${reqFilesCount}, tmpFiles=${tmpFilesCount}`);
-        if (req.files && req.files.length) incoming.push(...req.files.map(f => ({ tmpPath: f.path, originalName: f.originalname, tmpName: f.filename, isNegative: isNegativeGlobal })));
+
+        if (req.files && req.files.length) {
+          incoming.push(...req.files.map(f => ({ tmpPath: f.path, originalName: f.originalname, tmpName: f.filename, isNegative: isNegativeGlobal })));
+        }
+
+        // IMPORTANT: tmpFiles are also stored in localTmpDir now (NOT uploads/tmp)
         if (tmpFiles && Array.isArray(tmpFiles)) {
           for (const t of tmpFiles) {
             const tmpName = t.tmpName || t.filename;
-            const tmpPath = path.join(tmpUploadDir, tmpName);
+            const tmpPath = path.join(localTmpDir, tmpName);
             if (!tmpName || !fs.existsSync(tmpPath)) continue;
             incoming.push({ tmpPath, originalName: tmpName, tmpName, isNegative: t.isNegative !== undefined ? t.isNegative : isNegativeGlobal });
           }
         }
-        // Early validation: must have at least one file
+
         if (!incoming.length) {
           console.error('[CREATE ROLL] No files in request. Aborting create roll.');
           return res.status(400).json({ ok: false, error: 'No files uploaded. Please select at least one image.' });
         }
 
-        // Group files by base name to handle pairs (negative + thumb)
+        // Group files by base name to handle pairs (main + thumb)
         const groups = new Map();
         for (const f of incoming) {
           const originalName = f.originalName || f.tmpName;
           const parsed = path.parse(originalName);
           let base = parsed.name;
           let type = 'main';
-          
-          // Check for thumb suffix
+
           if (base.toLowerCase().endsWith('_thumb') || base.toLowerCase().endsWith('-thumb')) {
             base = base.replace(/[-_]thumb$/i, '');
             type = 'thumb';
           }
-          
+
           if (!groups.has(base)) groups.set(base, { main: null, thumb: null });
           groups.get(base)[type] = f;
         }
 
-        // Wait a moment for file system to settle (OneDrive sync)
-        await new Promise(r => setTimeout(r, 1000));
-        console.log(`[CREATE ROLL] Incoming=${incoming.length}, Grouped=${groups.size}`);
-
-        // Sort groups by filename to ensure order
         const sortedGroups = Array.from(groups.values()).sort((a, b) => {
-            const nameA = (a.main || a.thumb).originalName;
-            const nameB = (b.main || b.thumb).originalName;
-            return nameA.localeCompare(nameB);
+          const nameA = (a.main || a.thumb).originalName;
+          const nameB = (b.main || b.thumb).originalName;
+          return nameA.localeCompare(nameB);
         });
-        console.log(`[CREATE ROLL] Sorted groups count=${sortedGroups.length}`);
+
+        // Begin transaction AFTER validation so we can fully rollback.
+        await runAsync('BEGIN');
+        const rollInsertRes = await runAsync(sql, [title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id]);
+        rollId = rollInsertRes?.lastID;
+        if (!rollId) throw new Error('Failed to create roll');
+
+        // If a film_item_id is provided, link it to this roll.
+        if (film_item_id) {
+          // Determine target status based on current film item state
+          // If already sent_to_lab, move to developed (scans uploaded)
+          // Otherwise move to shot (just finished shooting)
+          let targetStatus = 'shot';
+          try {
+            const filmItem = await getAsync('SELECT status FROM film_items WHERE id = ?', [film_item_id]);
+            if (filmItem && filmItem.status === 'sent_to_lab') {
+              targetStatus = 'developed';
+            }
+          } catch (e) {
+            console.warn('[CREATE ROLL] Failed to check film item status, defaulting to shot:', e.message);
+          }
+          
+          await linkFilmItemToRoll({
+            filmItemId: film_item_id,
+            rollId,
+            loadedCamera: camera,
+            targetStatus,
+          });
+        }
+
+        folderName = String(rollId);
+        rollFolderPath = path.join(rollsDir, folderName);
+        await runAsync('UPDATE rolls SET folderName = ? WHERE id = ?', [folderName, rollId]);
+
+        const fullDir = path.join(rollFolderPath, 'full');
+        const thumbDir = path.join(rollFolderPath, 'thumb');
+        const originalsDir = path.join(rollFolderPath, 'originals');
 
         const inserted = [];
         let frameCounter = 0;
@@ -231,7 +262,9 @@ router.post('/', (req, res) => {
         };
 
         // Prepare statement for insertion (includes date_taken/time_taken + camera/lens/photographer + location)
-        const stmt = db.prepare(`INSERT INTO photos (
+        // NOTE: must be finalized even if we rollback.
+        let stmt = null;
+        stmt = db.prepare(`INSERT INTO photos (
           roll_id, frame_number, filename,
           full_rel_path, thumb_rel_path, negative_rel_path,
           original_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
@@ -239,6 +272,7 @@ router.post('/', (req, res) => {
           location_id, detail_location,
           camera, lens, photographer, aperture, shutter_speed, iso
         ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+        stmtToFinalize = stmt;
         
         const runInsert = (params) => new Promise((resolve, reject) => {
             stmt.run(params, function(err) {
@@ -247,9 +281,26 @@ router.post('/', (req, res) => {
             });
         });
 
+        // ============================================================
+        // ATOMIC WORKFLOW:
+        // 1) Process ALL images in localTmpDir (OS temp)
+        // 2) If (and only if) all succeed, move/copy to final uploads/rolls
+        // 3) Insert DB rows
+        // Any error -> ROLLBACK + cleanup roll folder
+        // ============================================================
+
+        // Stage operations first (no writes to OneDrive/rolls until all processing succeeded)
+        const stagedOps = []; // { type: 'move'|'copy', src, dest }
+        const stagedTempArtifacts = []; // temp files to delete after successful publish
+        const stagedPhotos = []; // metadata for DB insert
+
         for (const group of sortedGroups) {
           const f = group.main || group.thumb;
           if (!f) continue;
+
+          // If the group only has a thumb file (no main), treat it as the main.
+          // Only use a separate thumb file when it is actually distinct.
+          const thumbFile = group.thumb && group.thumb !== f ? group.thumb : null;
 
           frameCounter += 1;
           const frameNumber = String(frameCounter).padStart(2, '0');
@@ -269,170 +320,238 @@ router.post('/', (req, res) => {
 
           const isNegative = f.isNegative;
 
-          // Save original scan file regardless of source type
-          try {
-            const originalName = `${baseName}_original${originalExt}`;
-            const originalPath = path.join(originalsDir, originalName);
-            await moveFileAsync(f.tmpPath, originalPath);
-            originalRelPath = path.join('rolls', folderName, 'originals', originalName).replace(/\\/g, '/');
-          } catch (origErr) {
-            console.error('Failed saving original scan file', origErr);
-            // If we can't save original, we can't proceed with generation usually, but let's try to use tmpPath if original failed?
-            // But moveFileSync might have partially moved it.
-            // Let's continue and hope sharp fails gracefully if file missing.
-          }
+          // Prepare final destination paths
+          const originalName = `${baseName}_original${originalExt}`;
+          const finalOriginalPath = path.join(originalsDir, originalName);
+          originalRelPath = path.join('rolls', folderName, 'originals', originalName).replace(/\\/g, '/');
 
+          // Process into LOCAL temp dir
           if (isNegative) {
-            console.log(`[CREATE ROLL] Processing negative for ${f.originalName}`);
             const negName = `${baseName}_neg.jpg`;
-            const negDir = path.join(rollFolderPath, 'negative');
-            const negThumbDir = path.join(rollFolderPath, 'negative', 'thumb');
-            if (!fs.existsSync(negDir)) fs.mkdirSync(negDir, { recursive: true });
-            if (!fs.existsSync(negThumbDir)) fs.mkdirSync(negThumbDir, { recursive: true });
+            const negThumbName = `${baseName}-thumb.jpg`;
 
-            const negPath = path.join(negDir, negName);
+            const finalNegPath = path.join(rollFolderPath, 'negative', negName);
+            const finalNegThumbPath = path.join(rollFolderPath, 'negative', 'thumb', negThumbName);
+            const finalMainThumbPath = path.join(thumbDir, negThumbName);
+
+            const tempNegPath = path.join(localTmpDir, `proc_${baseName}_neg.jpg`);
+            stagedTempArtifacts.push(tempNegPath);
             
             try {
-              // Create high-quality negative JPG from original
-              const sourceForSharp = originalRelPath ? path.join(rollsDir, folderName, 'originals', `${baseName}_original${originalExt}`) : f.tmpPath;
-              
-              if (!fs.existsSync(sourceForSharp)) {
-                 console.error(`[CREATE ROLL] Source file not found: ${sourceForSharp}`);
-                 // Continue to insert DB record even if image gen failed, so we don't lose the upload record
-              } else {
-                  await sharp(sourceForSharp)
-                    .jpeg({ quality: 95 })
-                    .toFile(negPath);
-                  negativeRelPath = path.join('rolls', folderName, 'negative', negName).replace(/\\/g, '/');
-
-                  // Handle Negative Thumbnail
-                  const negThumbName = `${baseName}-thumb.jpg`;
-                  const negThumbPath = path.join(negThumbDir, negThumbName);
-                  
-                  if (group.thumb) {
-                    // Use uploaded thumb file as negative thumb
-                    await moveFileAsync(group.thumb.tmpPath, negThumbPath);
-                  } else {
-                    // Generate thumb
-                    await sharp(negPath)
-                      .resize({ width: 240, height: 240, fit: 'inside' })
-                      .jpeg({ quality: 40 })
-                      .toFile(negThumbPath)
-                      .catch(thErr => console.error('Negative Thumbnail generation failed', thErr.message));
-                  }
-
-                  // Copy negative thumb to main thumb dir (for grid view)
-                  const mainThumbName = `${baseName}-thumb.jpg`;
-                  const mainThumbPath = path.join(thumbDir, mainThumbName);
-                  if (fs.existsSync(negThumbPath)) {
-                    fs.copyFileSync(negThumbPath, mainThumbPath);
-                    thumbRelPath = path.join('rolls', folderName, 'thumb', mainThumbName).replace(/\\/g, '/');
-                    negativeThumbRelPath = path.join('rolls', folderName, 'negative', 'thumb', negThumbName).replace(/\\/g, '/');
-                  }
-              }
-
-              // Do NOT generate positive
-              fullRelPath = null;
-              positiveRelPath = null;
-              positiveThumbRelPath = null;
-              isNegativeSource = 1;
-
-            } catch (mvErr) {
-              console.error('Failed processing negative file', mvErr);
-              // Continue to insert DB record
+              console.log(`[CREATE ROLL] Processing negative ${frameNumber}: ${path.basename(f.tmpPath)} (${(fs.statSync(f.tmpPath).size / 1024 / 1024).toFixed(2)} MB)`);
+              const startTime = Date.now();
+              await sharpWithTimeout(
+                sharp(f.tmpPath).jpeg({ quality: 95 }).toFile(tempNegPath)
+              );
+              const duration = Date.now() - startTime;
+              console.log(`[CREATE ROLL] Negative ${frameNumber} processed in ${duration}ms`);
+            } catch (sharpErr) {
+              console.error(`[CREATE ROLL] Sharp processing failed for negative ${frameNumber}:`, sharpErr);
+              const err = new Error(`Failed to process negative image ${path.basename(f.tmpPath)}: ${sharpErr.message}`);
+              err.originalError = sharpErr;
+              err.fileInfo = { name: path.basename(f.tmpPath), size: fs.statSync(f.tmpPath).size };
+              throw err;
             }
+
+            let tempNegThumbPath = null;
+            if (!thumbFile) {
+              tempNegThumbPath = path.join(localTmpDir, `proc_${baseName}_neg_thumb.jpg`);
+              stagedTempArtifacts.push(tempNegThumbPath);
+              try {
+                await sharpWithTimeout(
+                  sharp(tempNegPath)
+                    .resize({ width: 240, height: 240, fit: 'inside' })
+                    .jpeg({ quality: 40 })
+                    .toFile(tempNegThumbPath),
+                  10000 // Thumbnail should be fast, 10s timeout
+                );
+              } catch (thumbErr) {
+                console.error(`[CREATE ROLL] Thumbnail generation failed for negative ${frameNumber}:`, thumbErr);
+                const err = new Error(`Failed to generate thumbnail for ${path.basename(f.tmpPath)}: ${thumbErr.message}`);
+                err.originalError = thumbErr;
+                throw err;
+              }
+            }
+
+            // Stage publish ops (do not touch rollsDir yet)
+            stagedOps.push({ type: 'move', src: f.tmpPath, dest: finalOriginalPath });
+            stagedOps.push({ type: 'move', src: tempNegPath, dest: finalNegPath });
+
+            const thumbSrc = thumbFile ? thumbFile.tmpPath : tempNegThumbPath;
+            stagedOps.push({ type: 'copy', src: thumbSrc, dest: finalMainThumbPath });
+            stagedOps.push({ type: 'move', src: thumbSrc, dest: finalNegThumbPath });
+
+            negativeRelPath = path.join('rolls', folderName, 'negative', negName).replace(/\\/g, '/');
+            thumbRelPath = path.join('rolls', folderName, 'thumb', negThumbName).replace(/\\/g, '/');
+            negativeThumbRelPath = path.join('rolls', folderName, 'negative', 'thumb', negThumbName).replace(/\\/g, '/');
+            isNegativeSource = 1;
+            fullRelPath = null;
+            positiveRelPath = null;
+            positiveThumbRelPath = null;
           } else {
-            // Positive Logic
             const destPath = path.join(fullDir, finalName);
+            const thumbName = `${baseName}-thumb.jpg`;
+            const thumbPath = path.join(thumbDir, thumbName);
+
+            const tempFullPath = path.join(localTmpDir, `proc_${baseName}_full.jpg`);
+            stagedTempArtifacts.push(tempFullPath);
+            
             try {
-              // Create high-quality positive JPG from original
-              const sourceForSharp = originalRelPath ? path.join(rollsDir, folderName, 'originals', `${baseName}_original${originalExt}`) : f.tmpPath;
-              
-              if (!fs.existsSync(sourceForSharp)) {
-                 console.error(`[CREATE ROLL] Source file not found: ${sourceForSharp}`);
-              } else {
-                  await sharp(sourceForSharp)
-                    .jpeg({ quality: 95 })
-                    .toFile(destPath);
-                  fullRelPath = path.join('rolls', folderName, 'full', finalName).replace(/\\/g, '/');
-                  positiveRelPath = fullRelPath;
-                  
-                  // Generate thumbnail
-                  const thumbName = `${baseName}-thumb.jpg`;
-                  const thumbPath = path.join(thumbDir, thumbName);
-                  
-                  if (group.thumb) {
-                    // Use uploaded thumb
-                    await moveFileAsync(group.thumb.tmpPath, thumbPath);
-                  } else {
-                    // Generate thumb
-                    if (fs.existsSync(destPath)) {
-                        await sharp(destPath)
-                        .resize({ width: 240, height: 240, fit: 'inside' })
-                        .jpeg({ quality: 40 })
-                        .toFile(thumbPath)
-                        .catch(thErr => console.error('Thumbnail generation failed', thErr.message));
-                    }
-                  }
-                  
-                  if (fs.existsSync(thumbPath)) {
-                    thumbRelPath = path.join('rolls', folderName, 'thumb', thumbName).replace(/\\/g, '/');
-                    positiveThumbRelPath = thumbRelPath;
-                  }
-              }
-            } catch (mvErr) {
-              console.error('Failed moving temp file to dest', mvErr);
-              // Continue to insert DB record
+              console.log(`[CREATE ROLL] Processing positive ${frameNumber}: ${path.basename(f.tmpPath)} (${(fs.statSync(f.tmpPath).size / 1024 / 1024).toFixed(2)} MB)`);
+              const startTime = Date.now();
+              await sharpWithTimeout(
+                sharp(f.tmpPath).jpeg({ quality: 95 }).toFile(tempFullPath)
+              );
+              const duration = Date.now() - startTime;
+              console.log(`[CREATE ROLL] Positive ${frameNumber} processed in ${duration}ms`);
+            } catch (sharpErr) {
+              console.error(`[CREATE ROLL] Sharp processing failed for positive ${frameNumber}:`, sharpErr);
+              const err = new Error(`Failed to process image ${path.basename(f.tmpPath)}: ${sharpErr.message}`);
+              err.originalError = sharpErr;
+              err.fileInfo = { name: path.basename(f.tmpPath), size: fs.statSync(f.tmpPath).size };
+              throw err;
             }
+
+            let tempThumbPath = null;
+            if (!thumbFile) {
+              tempThumbPath = path.join(localTmpDir, `proc_${baseName}_thumb.jpg`);
+              stagedTempArtifacts.push(tempThumbPath);
+              try {
+                await sharpWithTimeout(
+                  sharp(tempFullPath)
+                    .resize({ width: 240, height: 240, fit: 'inside' })
+                    .jpeg({ quality: 40 })
+                    .toFile(tempThumbPath),
+                  10000 // Thumbnail should be fast, 10s timeout
+                );
+              } catch (thumbErr) {
+                console.error(`[CREATE ROLL] Thumbnail generation failed for positive ${frameNumber}:`, thumbErr);
+                const err = new Error(`Failed to generate thumbnail for ${path.basename(f.tmpPath)}: ${thumbErr.message}`);
+                err.originalError = thumbErr;
+                throw err;
+              }
+            }
+
+            stagedOps.push({ type: 'move', src: f.tmpPath, dest: finalOriginalPath });
+            stagedOps.push({ type: 'move', src: tempFullPath, dest: destPath });
+            stagedOps.push({ type: 'move', src: (thumbFile ? thumbFile.tmpPath : tempThumbPath), dest: thumbPath });
+
+            fullRelPath = path.join('rolls', folderName, 'full', finalName).replace(/\\/g, '/');
+            positiveRelPath = fullRelPath;
+            thumbRelPath = path.join('rolls', folderName, 'thumb', thumbName).replace(/\\/g, '/');
+            positiveThumbRelPath = thumbRelPath;
           }
 
-          // Insert immediately to prevent data loss on crash
-          try {
-              const meta = resolveMeta(fileMetadata, [f.originalName, f.tmpName, finalName]);
-              const dateTaken = meta.date || null;
-              const takenAt = dateTaken ? `${dateTaken}T12:00:00` : null;
-              const lensForPhoto = meta.lens || lens || null;
-              const cameraForPhoto = camera || null;
-              const photographerForPhoto = photographer || null;
-              const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' ? Number(meta.aperture) : null;
-              const shutterForPhoto = meta.shutter_speed || null;
-              const isoForPhoto = filmIso !== null && filmIso !== undefined ? filmIso : null;
-              const locationId = await ensureLocationId(meta.country, meta.city);
-              const detailLoc = meta.detail_location || null;
-              if (locationId) rollLocationIds.add(locationId);
-              await runInsert([
-                rollId,
-                frameNumber,
-                finalName,
-                fullRelPath,
-                thumbRelPath,
-                negativeRelPath,
-                originalRelPath,
-                positiveRelPath,
-                positiveThumbRelPath,
-                negativeThumbRelPath,
-                isNegativeSource,
-                takenAt,
-                dateTaken,
-                null, // time_taken unused here
-                locationId,
-                detailLoc,
-                cameraForPhoto,
-                lensForPhoto,
-                photographerForPhoto,
-                apertureForPhoto,
-                shutterForPhoto,
-                isoForPhoto
-              ]);
-            inserted.push({ filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, positiveRelPath });
-            console.log(`[CREATE ROLL] Inserted photo ${finalName} with date ${takenAt}`);
-          } catch (dbErr) {
-              console.error('Failed to insert photo record', dbErr);
-          }
+          // Stage DB insert params
+          const meta = resolveMeta(fileMetadata, [f.originalName, f.tmpName, finalName]);
+          const dateTaken = meta.date || null;
+          const takenAt = dateTaken ? `${dateTaken}T12:00:00` : null;
+          const lensForPhoto = meta.lens || lens || null;
+          const cameraForPhoto = camera || null;
+          const photographerForPhoto = photographer || null;
+          const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' ? Number(meta.aperture) : null;
+          const shutterForPhoto = meta.shutter_speed || null;
+          const isoForPhoto = filmIso !== null && filmIso !== undefined ? filmIso : null;
+          const locationId = await ensureLocationId(meta.country, meta.city);
+          const detailLoc = meta.detail_location || null;
+          if (locationId) rollLocationIds.add(locationId);
+
+          stagedPhotos.push({
+            frameNumber,
+            finalName,
+            fullRelPath,
+            thumbRelPath,
+            negativeRelPath,
+            originalRelPath,
+            positiveRelPath,
+            positiveThumbRelPath,
+            negativeThumbRelPath,
+            isNegativeSource,
+            takenAt,
+            dateTaken,
+            locationId,
+            detailLoc,
+            cameraForPhoto,
+            lensForPhoto,
+            photographerForPhoto,
+            apertureForPhoto,
+            shutterForPhoto,
+            isoForPhoto,
+          });
+
         }
 
-        // Set cover
-        try {
+
+        // Ensure roll directories exist only after ALL processing succeeded
+        await fs.promises.mkdir(rollFolderPath, { recursive: true });
+        await fs.promises.mkdir(fullDir, { recursive: true });
+        await fs.promises.mkdir(thumbDir, { recursive: true });
+        await fs.promises.mkdir(originalsDir, { recursive: true });
+        await fs.promises.mkdir(path.join(rollFolderPath, 'negative'), { recursive: true });
+        await fs.promises.mkdir(path.join(rollFolderPath, 'negative', 'thumb'), { recursive: true });
+
+        // Publish filesystem changes (moves/copies into uploads/rolls)
+        console.log(`[CREATE ROLL] Publishing ${stagedOps.length} file operations to OneDrive...`);
+        for (let i = 0; i < stagedOps.length; i++) {
+          const op = stagedOps[i];
+          try {
+            const srcSize = fs.existsSync(op.src) ? (fs.statSync(op.src).size / 1024 / 1024).toFixed(2) : 'N/A';
+            console.log(`[CREATE ROLL] [${i+1}/${stagedOps.length}] ${op.type} ${path.basename(op.src)} (${srcSize} MB) -> ${path.basename(op.dest)}`);
+            
+            if (op.type === 'copy') {
+              await copyFileAsyncWithRetry(op.src, op.dest);
+            } else {
+              await moveFileAsync(op.src, op.dest);
+            }
+            createdPaths.push(op.dest);
+          } catch (fileOpErr) {
+            console.error(`[CREATE ROLL] File operation failed [${op.type}] ${path.basename(op.src)} -> ${path.basename(op.dest)}:`, fileOpErr);
+            const err = new Error(`Failed to ${op.type} file ${path.basename(op.src)} to OneDrive folder: ${fileOpErr.message}`);
+            err.originalError = fileOpErr;
+            err.operation = { type: op.type, src: op.src, dest: op.dest };
+            throw err;
+          }
+        }
+        console.log(`[CREATE ROLL] All files published successfully.`);
+
+        // Cleanup staged temp artifacts after publish
+        for (const t of stagedTempArtifacts) {
+          try { if (fs.existsSync(t)) await fs.promises.unlink(t); } catch (_) {}
+        }
+        // Insert DB records (atomic: any failure -> rollback)
+        for (const p of stagedPhotos) {
+          await runInsert([
+            rollId,
+            p.frameNumber,
+            p.finalName,
+            p.fullRelPath,
+            p.thumbRelPath,
+            p.negativeRelPath,
+            p.originalRelPath,
+            p.positiveRelPath,
+            p.positiveThumbRelPath,
+            p.negativeThumbRelPath,
+            p.isNegativeSource,
+            p.takenAt,
+            p.dateTaken,
+            null, // time_taken unused here
+            p.locationId,
+            p.detailLoc,
+            p.cameraForPhoto,
+            p.lensForPhoto,
+            p.photographerForPhoto,
+            p.apertureForPhoto,
+            p.shutterForPhoto,
+            p.isoForPhoto
+          ]);
+          inserted.push({
+            filename: p.finalName,
+            fullRelPath: p.fullRelPath,
+            thumbRelPath: p.thumbRelPath,
+            negativeRelPath: p.negativeRelPath,
+            positiveRelPath: p.positiveRelPath,
+          });
+        }
 
         // Seed roll_gear with initial values using intelligent deduplication
         try {
@@ -440,29 +559,23 @@ router.post('/', (req, res) => {
           if (lens) await addOrUpdateGear(rollId, 'lens', lens).catch(e => console.error('Add lens failed', e));
           if (photographer) await addOrUpdateGear(rollId, 'photographer', photographer).catch(e => console.error('Add photographer failed', e));
         } catch(e){ console.error('Seed roll_gear failed', e.message); }
-            let coverToSet = null;
-            if (filmId) {
-              // Try to get film thumb
-              const frow = await new Promise((res, rej) => db.get('SELECT thumbPath FROM films WHERE id = ?', [filmId], (e, r) => e ? rej(e) : res(r)));
-              if (frow && frow.thumbPath) coverToSet = frow.thumbPath;
-            }
-            
-            if (!coverToSet && inserted.length) {
-               const idx = (Number.isFinite(coverIndex) && coverIndex >= 0 && coverIndex < inserted.length) ? coverIndex : 0;
-               // Prefer thumbRelPath if fullRelPath is null (negative case)
-               const p = inserted[idx];
-               const pathForCover = p.positiveRelPath || p.fullRelPath || p.thumbRelPath || p.negativeRelPath; 
-               
-               if (p && pathForCover) {
-                  coverToSet = `/uploads/${pathForCover}`.replace(/\\/g, '/');
-               }
-            }
-            
-            if (coverToSet) {
-               db.run('UPDATE rolls SET coverPath = ? WHERE id = ?', [coverToSet, rollId]);
-            }
-        } catch (covErr) {
-            console.error('Error setting default cover for roll', covErr);
+
+        // Set cover (within transaction)
+        let coverToSet = null;
+        if (filmId) {
+          const frow = await getAsync('SELECT thumbPath FROM films WHERE id = ?', [filmId]).catch(() => null);
+          if (frow && frow.thumbPath) coverToSet = frow.thumbPath;
+        }
+
+        if (!coverToSet && inserted.length) {
+          const idx = (Number.isFinite(coverIndex) && coverIndex >= 0 && coverIndex < inserted.length) ? coverIndex : 0;
+          const p = inserted[idx];
+          const pathForCover = p.positiveRelPath || p.fullRelPath || p.thumbRelPath || p.negativeRelPath;
+          if (p && pathForCover) coverToSet = `/uploads/${pathForCover}`.replace(/\\/g, '/');
+        }
+
+        if (coverToSet) {
+          await runAsync('UPDATE rolls SET coverPath = ? WHERE id = ?', [coverToSet, rollId]);
         }
 
         const filesForClient = inserted.map(p => ({
@@ -481,22 +594,59 @@ router.post('/', (req, res) => {
           console.error('[CREATE ROLL] Failed to upsert roll_locations', locErr.message || locErr);
         }
 
-        db.get('SELECT * FROM rolls WHERE id = ?', [rollId], (e2, row) => {
-          if (e2) return res.status(500).json({ error: e2.message });
-          res.status(201).json({ ok: true, roll: row, files: filesForClient });
-        });
+        console.log(`[CREATE ROLL] Complete. Roll ${rollId} created with ${inserted.length}/${sortedGroups.length} photos`);
 
-      }).then(async () => {
-        // Recompute display sequence after creation
-        try { await recomputeRollSequence(); } catch(e){ console.error('recompute sequence failed', e); }
-      }).catch(err => {
-         console.error('Transaction error', err);
-         res.status(500).json({ error: err.message });
-      });
+        await runAsync('COMMIT');
+
+        const row = await getAsync('SELECT * FROM rolls WHERE id = ?', [rollId]);
+        res.status(201).json({ ok: true, roll: row, files: filesForClient });
+
+        // Recompute display sequence after creation (best-effort)
+        try { await recomputeRollSequence(); } catch (e) { console.error('recompute sequence failed', e); }
+
+      } catch (err) {
+        console.error('[CREATE ROLL] Atomic create failed:');
+        console.error('Error message:', err.message);
+        console.error('Error stack:', err.stack);
+        if (err.originalError) {
+          console.error('Original error:', err.originalError);
+        }
+        if (err.fileInfo) {
+          console.error('File info:', err.fileInfo);
+        }
+        if (err.operation) {
+          console.error('Failed operation:', err.operation);
+        }
+        
+        try { await runAsync('ROLLBACK'); } catch (_) {}
+
+        // Cleanup created roll folder/files (best-effort)
+        if (rollFolderPath) {
+          await rmWithRetry(rollFolderPath);
+        } else {
+          // Fallback: delete any created paths we tracked
+          for (const p of createdPaths) {
+            try { await rmWithRetry(p); } catch (_) {}
+          }
+        }
+
+        return res.status(500).json({ ok: false, error: err.message || 'Create roll failed', details: err.fileInfo || err.operation });
+      } finally {
+        // Always finalize the prepared statement to avoid lingering locks.
+        if (stmtToFinalize) {
+          try {
+            stmtToFinalize.finalize();
+          } catch (finalizeErr) {
+            console.error('[CREATE ROLL] Failed to finalize statement', finalizeErr.message || finalizeErr);
+          }
+        }
+      }
 
     } catch (err) {
-      console.error('POST /api/rolls (multipart) handler error', err);
-      res.status(500).json({ ok: false, error: err.message });
+      console.error('POST /api/rolls (multipart) handler error:');
+      console.error('Error:', err);
+      console.error('Stack:', err.stack);
+      res.status(500).json({ ok: false, error: err.message || 'Internal server error' });
     }
   });
 });

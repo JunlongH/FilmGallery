@@ -40,7 +40,7 @@ db.serialize(() => {
         if (err) console.error('[DB] Synchronous FULL failed:', err);
       });
       db.run('PRAGMA locking_mode = NORMAL');
-      db.run('PRAGMA busy_timeout = 5000');
+      db.run('PRAGMA busy_timeout = 15000'); // Increased for OneDrive sync delays
       db.run('PRAGMA temp_store = MEMORY');
       db.run('PRAGMA foreign_keys = ON');
       db.run('PRAGMA page_size = 4096');
@@ -68,8 +68,8 @@ db.serialize(() => {
         if (err) console.error('[DB] Synchronous setting failed:', err);
       });
     
-      // Increased timeout for OneDrive sync delays (5 seconds)
-      db.run('PRAGMA busy_timeout = 5000');
+      // Increased timeout for OneDrive sync delays (15 seconds)
+      db.run('PRAGMA busy_timeout = 15000');
     
       // Memory-mapped I/O for faster reads (256MB) - safe with WAL
       db.run('PRAGMA mmap_size = 268435456');

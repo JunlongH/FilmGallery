@@ -8,17 +8,20 @@ const fs = require('fs');
 // const db = require('./db'); // MOVED: Loaded after migration
 // Disable sharp cache to prevent file locking on Windows
 sharp.cache(false);
-const { uploadsDir, tmpUploadDir, rollsDir } = require('./config/paths');
+const { uploadsDir, tmpUploadDir, localTmpDir, rollsDir } = require('./config/paths');
+const { getDbPath } = require('./config/db-config');
 const { runMigration } = require('./utils/migration');
 const { runSchemaMigration } = require('./utils/schema-migration');
+const { migratePhotoColumns } = require('./migrate-add-photo-columns');
 const { cacheSeconds } = require('./utils/cache');
 const { requestProfiler, getProfilerStats, scheduleProfilerLog } = require('./utils/profiler');
 const PreparedStmt = require('./utils/prepared-statements');
 
-console.log('[PATHS]', {
+console.log('[STORAGE CONFIG]', {
 	DATA_ROOT: process.env.DATA_ROOT,
 	UPLOADS_ROOT: process.env.UPLOADS_ROOT,
 	USER_DATA: process.env.USER_DATA,
+	resolvedDbPath: getDbPath(),
 	uploadsDir,
 	tmpUploadDir,
 	rollsDir
@@ -114,9 +117,10 @@ const caseInsensitiveStatic = (root, options = {}) => {
   };
 };
 
+// Serve local temp uploads for previews (no long cache). Mount BEFORE /uploads.
+app.use('/uploads/tmp', express.static(localTmpDir));
 app.use('/uploads', caseInsensitiveStatic(uploadsDir, staticOptions));
 app.use('/uploads', express.static(uploadsDir, staticOptions));
-app.use('/uploads/tmp', express.static(tmpUploadDir)); // tmp files don't need long cache
 app.use('/uploads/rolls', caseInsensitiveStatic(rollsDir, staticOptions));
 app.use('/uploads/rolls', express.static(rollsDir, staticOptions));
 
@@ -221,10 +225,20 @@ const seedLocations = async () => {
         await runSchemaMigration();
         console.log('[SERVER] Schema migration complete.');
 
-		// 3. Load DB now that file is ready
+        // 3. Run Photo Columns Migration (Add missing columns)
+        console.log('[SERVER] Checking photos table columns...');
+        try {
+            await migratePhotoColumns(getDbPath());
+            console.log('[SERVER] Photo columns migration complete.');
+        } catch (err) {
+            console.error('[SERVER] Photo columns migration failed:', err.message);
+            console.error('[SERVER] This may cause errors when uploading photos.');
+        }
+
+		// 4. Load DB now that file is ready
 		const db = require('./db');
 
-		// 4. Ensure Schema (Legacy check, kept for safety but mostly handled by schema-migration)
+		// 5. Ensure Schema (Legacy check, kept for safety but mostly handled by schema-migration)
 		await new Promise((resolve, reject) => {
 			db.exec(schemaSQL, (err) => {
 				if (err) reject(err);
@@ -233,7 +247,7 @@ const seedLocations = async () => {
 		});
 		console.log('DB schema ensured');
 
-        // 5. Recompute roll sequence on startup
+        // 6. Recompute roll sequence on startup
         console.log('[SERVER] Recomputing roll sequence...');
         const { recomputeRollSequence } = require('./services/roll-service');
         await recomputeRollSequence();
