@@ -545,13 +545,9 @@ async function generateContactSheet({
     
     onProgress(i + 1, photos.length, `Processing photo ${i + 1}/${photos.length}`);
     
-    // Determine photo path
+    // Determine photo path - prefer resolved_path from server, then fallback to legacy paths
     let photoPath = null;
-    const fullPath = photo.full_rel_path;
-    const thumbPath = photo.thumb_rel_path;
-    
-    // Prefer full path for better quality
-    const relPath = fullPath || thumbPath;
+    const relPath = photo.resolved_path || photo.full_rel_path || photo.thumb_rel_path;
     if (relPath) {
       // Handle both forward and back slashes, remove leading slashes
       const normalizedPath = relPath.replace(/^\/+/, '').replace(/\//g, path.sep);

@@ -68,8 +68,16 @@ function generateDXCode(rollInfo, frameIndex = 0) {
   return allBits.map((bit, i) => (i >= 10 && (frameIndex + i) % 7 === 0) ? !bit : bit);
 }
 
+// Image source options for contact sheet
+const IMAGE_SOURCES = {
+  auto: { name: 'Auto', description: 'Use best available (positive > negative > thumb)' },
+  positive: { name: 'Positive', description: 'Edited/inverted images' },
+  negative: { name: 'Negative', description: 'Original scanned negatives' }
+};
+
 export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }) {
   const [selectedStyle, setSelectedStyle] = useState('kodak');
+  const [imageSource, setImageSource] = useState('auto');
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, message: '', percentage: 0 });
   const [error, setError] = useState(null);
@@ -77,6 +85,20 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
   
   const canvasRef = useRef(null);
   const abortControllerRef = useRef(null);
+
+  // Helper to get image path based on selected source
+  const getImagePath = (photo) => {
+    switch (imageSource) {
+      case 'positive':
+        return photo.positive_thumb_rel_path || photo.thumb_rel_path || photo.positive_rel_path || photo.full_rel_path;
+      case 'negative':
+        return photo.negative_thumb_rel_path || photo.negative_rel_path || photo.thumb_rel_path;
+      case 'auto':
+      default:
+        // Prefer positive (edited), fallback to thumb, then negative
+        return photo.positive_thumb_rel_path || photo.thumb_rel_path || photo.negative_thumb_rel_path || photo.positive_rel_path || photo.full_rel_path || photo.negative_rel_path;
+    }
+  };
 
   // Calculate rows based on photo count
   const rows = Math.ceil(photos.length / COLUMNS);
@@ -263,9 +285,10 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
       }
     };
 
-    // Load thumbnail images
+    // Load images based on selected source
     photos.forEach((photo, index) => {
-      if (photo.thumb_rel_path) {
+      const imgPath = getImagePath(photo);
+      if (imgPath) {
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => {
@@ -277,7 +300,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           loadedCount++;
           if (loadedCount === photos.length) drawPhotos();
         };
-        img.src = buildUploadUrl(photo.thumb_rel_path);
+        img.src = buildUploadUrl(imgPath);
       } else {
         loadedCount++;
       }
@@ -285,7 +308,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
     drawPhotos();
 
-  }, [isOpen, photos, selectedStyle, rows, roll]);
+  }, [isOpen, photos, selectedStyle, imageSource, rows, roll]);
 
   // Generate contact sheet
   const handleGenerate = async () => {
@@ -303,6 +326,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           style: selectedStyle,
+          imageSource: imageSource,
           columns: COLUMNS,
           maxTotalWidth: 4800,
           maxPhotoWidth: 400,
@@ -485,6 +509,34 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
                     <span style={{ fontWeight: 600, fontSize: 14 }}>{preset.name}</span>
                   </div>
                   <div style={{ fontSize: 12, color: '#666' }}>{preset.description}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Image source selector */}
+          <div style={{ marginBottom: 24 }}>
+            <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, color: '#333' }}>
+              Image Source
+            </label>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              {Object.entries(IMAGE_SOURCES).map(([key, source]) => (
+                <button
+                  key={key}
+                  onClick={() => setImageSource(key)}
+                  disabled={isGenerating}
+                  style={{
+                    padding: '10px 16px',
+                    border: imageSource === key ? '2px solid #0ea5e9' : '2px solid #ddd',
+                    borderRadius: 8,
+                    background: imageSource === key ? '#f0f9ff' : '#fff',
+                    cursor: isGenerating ? 'not-allowed' : 'pointer',
+                    transition: 'all 0.2s',
+                    opacity: isGenerating ? 0.6 : 1
+                  }}
+                >
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{source.name}</div>
+                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{source.description}</div>
                 </button>
               ))}
             </div>

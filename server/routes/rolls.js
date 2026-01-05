@@ -1254,6 +1254,7 @@ router.post('/:id/contact-sheet', async (req, res) => {
   const rollId = req.params.id;
   const { 
     style = 'kodak',
+    imageSource = 'auto',
     columns = 6,
     maxTotalWidth = 4800,
     maxPhotoWidth = 400,
@@ -1279,9 +1280,11 @@ router.post('/:id/contact-sheet', async (req, res) => {
       return res.status(404).json({ error: 'Roll not found' });
     }
 
-    // Fetch photos (only those with valid paths)
+    // Fetch photos with all path variants
     const photos = await allAsync(
-      `SELECT id, frame_number, thumb_rel_path, full_rel_path
+      `SELECT id, frame_number, thumb_rel_path, full_rel_path, 
+              positive_rel_path, negative_rel_path, 
+              positive_thumb_rel_path, negative_thumb_rel_path
        FROM photos
        WHERE roll_id = ?
        ORDER BY frame_number ASC, id ASC`,
@@ -1292,8 +1295,24 @@ router.post('/:id/contact-sheet', async (req, res) => {
       return res.status(400).json({ error: 'No photos found in this roll' });
     }
 
-    // Filter out photos without paths
-    const validPhotos = photos.filter(p => p.thumb_rel_path || p.full_rel_path);
+    // Apply imageSource preference to determine which path to use
+    const getPhotoPath = (p) => {
+      switch (imageSource) {
+        case 'positive':
+          return p.positive_thumb_rel_path || p.thumb_rel_path || p.positive_rel_path || p.full_rel_path;
+        case 'negative':
+          return p.negative_thumb_rel_path || p.negative_rel_path || p.thumb_rel_path;
+        case 'auto':
+        default:
+          return p.positive_thumb_rel_path || p.thumb_rel_path || p.negative_thumb_rel_path || p.positive_rel_path || p.full_rel_path || p.negative_rel_path;
+      }
+    };
+
+    // Add resolved path and filter out photos without paths
+    const validPhotos = photos.map(p => ({
+      ...p,
+      resolved_path: getPhotoPath(p)
+    })).filter(p => p.resolved_path);
 
     if (validPhotos.length === 0) {
       return res.status(400).json({ error: 'No valid photos with paths found' });
