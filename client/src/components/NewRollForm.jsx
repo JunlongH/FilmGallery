@@ -147,8 +147,6 @@ export default function NewRollForm({ onCreated }) {
     setFileMeta(metaMap);
     setFileDates(dateMap);
   };
-    setFileDates(dateMap);
-  };
 
   // create object URL previews
   useEffect(() => {

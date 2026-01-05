@@ -4,7 +4,7 @@ const { ipcRenderer } = require('electron');
 let gl, canvas, isWebGL2 = false;
 
 // ============================================================================
-// White Balance Calculation (must match server/utils/filmlab-wb.js)
+// White Balance Calculation (must match server/utils/filmlab-wb.js and client/wb.js)
 // ============================================================================
 function clampGain(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
@@ -16,11 +16,19 @@ function computeWBGains(params = {}, opts = {}) {
   const tint = Number.isFinite(params.tint) ? params.tint : 0;
   const minGain = opts.minGain ?? 0.05;
   const maxGain = opts.maxGain ?? 50.0;
-  const t = temp / 200;
-  const n = tint / 200;
-  let r = red * (1 + t + n);
-  let g = green * (1 + t - n);
-  let b = blue * (1 - t);
+  
+  // temp/tint model (matches client wb.js):
+  // temp > 0 → warmer (boost red, reduce blue)
+  // temp < 0 → cooler (boost blue, reduce red)
+  // tint > 0 → more magenta (boost red/blue, reduce green)
+  // tint < 0 → more green (boost green, reduce red/blue)
+  const t = temp / 100;
+  const n = tint / 100;
+  
+  let r = red * (1 + t * 0.5 + n * 0.3);
+  let g = green * (1 - n * 0.5);
+  let b = blue * (1 - t * 0.5 + n * 0.3);
+  
   r = clampGain(r, minGain, maxGain);
   g = clampGain(g, minGain, maxGain);
   b = clampGain(b, minGain, maxGain);

@@ -55,15 +55,22 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
 
   // Always apply Inversion + WB in Sharp (more efficient)
   // Inversion first (to match client ordering)
-  if (inverted) {
-    if (inversionMode === 'log') img = img.negate().gamma(0.85); // legacy approximation
-    else img = img.negate();
+  // NOTE: Log inversion requires pixel-level math (255 * (1 - log(x+1)/log(256)))
+  // Sharp doesn't support this natively, so when inversionMode='log' and toneAndCurvesInJs=true,
+  // defer inversion AND WB to JS (since WB must come after inversion). 
+  const deferInversionToJs = inverted && inversionMode === 'log' && toneAndCurvesInJs;
+  if (inverted && !deferInversionToJs) {
+    // Linear inversion only - log is deferred to JS
+    img = img.negate();
   }
 
   // White balance via per-channel gains (clamped)
-  const { computeWBGains } = require('../utils/filmlab-wb');
-  const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
-  img = img.linear([rBal, gBal, bBal], [0, 0, 0]);
+  // Skip if log inversion is deferred (WB must come after inversion, so also defer WB)
+  if (!deferInversionToJs) {
+    const { computeWBGains } = require('../utils/filmlab-wb');
+    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
+    img = img.linear([rBal, gBal, bBal], [0, 0, 0]);
+  }
 
   // Defer Tone/Curves to JS when requested (they need complex LUT processing)
   if (!toneAndCurvesInJs) {

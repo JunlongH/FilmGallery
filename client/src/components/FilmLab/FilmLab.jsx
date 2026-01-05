@@ -668,125 +668,81 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     }
 
     if (isPickingWB) {
-      // WB Picker: 应用inversion（如果启用），然后计算temp/tint
-      let rInv = r, gInv = g, bInv = b;
-      if (inverted) {
-        if (inversionMode === 'log') {
-          rInv = 255 * (1 - Math.log(rInv + 1) / Math.log(256));
-          gInv = 255 * (1 - Math.log(gInv + 1) / Math.log(256));
-          bInv = 255 * (1 - Math.log(bInv + 1) / Math.log(256));
-        } else {
-          rInv = 255 - rInv;
-          gInv = 255 - gInv;
-          bInv = 255 - bInv;
-        }
+      // WB Picker: The clicked point should become neutral gray
+      // Sample from the RENDERED canvas (already has all effects applied)
+      const renderedCtx = canvas.getContext('2d', { willReadFrequently: true });
+      const renderedData = renderedCtx.getImageData(
+        Math.max(0, Math.floor(clickX - 1)),
+        Math.max(0, Math.floor(clickY - 1)),
+        3, 3
+      ).data;
+      
+      // Average the 3x3 kernel from rendered canvas
+      let rRendered = 0, gRendered = 0, bRendered = 0, renderedCount = 0;
+      for (let i = 0; i < renderedData.length; i += 4) {
+        const a = renderedData[i + 3];
+        if (a < 128) continue;
+        rRendered += renderedData[i];
+        gRendered += renderedData[i + 1];
+        bRendered += renderedData[i + 2];
+        renderedCount++;
       }
-        
-      if (!Number.isFinite(rInv)) rInv = 128;
-      if (!Number.isFinite(gInv)) gInv = 128;
-      if (!Number.isFinite(bInv)) bInv = 128;
-
-      const solved = solveTempTintFromSample([rInv, gInv, bInv], { red, green, blue });
+      
+      if (renderedCount === 0) {
+        console.warn('[FilmLab] WB Picker: no valid pixels sampled from rendered canvas');
+        setIsPickingWB(false);
+        return;
+      }
+      
+      rRendered /= renderedCount;
+      gRendered /= renderedCount;
+      bRendered /= renderedCount;
+      
+      console.log('[WB Picker] Sampled pixel:', { r: rRendered.toFixed(2), g: gRendered.toFixed(2), b: bRendered.toFixed(2) });
+      
+      // Since we sampled the rendered canvas (already has base gains applied),
+      // pass {red:1, green:1, blue:1} so the solver doesn't apply them again
+      const solved = solveTempTintFromSample([rRendered, gRendered, bRendered], { red: 1, green: 1, blue: 1 });
       
       if (solved && Number.isFinite(solved.temp) && Number.isFinite(solved.tint)) {
-        const testGains = computeWBGains({ red, green, blue, temp: solved.temp, tint: solved.tint });
-        
         pushToHistory();
         setTemp(solved.temp);
         setTint(solved.tint);
       } else {
         console.warn('[FilmLab] WB Picker failed to solve temp/tint');
-        setTemp(0);
-        setTint(0);
       }
       setIsPickingWB(false);
       return;
     }
 
-    // Regular color picker
+    // Regular color picker - sample from the rendered canvas directly
     if (isPicking) {
-      // Apply Pre-Curve Pipeline to show processed color
-      if (inverted) {
-        if (inversionMode === 'log') {
-          r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-          g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-          b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-        } else {
-          r = 255 - r;
-          g = 255 - g;
-          b = 255 - b;
-        }
+      // Get pixel directly from the displayed canvas at click location
+      const renderedCtx = canvas.getContext('2d', { willReadFrequently: true });
+      const renderedData = renderedCtx.getImageData(
+        Math.max(0, Math.floor(clickX - 1)),
+        Math.max(0, Math.floor(clickY - 1)),
+        3, 3
+      ).data;
+      
+      // Average the 3x3 kernel from rendered canvas
+      let rRendered = 0, gRendered = 0, bRendered = 0, renderedCount = 0;
+      for (let i = 0; i < renderedData.length; i += 4) {
+        const a = renderedData[i + 3];
+        if (a < 128) continue;
+        rRendered += renderedData[i];
+        gRendered += renderedData[i + 1];
+        bRendered += renderedData[i + 2];
+        renderedCount++;
       }
-
-      const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
-      r *= rBal;
-      g *= gBal;
-      b *= bBal;
-
-      const expFactor = Math.pow(2, exposure / 50);
-      r *= expFactor;
-      g *= expFactor;
-      b *= expFactor;
-
-      const contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-      r = contrastFactor * (r - 128) + 128;
-      g = contrastFactor * (g - 128) + 128;
-      b = contrastFactor * (b - 128) + 128;
-
-      // Tone Mapping (Highlights, Shadows, Whites, Blacks)
-      // Normalize to 0-1 for easier calculation
-      let rN = r / 255;
-      let gN = g / 255;
-      let bN = b / 255;
-
-      const applyTone = (val) => {
-        // Blacks & Whites (Linear Stretch)
-        // Blacks: -100 to 100. If < 0, clip blacks. If > 0, lift blacks.
-        // Whites: -100 to 100. If < 0, dim whites. If > 0, clip whites.
-        // Simple approach: Map [blackPoint, whitePoint] to [0, 1]
-        const blackPoint = -blacks * 0.002; // +/- 0.2
-        const whitePoint = 1 - whites * 0.002; // +/- 0.2
-        
-        // Avoid division by zero
-        if (whitePoint !== blackPoint) {
-          val = (val - blackPoint) / (whitePoint - blackPoint);
-        }
-
-        // Shadows & Highlights (Curve Shaping)
-        // Shadows: Boost darks (0-0.5)
-        if (shadows !== 0) {
-          const sFactor = shadows * 0.005; // Strength
-          // Simple quadratic boost for shadows: val + s * (1-val)^2 * val
-          // Or Luma mask: (1-val)^2
-          val += sFactor * Math.pow(1 - val, 2) * val * 4; 
-        }
-
-        // Highlights: Recover brights (0.5-1)
-        if (highlights !== 0) {
-          const hFactor = highlights * 0.005;
-          // Simple quadratic cut for highlights: val - h * val^2 * (1-val)
-          // Or Luma mask: val^2
-          // Note: highlights slider usually recovers (negative value dims highlights)
-          // If highlights > 0, we want to push highlights up? No, usually "Highlights" slider recovers detail (negative) or boosts (positive).
-          val += hFactor * Math.pow(val, 2) * (1 - val) * 4;
-        }
-        
-        return val;
-      };
-
-      rN = applyTone(rN);
-      gN = applyTone(gN);
-      bN = applyTone(bN);
-
-      r = rN * 255;
-      g = gN * 255;
-      b = bN * 255;
-
-      r = Math.min(255, Math.max(0, r));
-      g = Math.min(255, Math.max(0, g));
-      b = Math.min(255, Math.max(0, b));
-
-      setPickedColor({ r, g, b });
+      
+      if (renderedCount > 0) {
+        rRendered /= renderedCount;
+        gRendered /= renderedCount;
+        bRendered /= renderedCount;
+      }
+      
+      setPickedColor({ r: rRendered, g: gRendered, b: bRendered });
       setIsPicking(false); // Auto-exit picker mode after pick
       return;
     }
@@ -1237,58 +1193,60 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
   };
 
   const handleAutoColor = () => {
-    if (!image) return;
+    // Sample from the RENDERED canvas (after all effects: inversion, base gains, exposure, etc.)
+    // Auto WB calculates temp/tint to neutralize the average color
+    if (!canvasRef.current) return;
     pushToHistory();
     
-    const canvas = document.createElement('canvas');
-    const size = 256;
-    const scale = Math.min(1, size / image.width);
-    canvas.width = Math.round(image.width * scale);
-    canvas.height = Math.round(image.height * scale);
-    
+    const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
     
+    // Sample the already-rendered canvas
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
     
     let rSum = 0, gSum = 0, bSum = 0;
     let count = 0;
     
-    for (let i = 0; i < data.length; i += 4) {
-      let r = data[i];
-      let g = data[i+1];
-      let b = data[i+2];
-      
-      if (inverted) {
-        if (inversionMode === 'log') {
-          r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-          g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-          b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-        } else {
-          r = 255 - r;
-          g = 255 - g;
-          b = 255 - b;
-        }
+    // Sample with stride for performance
+    const stride = 4;
+    for (let y = 0; y < canvas.height; y += stride) {
+      for (let x = 0; x < canvas.width; x += stride) {
+        const i = (y * canvas.width + x) * 4;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+        
+        // Skip transparent pixels
+        if (a < 128) continue;
+        
+        // Skip near-black and near-white pixels (unreliable for WB)
+        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (lum < 10 || lum > 245) continue;
+        
+        rSum += r;
+        gSum += g;
+        bSum += b;
+        count++;
       }
-      
-      rSum += r;
-      gSum += g;
-      bSum += b;
-      count++;
     }
     
     if (count === 0) {
-      setTemp(0);
-      setTint(0);
       return;
     }
 
     const rAvg = rSum / count;
     const gAvg = gSum / count;
     const bAvg = bSum / count;
-    const solved = solveTempTintFromSample([rAvg, gAvg, bAvg], { red, green, blue });
-    if (solved) {
+    
+    console.log('[Auto WB] Sampled averages:', { rAvg: rAvg.toFixed(2), gAvg: gAvg.toFixed(2), bAvg: bAvg.toFixed(2), count });
+    
+    // Since we sampled the rendered canvas (already has base gains applied),
+    // pass {red:1, green:1, blue:1} so the solver doesn't apply them again
+    const solved = solveTempTintFromSample([rAvg, gAvg, bAvg], { red: 1, green: 1, blue: 1 });
+    
+    if (solved && Number.isFinite(solved.temp) && Number.isFinite(solved.tint)) {
       setTemp(solved.temp);
       setTint(solved.tint);
     }

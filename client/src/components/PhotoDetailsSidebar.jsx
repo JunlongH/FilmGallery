@@ -13,6 +13,9 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   const [camera, setCamera] = useState(base?.camera || roll?.camera || '');
   const [lens, setLens] = useState(base?.lens || roll?.lens || '');
   const [photographer, setPhotographer] = useState(base?.photographer || roll?.photographer || '');
+  const [aperture, setAperture] = useState(base?.aperture != null ? base.aperture : '');
+  const [shutterSpeed, setShutterSpeed] = useState(base?.shutter_speed || '');
+  const [iso, setIso] = useState(base?.iso != null ? base.iso : '');
   const [location, setLocation] = useState({
     location_id: base?.location_id || null,
     latitude: base?.latitude,
@@ -64,7 +67,10 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       longitude: location.longitude ?? null,
       camera: camera || null,
       lens: lens || null,
-      photographer: photographer || null
+      photographer: photographer || null,
+      aperture: aperture !== '' ? parseFloat(aperture) : null,
+      shutter_speed: shutterSpeed || null,
+      iso: iso !== '' ? parseInt(iso) : null
     };
     try {
       const API = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000';
@@ -154,6 +160,43 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
             <datalist id="lens-options">
               {(options.lenses || []).map((l, i) => <option key={i} value={l} />)}
             </datalist>
+          </div>
+        </div>
+        <div className="fg-sidepanel-groupGrid cols-3" style={{ marginTop: 8 }}>
+          <div className="fg-field">
+            <label className="fg-label">Aperture</label>
+            <input 
+              className="fg-input" 
+              type="number" 
+              step="0.1"
+              min="0.5"
+              max="64"
+              placeholder="e.g. 2.8" 
+              value={aperture} 
+              onChange={e=>setAperture(e.target.value)} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Shutter</label>
+            <input 
+              className="fg-input" 
+              type="text" 
+              placeholder="e.g. 1/125" 
+              value={shutterSpeed} 
+              onChange={e=>setShutterSpeed(e.target.value)} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">ISO</label>
+            <input 
+              className="fg-input" 
+              type="number" 
+              min="6"
+              max="25600"
+              placeholder="e.g. 400" 
+              value={iso} 
+              onChange={e=>setIso(e.target.value)} 
+            />
           </div>
         </div>
         <div className="fg-sidepanel-groupGrid cols-1" style={{ marginTop: 8 }}>

@@ -629,6 +629,12 @@ router.post('/:id/export-positive', async (req, res) => {
     const lutR = buildCurveLUT(curves.red || []);
     const lutG = buildCurveLUT(curves.green || []);
     const lutB = buildCurveLUT(curves.blue || []);
+    
+    // WB gains for JS processing when log inversion is used
+    const { computeWBGains } = require('../utils/filmlab-wb');
+    const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
+    const needsLogInversion = inverted && inversionMode === 'log';
+    const needsWbInJs = needsLogInversion;
 
     // Pull raw, apply LUTs, then encode to JPEG
     const { data, info } = await imgBase.raw().toBuffer({ resolveWithObject: true });
@@ -636,7 +642,23 @@ router.post('/:id/export-positive', async (req, res) => {
     const out = Buffer.allocUnsafe(width * height * 3);
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       let r = data[i]; let g = data[i + 1]; let b = data[i + 2];
-      r = toneLUT[r]; g = toneLUT[g]; b = toneLUT[b];
+      
+      // Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
+      if (needsLogInversion) {
+        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
+        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
+        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
+      }
+      
+      // Apply WB gains (only if log inversion was deferred)
+      if (needsWbInJs) {
+        r *= rBal; g *= gBal; b *= bBal;
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+      }
+      
+      r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
       r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
       r = lutR[r]; g = lutG[g]; b = lutB[b];
       out[j] = r; out[j + 1] = g; out[j + 2] = b;
@@ -658,6 +680,35 @@ router.post('/:id/export-positive', async (req, res) => {
           const { data: raw8, info: info8 } = await imgTiffBase.raw().toBuffer({ resolveWithObject: true });
           const width8 = info8.width; const height8 = info8.height; const channels8 = info8.channels;
           const raw16 = Buffer.allocUnsafe(width8 * height8 * channels8 * 2);
+          
+          // Apply log inversion and WB before converting to 16-bit (same as JPEG path)
+          for (let i = 0; i < raw8.length; i += channels8) {
+            let r = raw8[i]; let g = raw8[i + 1]; let b = raw8[i + 2];
+            
+            // Log inversion
+            if (needsLogInversion) {
+              r = 255 * (1 - Math.log(r + 1) / Math.log(256));
+              g = 255 * (1 - Math.log(g + 1) / Math.log(256));
+              b = 255 * (1 - Math.log(b + 1) / Math.log(256));
+            }
+            
+            // WB gains
+            if (needsWbInJs) {
+              r *= rBal; g *= gBal; b *= bBal;
+              r = Math.max(0, Math.min(255, r));
+              g = Math.max(0, Math.min(255, g));
+              b = Math.max(0, Math.min(255, b));
+            }
+            
+            // Apply tone and curves
+            r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
+            r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
+            r = lutR[r]; g = lutG[g]; b = lutB[b];
+            
+            // Update the buffer in place for 16-bit conversion below
+            raw8[i] = r; raw8[i + 1] = g; raw8[i + 2] = b;
+          }
+          
           for (let i=0, j=0; i<raw8.length; i++, j+=2) {
             // Scale 8-bit to 16-bit (simple upscale)
             const v8 = raw8[i];
@@ -761,6 +812,43 @@ router.post('/:id/render-positive', async (req, res) => {
         }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true });
         const { data: raw8, info: info8 } = await imgTiffBase.raw().toBuffer({ resolveWithObject: true });
         const width8 = info8.width; const height8 = info8.height; const channels8 = info8.channels;
+        
+        // Build LUTs and WB gains for JS processing
+        const toneLUT = buildToneLUT({
+          exposure, contrast,
+          highlights: Number.isFinite(p.highlights) ? p.highlights : 0,
+          shadows: Number.isFinite(p.shadows) ? p.shadows : 0,
+          whites: Number.isFinite(p.whites) ? p.whites : 0,
+          blacks: Number.isFinite(p.blacks) ? p.blacks : 0,
+        });
+        const curves = p.curves || { rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }], red: [{ x: 0, y: 0 }, { x: 255, y: 255 }], green: [{ x: 0, y: 0 }, { x: 255, y: 255 }], blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }] };
+        const lutRGB = buildCurveLUT(curves.rgb || []);
+        const lutR = buildCurveLUT(curves.red || []);
+        const lutG = buildCurveLUT(curves.green || []);
+        const lutB = buildCurveLUT(curves.blue || []);
+        const { computeWBGains } = require('../utils/filmlab-wb');
+        const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
+        const needsLogInversion = inverted && inversionMode === 'log';
+        const needsWbInJs = needsLogInversion;
+        
+        // Apply log inversion, WB, tone, curves before 16-bit conversion
+        for (let i = 0; i < raw8.length; i += channels8) {
+          let r = raw8[i]; let g = raw8[i + 1]; let b = raw8[i + 2];
+          if (needsLogInversion) {
+            r = 255 * (1 - Math.log(r + 1) / Math.log(256));
+            g = 255 * (1 - Math.log(g + 1) / Math.log(256));
+            b = 255 * (1 - Math.log(b + 1) / Math.log(256));
+          }
+          if (needsWbInJs) {
+            r *= rBal; g *= gBal; b *= bBal;
+            r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+          }
+          r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
+          r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
+          r = lutR[r]; g = lutG[g]; b = lutB[b];
+          raw8[i] = r; raw8[i + 1] = g; raw8[i + 2] = b;
+        }
+        
         const raw16 = Buffer.allocUnsafe(width8 * height8 * channels8 * 2);
         for (let i=0, j=0; i<raw8.length; i++, j+=2) {
           const v8 = raw8[i];
@@ -792,12 +880,32 @@ router.post('/:id/render-positive', async (req, res) => {
     const lutR = buildCurveLUT(curves.red || []);
     const lutG = buildCurveLUT(curves.green || []);
     const lutB = buildCurveLUT(curves.blue || []);
+    
+    // WB gains and log inversion flags for JS processing
+    const { computeWBGains } = require('../utils/filmlab-wb');
+    const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
+    const needsLogInversion = inverted && inversionMode === 'log';
+    const needsWbInJs = needsLogInversion;
+    
     const { data, info } = await imgBase.raw().toBuffer({ resolveWithObject: true });
     const width = info.width; const height = info.height; const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       let r = data[i]; let g = data[i + 1]; let b = data[i + 2];
-      r = toneLUT[r]; g = toneLUT[g]; b = toneLUT[b];
+      
+      // Log inversion
+      if (needsLogInversion) {
+        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
+        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
+        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
+      }
+      // WB gains
+      if (needsWbInJs) {
+        r *= rBal; g *= gBal; b *= bBal;
+        r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
+      }
+      
+      r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
       r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
       r = lutR[r]; g = lutG[g]; b = lutB[b];
       out[j] = r; out[j + 1] = g; out[j + 2] = b;

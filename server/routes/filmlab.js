@@ -130,13 +130,50 @@ router.post('/preview', async (req, res) => {
     // Sample center pixel for debugging
     const centerX = Math.floor(width / 2);
     const centerY = Math.floor(height / 2);
+    
+    // Get params for inversion and WB
+    const inverted = params?.inverted || false;
+    const inversionMode = params?.inversionMode || 'linear';
+    const temp = params?.temp || 0;
+    const tint = params?.tint || 0;
+    const red = params?.red ?? 1.0;
+    const green = params?.green ?? 1.0;
+    const blue = params?.blue ?? 1.0;
+    
+    // WB gains (same math as client)
+    const { computeWBGains } = require('../utils/filmlab-wb');
+    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
+    
+    // Log inversion needs to be done in JS (Sharp can't do log math)
+    const needsLogInversion = inverted && inversionMode === 'log';
+    // Linear inversion already done in buildPipeline, but WB was also done there.
+    // Since we're now deferring log inversion, we also need to apply WB here for log mode.
+    const needsWbInJs = needsLogInversion;
 
-    // Process per pixel: Inversion + WB already applied by buildPipeline
-    // Only apply Tone + Curves here
+    // Process per pixel: When inversionMode='log', apply inversion + WB here
+    // Otherwise, only apply Tone + Curves (Inversion + WB already done in buildPipeline)
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       let r = data[i];
       let g = data[i + 1];
       let b = data[i + 2];
+      
+      // Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
+      if (needsLogInversion) {
+        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
+        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
+        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
+      }
+      
+      // Apply WB gains (only if log inversion was deferred, otherwise already done in buildPipeline)
+      if (needsWbInJs) {
+        r *= rBal;
+        g *= gBal;
+        b *= bBal;
+        // Clamp
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+      }
 
       // Sample center pixel before processing
       if (Math.floor(i / channels / width) === centerY && (i / channels) % width === centerX) {
@@ -220,13 +257,47 @@ router.post('/render', async (req, res) => {
     const lutR = buildCurveLUT(curves.red || []);
     const lutG = buildCurveLUT(curves.green || []);
     const lutB = buildCurveLUT(curves.blue || []);
+    
+    // Get params for inversion and WB
+    const inverted = params?.inverted || false;
+    const inversionMode = params?.inversionMode || 'linear';
+    const temp = params?.temp || 0;
+    const tint = params?.tint || 0;
+    const red = params?.red ?? 1.0;
+    const green = params?.green ?? 1.0;
+    const blue = params?.blue ?? 1.0;
+    
+    // WB gains (same math as client)
+    const { computeWBGains } = require('../utils/filmlab-wb');
+    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
+    
+    // Log inversion needs to be done in JS (Sharp can't do log math)
+    const needsLogInversion = inverted && inversionMode === 'log';
+    const needsWbInJs = needsLogInversion;
 
-    // Pixel processing loop: Inversion + WB already applied by buildPipeline
-    // Only apply Tone + Curves here
+    // Pixel processing loop: When inversionMode='log', apply inversion + WB here
+    // Otherwise, only apply Tone + Curves (Inversion + WB already done in buildPipeline)
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       let r = data[i];
       let g = data[i + 1];
       let b = data[i + 2];
+      
+      // Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
+      if (needsLogInversion) {
+        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
+        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
+        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
+      }
+      
+      // Apply WB gains (only if log inversion was deferred)
+      if (needsWbInJs) {
+        r *= rBal;
+        g *= gBal;
+        b *= bBal;
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+      }
 
       // Apply tone mapping
       r = toneLUT[Math.floor(r)];
@@ -314,13 +385,47 @@ router.post('/export', async (req, res) => {
     const lutR = buildCurveLUT(curves.red || []);
     const lutG = buildCurveLUT(curves.green || []);
     const lutB = buildCurveLUT(curves.blue || []);
+    
+    // Get params for inversion and WB
+    const inverted = params?.inverted || false;
+    const inversionMode = params?.inversionMode || 'linear';
+    const temp = params?.temp || 0;
+    const tint = params?.tint || 0;
+    const red = params?.red ?? 1.0;
+    const green = params?.green ?? 1.0;
+    const blue = params?.blue ?? 1.0;
+    
+    // WB gains (same math as client)
+    const { computeWBGains } = require('../utils/filmlab-wb');
+    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
+    
+    // Log inversion needs to be done in JS (Sharp can't do log math)
+    const needsLogInversion = inverted && inversionMode === 'log';
+    const needsWbInJs = needsLogInversion;
 
-    // Pixel processing loop: Inversion + WB already applied by buildPipeline
-    // Only apply Tone + Curves here
+    // Pixel processing loop: When inversionMode='log', apply inversion + WB here
+    // Otherwise, only apply Tone + Curves (Inversion + WB already done in buildPipeline)
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       let r = data[i];
       let g = data[i + 1];
       let b = data[i + 2];
+      
+      // Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
+      if (needsLogInversion) {
+        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
+        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
+        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
+      }
+      
+      // Apply WB gains (only if log inversion was deferred)
+      if (needsWbInJs) {
+        r *= rBal;
+        g *= gBal;
+        b *= bBal;
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+      }
 
       // Apply tone mapping (exposure, contrast, highlights, shadows, whites, blacks)
       r = toneLUT[Math.floor(r)];
