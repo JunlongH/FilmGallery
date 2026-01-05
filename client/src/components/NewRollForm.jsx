@@ -36,10 +36,12 @@ export default function NewRollForm({ onCreated }) {
   const [fileDates, setFileDates] = useState({}); // { filename: 'YYYY-MM-DD' }
   const [fileMeta, setFileMeta] = useState({});   // { filename: { date, lens } }
   const [applyShotLog, setApplyShotLog] = useState(false);
+  const [logStartOffset, setLogStartOffset] = useState(0); // Skip first N files when mapping logs
 
   const totalShotLogCount = shotLogs.reduce((acc, cur) => acc + (Number(cur.count || cur.shots || 0) || 0), 0);
   const filesCount = files.length;
-  const shotLogMismatch = applyShotLog && filesCount > 0 && totalShotLogCount !== filesCount;
+  const effectiveFilesCount = Math.max(0, filesCount - logStartOffset);
+  const shotLogMismatch = applyShotLog && effectiveFilesCount > 0 && totalShotLogCount !== effectiveFilesCount;
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -120,6 +122,10 @@ export default function NewRollForm({ onCreated }) {
     const metaMap = {};
     const dateMap = {};
     let fileIndex = 0;
+    
+    // Skip first N files (for leader frames, overlapped frames, etc.)
+    const effectiveOffset = Math.max(0, Math.min(logStartOffset, sortedFiles.length - 1));
+    
     for (const log of shotLogs) {
       const count = Number(log.count || log.shots || 0) || 0;
       const date = log.date || '';
@@ -130,14 +136,17 @@ export default function NewRollForm({ onCreated }) {
       const city = log.city || '';
       const detail_location = log.detail_location || '';
       for (let i = 0; i < count; i++) {
-        if (fileIndex >= sortedFiles.length) break;
-        const name = sortedFiles[fileIndex].name;
-        metaMap[name] = { date, lens: lensFromLog, country, city, detail_location, aperture, shutter_speed };
+        const actualIndex = effectiveOffset + fileIndex;
+        if (actualIndex >= sortedFiles.length) break;
+        const name = sortedFiles[actualIndex].name;
+        metaMap[name] = { date, lens: lensFromLog, country, city, detail_location, aperture, shutter_speed, logIndex: shotLogs.indexOf(log) };
         if (date) dateMap[name] = date;
         fileIndex++;
       }
     }
     setFileMeta(metaMap);
+    setFileDates(dateMap);
+  };
     setFileDates(dateMap);
   };
 
@@ -504,6 +513,34 @@ export default function NewRollForm({ onCreated }) {
                     </button>
                   </div>
                 </div>
+                {/* Offset control for flexible mapping */}
+                {applyShotLog && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 12 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ color: '#0369a1' }}>Skip first</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={Math.max(0, filesCount - 1)}
+                        value={logStartOffset}
+                        onChange={e => {
+                          const v = Math.max(0, parseInt(e.target.value) || 0);
+                          setLogStartOffset(v);
+                        }}
+                        style={{ width: 60, padding: '2px 6px', borderRadius: 4, border: '1px solid #bae6fd', fontSize: 12 }}
+                      />
+                      <span style={{ color: '#0369a1' }}>files (leader frames, etc.)</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="fg-btn fg-btn-sm"
+                      style={{ padding: '2px 8px', fontSize: 11 }}
+                      onClick={() => { setLogStartOffset(0); setTimeout(handleApplyShotLog, 0); }}
+                    >
+                      Reset
+                    </button>
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: '#0c4a6e', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {shotLogs.map((l, i) => (
                     <span key={i} style={{ background: '#fff', padding: '2px 6px', borderRadius: 4, border: '1px solid #e0f2fe' }}>
@@ -513,8 +550,8 @@ export default function NewRollForm({ onCreated }) {
                 </div>
                 {applyShotLog && filesCount > 0 && (
                   <div style={{ marginTop: 8, fontSize: 12, color: shotLogMismatch ? '#b91c1c' : '#0f172a' }}>
-                    Mapping {filesCount} files with {totalShotLogCount} logged shots
-                    {shotLogMismatch ? ' (counts differ – adjust shot log or files)' : ''}
+                    Mapping {filesCount - logStartOffset} files (offset {logStartOffset}) with {totalShotLogCount} logged shots
+                    {shotLogMismatch ? ' (counts differ – adjust offset or shot log)' : ''}
                   </div>
                 )}
               </div>
@@ -570,6 +607,41 @@ export default function NewRollForm({ onCreated }) {
                         textAlign: 'center'
                       }}>
                         {fileDates[p.name]}
+                      </div>
+                    )}
+                    {/* Log assignment indicator */}
+                    {applyShotLog && fileMeta[p.name]?.logIndex !== undefined && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        background: 'rgba(14, 116, 144, 0.85)',
+                        color: '#fff',
+                        fontSize: 9,
+                        padding: '1px 5px',
+                        borderRadius: 8,
+                        fontWeight: 600
+                      }}>
+                        L{fileMeta[p.name].logIndex + 1}
+                      </div>
+                    )}
+                    {/* Skipped indicator */}
+                    {applyShotLog && logStartOffset > 0 && i < logStartOffset && (
+                      <div style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        background: 'rgba(0,0,0,0.4)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#fff',
+                        fontSize: 10,
+                        fontWeight: 600
+                      }}>
+                        SKIPPED
                       </div>
                     )}
                   </div>

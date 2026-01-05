@@ -248,7 +248,7 @@ router.get('/negatives', async (req, res) => {
 // update photo (adds tags support)
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, camera, lens, photographer } = req.body;
+  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, camera, lens, photographer, aperture, shutter_speed, iso } = req.body;
   console.log(`[PUT] Update photo ${id}`, req.body);
 
   const updates = [];
@@ -266,6 +266,9 @@ router.put('/:id', async (req, res) => {
   if (camera !== undefined) { updates.push('camera=?'); params.push(camera); }
   if (lens !== undefined) { updates.push('lens=?'); params.push(lens); }
   if (photographer !== undefined) { updates.push('photographer=?'); params.push(photographer); }
+  if (aperture !== undefined) { updates.push('aperture=?'); params.push(aperture !== null && aperture !== '' ? parseFloat(aperture) : null); }
+  if (shutter_speed !== undefined) { updates.push('shutter_speed=?'); params.push(shutter_speed || null); }
+  if (iso !== undefined) { updates.push('iso=?'); params.push(iso !== null && iso !== '' ? parseInt(iso) : null); }
 
   if (!updates.length && tags === undefined) {
     return res.json({ updated: 0 });
