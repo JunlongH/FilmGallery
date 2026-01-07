@@ -1,29 +1,524 @@
-## Film Gallery
+# Film Gallery
 ### *A Film management software developed all by AI tools using vibe coding.*
 
-**FilmGalery**
-- **当前版本:** v1.3.0（已合并至 `main`）
-- **发布说明:** 见 `docs/Release-1.3.0.md`
+一款专业的胶片摄影管理系统，支持多平台（桌面端、手机端、手表端）和多种部署方式。
 
-**Windows 构建（桌面端）**
-- 前置条件：已安装 Node.js 18+、Git。
-- 安装依赖：在仓库根目录运行：
-	- `npm install`
-	- 进入 `server/` 运行 `npm install`
-	- 进入 `client/`（若需要重新打包前端）运行 `npm install`
-- 开发运行：
-	- 服务端：在 `server/` 运行 `node server.js`
-	- 桌面端：在仓库根目录运行 `npm run start` 或双击 `run.bat`
-- 生产构建（可选）：
-	- 前端：在 `client/` 运行 `npm run build`，输出到 `client/build/`
-	- Electron 打包：在根目录运行 `npm run build:electron`（如配置），生成安装包于 `build/`
+---
 
-**移动端构建（Android / Expo）**
-- 前置条件：已安装 Node.js 18+、Git、Java/Android SDK（如需本地原生打包）。
-- 安装依赖：在 `mobile/` 运行 `npm install`
-- 开发运行（Expo）：在 `mobile/` 运行 `npm run start`，使用 Expo Go 或 Android 模拟器连接。
-- 生产构建：
-	- 使用 EAS：在 `mobile/` 运行 `npx eas build -p android` 生成 APK/AAB（需要登录并配置 EAS）。
-	- 或使用本地 Gradle：在 `mobile/android/` 运行 `./gradlew assembleRelease`（需正确的签名与环境）。
+## 📦 版本说明
 
-仅提交源码与配置：`mobile/.gitignore` 已排除 `node_modules/` 与构建输出，请勿提交 APK/AAB、Android build 文件夹。
+### 当前版本
+- **桌面端**: v1.8.0
+- **移动端**: v1.3.1
+- **服务器**: v1.8.0
+- **最新更新**: Server/Client 分离架构 + Docker 部署支持
+
+### 版本类型
+
+#### 1. **桌面端 - Full Version（完整版）**
+- **包含**: 内嵌服务器 + 客户端界面
+- **适用场景**: 单机使用、不需要远程访问
+- **安装包大小**: ~250MB
+- **安装包名称**: `FilmGallery Setup 1.8.0.exe`
+- **下载位置**: `dist_v9/`
+
+#### 2. **桌面端 - Client-Only Version（轻量版）**
+- **包含**: 仅客户端界面
+- **适用场景**: 连接远程服务器、多设备共享数据
+- **安装包大小**: ~100MB
+- **安装包名称**: `FilmGallery-Client Setup 1.8.0.exe`
+- **下载位置**: `dist_v9_client/`
+- **要求**: 需要单独部署服务器
+
+#### 3. **服务器 - Docker Version**
+- **适用场景**: 
+  - 远程服务器部署
+  - NAS 设备部署
+  - 多设备共享数据
+  - 7x24 小时运行
+- **部署方式**: Docker / Docker Compose
+- **详细文档**: 见 [README-DEPLOY.md](./README-DEPLOY.md)
+
+#### 4. **移动端 - Android App**
+- **版本**: v1.3.1
+- **包名**: `com.filmgallery.app`
+- **适用场景**: 外出拍摄、快速查看照片、移动端管理
+- **要求**: 需要连接到服务器（Full Version 或 Docker Server）
+
+#### 5. **手表端 - Watch App**
+- **平台**: Apple Watch / Android Wear (开发中)
+- **适用场景**: 快速查看拍摄参数、拍摄计数
+- **要求**: 需要配对手机端 App
+
+---
+
+## 🚀 快速开始
+
+### 桌面端安装
+
+#### Full Version（推荐新手）
+```bash
+# 1. 下载安装包
+# dist_v9/FilmGallery Setup 1.8.0.exe
+
+# 2. 运行安装程序
+# 双击安装包，按提示完成安装
+
+# 3. 启动应用
+# 桌面双击快捷方式或从开始菜单启动
+
+# 4. 首次使用
+# 应用会自动启动内嵌服务器（localhost:4000）
+# 无需额外配置即可使用
+```
+
+#### Client-Only Version（适合高级用户）
+```bash
+# 1. 先部署服务器（见下方"服务器部署"）
+
+# 2. 下载并安装客户端
+# dist_v9_client/FilmGallery-Client Setup 1.8.0.exe
+
+# 3. 配置服务器连接
+# 启动应用 → Settings → Server Configuration
+# 输入服务器地址（如 http://192.168.1.100:4000）
+# 点击 Test Connection → Save & Restart
+
+# 4. 配置数据路径（可选）
+# Settings → Data Location
+# 手动输入服务器上的路径或使用 Browse（本地模式）
+```
+
+---
+
+## 🐳 服务器部署
+
+### Docker 部署（推荐）
+
+**一键启动**：
+```bash
+cd server
+docker-compose up -d
+```
+
+**访问**：
+- 服务器地址: `http://localhost:4000`
+- 数据存储: `./data/db/` (数据库) + `./data/uploads/` (照片)
+
+**详细说明**：
+- 完整 Docker 部署指南: [README-DEPLOY.md](./README-DEPLOY.md)
+- 环境变量配置
+- 持久化存储设置
+- 网络和防火墙配置
+
+### 传统部署（Windows/Linux）
+
+**前置条件**：
+- Node.js 18+
+- Git
+
+**步骤**：
+```bash
+# 1. 安装依赖
+cd server
+npm install
+
+# 2. 启动服务器
+node server.js
+# 或使用 nodemon (开发模式)
+npm run dev
+
+# 3. 验证运行
+# 浏览器访问 http://localhost:4000/api/health
+```
+
+**生产环境**：
+```bash
+# 使用 PM2 管理进程
+npm install -g pm2
+pm2 start server.js --name film-gallery
+pm2 save
+pm2 startup
+```
+
+---
+
+## 📱 移动端安装与使用
+
+### Android App
+
+#### 安装方式
+
+**方法 1: 下载 APK（推荐）**
+```bash
+# 1. 从 Releases 页面下载最新 APK
+# 或使用 EAS 构建：
+cd mobile
+npx eas build -p android --profile preview
+
+# 2. 传输到手机并安装
+# 需要在手机设置中允许"未知来源"安装
+```
+
+**方法 2: 开发调试**
+```bash
+# 1. 安装依赖
+cd mobile
+npm install
+
+# 2. 启动开发服务器
+npm start
+
+# 3. 使用 Expo Go 扫码
+# 或在模拟器中运行：npm run android
+```
+
+#### 首次配置
+
+1. **连接服务器**
+   - 打开 App → Settings
+   - 输入服务器地址（如 `http://192.168.1.100:4000`）
+   - 测试连接 → 保存
+
+2. **网络要求**
+   - 手机和服务器需在**同一局域网**
+   - 或服务器开放公网访问（不推荐，需配置 HTTPS）
+
+3. **功能说明**
+   - 📸 快速拍摄记录
+   - 🎞️ 胶卷管理
+   - 📊 查看统计数据
+   - 🗺️ 地图定位
+   - 🏷️ 标签管理
+
+#### 构建生产版本
+
+**使用 EAS Build（推荐）**：
+```bash
+cd mobile
+
+# 配置 EAS
+npx eas login
+npx eas build:configure
+
+# 构建 APK
+npx eas build -p android --profile production
+
+# 构建 AAB (Google Play)
+npx eas build -p android --profile production --non-interactive
+```
+
+**本地构建**：
+```bash
+cd mobile/android
+
+# Release APK
+./gradlew assembleRelease
+
+# 输出位置
+# android/app/build/outputs/apk/release/app-release.apk
+```
+
+---
+
+## ⌚ 手表端安装与使用
+
+### Watch App (Apple Watch)
+
+**当前状态**: Beta 测试中
+
+**安装步骤**：
+```bash
+# 1. 构建 Watch App
+cd watch-app
+
+# 2. 安装依赖
+npm install
+
+# 3. iOS 开发（需要 Mac）
+cd ios
+pod install
+open WatchApp.xcworkspace
+
+# 4. 选择 Watch Scheme 并运行到配对的 Apple Watch
+```
+
+**功能**：
+- 🎯 快速查看当前胶卷信息
+- 📊 今日拍摄统计
+- ⏱️ 拍摄计数器
+- 📍 快速记录拍摄位置
+
+**同步说明**：
+- Watch App 通过蓝牙与手机端同步
+- 数据最终存储在服务器
+- 支持离线记录，联网后自动同步
+
+---
+
+## 🛠️ 开发构建
+
+### 前置条件
+- Node.js 18+
+- Git
+- Python 3.x (Sharp 依赖)
+- Visual Studio Build Tools (Windows)
+
+### 桌面端开发
+
+```bash
+# 1. 克隆仓库
+git clone https://github.com/JunlongH/FilmGalery.git
+cd FilmGalery
+
+# 2. 安装依赖
+npm install                # 根目录 (Electron)
+cd server && npm install   # 服务器
+cd ../client && npm install # 客户端 React
+
+# 3. 开发运行
+# Terminal 1: 启动服务器
+cd server
+node server.js
+
+# Terminal 2: 启动 Electron
+cd ..
+npm run start
+# 或双击 run.bat
+
+# 4. 构建安装包
+# Full Version
+npm run dist
+
+# Client-Only Version
+npm run dist:client-only
+```
+
+### 客户端单独开发
+
+```bash
+cd client
+
+# 开发服务器
+npm start
+
+# 构建生产版本
+npm run build
+```
+
+### 移动端开发
+
+```bash
+cd mobile
+
+# 安装依赖
+npm install
+
+# 启动 Expo 开发服务器
+npm start
+
+# 在模拟器/设备运行
+npm run android  # Android
+npm run ios      # iOS (需要 Mac)
+
+# 构建 APK
+npx eas build -p android
+```
+
+### 手表端开发
+
+```bash
+cd watch-app
+
+# 安装依赖
+npm install
+
+# iOS (需要 Mac + Xcode)
+cd ios
+pod install
+open WatchApp.xcworkspace
+
+# Android Wear (开发中)
+cd android
+./gradlew assembleDebug
+```
+
+---
+
+## 📂 项目结构
+
+```
+FilmGalery/
+├── client/              # React 前端应用
+│   ├── src/
+│   │   ├── components/  # React 组件
+│   │   ├── api.js       # API 客户端
+│   │   └── styles/      # 样式文件
+│   ├── build/           # 构建输出
+│   └── package.json
+│
+├── server/              # Node.js 后端服务
+│   ├── routes/          # API 路由
+│   ├── services/        # 业务逻辑
+│   ├── utils/           # 工具函数
+│   ├── db.js            # 数据库连接
+│   ├── server.js        # 入口文件
+│   ├── Dockerfile       # Docker 镜像
+│   └── docker-compose.yml
+│
+├── mobile/              # React Native 移动端
+│   ├── src/
+│   │   ├── components/
+│   │   ├── screens/
+│   │   └── services/
+│   ├── android/         # Android 原生代码
+│   ├── ios/             # iOS 原生代码
+│   └── app.json         # Expo 配置
+│
+├── watch-app/           # 手表端应用
+│   ├── src/
+│   ├── ios/             # Apple Watch
+│   └── android/         # Android Wear
+│
+├── electron-main.js     # Electron 主进程
+├── electron-preload.js  # Electron 预加载脚本
+├── electron-builder-client-only.json  # Client-Only 构建配置
+│
+├── dist_v9/             # Full Version 安装包输出
+├── dist_v9_client/      # Client-Only 安装包输出
+│
+├── docs/                # 文档
+│   ├── README-DEPLOY.md # 部署指南
+│   ├── API_BASE-QUICK-REFERENCE.md
+│   └── bugfix-*.md      # Bug 修复记录
+│
+└── README.md            # 本文件
+```
+
+---
+
+## 🔧 配置说明
+
+### 桌面端配置
+
+**Full Version**:
+- 数据位置: `%APPDATA%/FilmGallery` 或自定义路径
+- 服务器端口: `4000` (自动启动)
+- 配置文件: `%APPDATA%/FilmGallery/config.json`
+
+**Client-Only Version**:
+- 服务器地址: Settings → Server Configuration
+- 数据路径: 手动输入远程服务器路径
+- 配置文件: `%APPDATA%/FilmGallery-Client/config.json`
+
+### 服务器配置
+
+**环境变量** (`.env` 或 Docker):
+```bash
+PORT=4000                    # 服务器端口
+DATA_ROOT=/data/db           # 数据库目录
+UPLOADS_ROOT=/data/uploads   # 上传文件目录
+NODE_ENV=production          # 运行环境
+```
+
+**Docker Compose**:
+```yaml
+services:
+  film-gallery:
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./data/db:/data/db
+      - ./data/uploads:/data/uploads
+    environment:
+      - PORT=4000
+```
+
+### 移动端配置
+
+**app.json**:
+```json
+{
+  "expo": {
+    "version": "1.3.1",
+    "android": {
+      "package": "com.filmgallery.app",
+      "versionCode": 6
+    }
+  }
+}
+```
+
+**服务器连接**:
+- App 内 Settings 配置
+- 支持 HTTP/HTTPS
+- 局域网或公网访问
+
+---
+
+## 📚 文档链接
+
+- 📖 [完整部署指南](./README-DEPLOY.md) - Docker、服务器、客户端部署
+- 🔧 [API_BASE 使用规范](./docs/API_BASE-QUICK-REFERENCE.md) - 开发者参考
+- 🐛 [Bug 修复记录](./docs/) - 问题追踪和解决方案
+- 📱 [移动端开发文档](./mobile/README-filesystem-migration.md) - 文件系统迁移
+- ⌚ [手表端开发文档](./docs/WATCH-APP-DEVELOPMENT.md) - Watch App 指南
+
+---
+
+## 🤝 贡献指南
+
+欢迎贡献代码！请遵循以下步骤：
+
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'Add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
+
+---
+
+## 📝 版本历史
+
+### v1.8.0 (2026-01-08)
+- ✨ 新增 Server/Client 分离架构
+- 🐳 支持 Docker 部署
+- 🔧 Client-Only 轻量版构建
+- 🌐 远程服务器连接支持
+- 📝 完整部署文档
+
+### v1.3.1 (2025-12-10)
+- 📱 移动端曝光调整优化
+- 🔧 文件系统迁移支持
+- 🐛 修复 OneDrive 同步问题
+
+### v1.3.0 (2025-11)
+- 🎨 UI/UX 全面改进
+- 📊 统计功能增强
+- 🗺️ 地图集成
+- ⌚ Watch App Beta 版本
+
+---
+
+## 📄 许可证
+
+本项目采用 MIT 许可证 - 详见 [LICENSE](./LICENSE) 文件
+
+---
+
+## 💬 联系方式
+
+- **Issues**: [GitHub Issues](https://github.com/JunlongH/FilmGalery/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/JunlongH/FilmGalery/discussions)
+
+---
+
+## 🌟 特别说明
+
+**仅提交源码与配置**：
+- `mobile/.gitignore` 和 `watch-app/.gitignore` 已排除 `node_modules/` 与构建输出
+- 请勿提交 APK/AAB、Android/iOS build 文件夹
+- 请勿提交 `dist_v9/` 和 `dist_v9_client/` 中的安装包
+
+**AI 辅助开发**：
+本项目使用 AI 工具（GitHub Copilot、Claude）进行 vibe coding 开发，展示了 AI 辅助编程的可能性。
