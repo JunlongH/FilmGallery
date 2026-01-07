@@ -6,8 +6,7 @@ import {
   AreaChart, Area
 } from 'recharts';
 import WordCloud from './WordCloud';
-
-const API = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000';
+import { API_BASE as API } from '../api';
 
 const formatStat = (val) => {
   const num = Number(val);
