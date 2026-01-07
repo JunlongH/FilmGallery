@@ -5,7 +5,7 @@ import {
   eachDayOfInterval, isSameMonth, isSameDay, addMonths, subMonths, 
   addYears, subYears, setMonth 
 } from 'date-fns';
-import { buildUploadUrl } from '../api';
+import { buildUploadUrl, API_BASE } from '../api';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import 'react-lazy-load-image-component/src/effects/opacity.css';
 import ImageViewer from './ImageViewer';
@@ -48,8 +48,8 @@ export default function PhotoCalendar() {
     queryKey: ['photos', year, viewMode === 'month' ? month : 'all'],
     queryFn: async () => {
       const url = viewMode === 'month' 
-        ? `${process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000'}/api/photos?year=${year}&month=${month}`
-        : `${process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000'}/api/photos?year=${year}`;
+        ? `${API_BASE}/api/photos?year=${year}&month=${month}`
+        : `${API_BASE}/api/photos?year=${year}`;
       const res = await fetch(url);
       const data = await res.json();
       return Array.isArray(data) ? data : [];

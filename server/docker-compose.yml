@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  film-gallery-server:
+    build: 
+      context: ../
+      dockerfile: server/Dockerfile
+    image: film-gallery-server:latest
+    container_name: film-gallery-server
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+      - DATA_ROOT=/data/db
+      - UPLOADS_ROOT=/data/uploads
+    volumes:
+      # Persist SQLite database
+      - ./data/db:/data/db
+      # Persist Uploads (photos, thumbnails)
+      - ./data/uploads:/data/uploads
+    # Optional: limit resources
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '2'
+    #       memory: 2G
+
+# To run:
+# 1. Create directory structure: mkdir -p data/db data/uploads
+# 2. docker-compose up -d

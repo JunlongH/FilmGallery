@@ -42,8 +42,14 @@ app.use(requestProfiler());
 app.use(bodyParser.json({ limit: '10mb' }));
 // gzip/deflate for API JSON responses (not applied to static uploads)
 app.use(compression({ threshold: 1024 }));
-// CORS: reflect origin (including 'null' from file://) and allow private network
-app.use(cors({ origin: true, credentials: false, preflightContinue: true }));
+
+// CORS: Must match any configured client origin
+app.use(cors({ 
+  origin: true, // Allow all origins for now (simplifies Docker/lan setup)
+  credentials: true, 
+  preflightContinue: true 
+}));
+
 app.use((req, res, next) => {
 	res.setHeader('Access-Control-Allow-Private-Network', 'true');
 	next();

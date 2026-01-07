@@ -1,0 +1,49 @@
+{
+  "appId": "com.yourorg.filmgallery.client",
+  "productName": "FilmGallery-Client",
+  "files": [
+    "client/build/**/*",
+    "electron-main.js",
+    "electron-preload.js",
+    "electron-gpu/**/*",
+    "assets/**/*",
+    "package.json",
+    "!**/film.db",
+    "!**/uploads/**",
+    "!**/.git/**",
+    "!**/node_modules/**/test/**"
+  ],
+  "npmRebuild": false,
+  "extraResources": [],
+  "asar": true,
+  "directories": {
+    "buildResources": "assets",
+    "output": "dist_v9_client"
+  },
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "assets/icon.png"
+  },
+  "mac": {
+    "target": ["dmg"],
+    "icon": "assets/icon.png"
+  },
+  "linux": {
+    "target": ["AppImage"],
+    "icon": "assets/icon.png"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowElevation": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "allowToChangeInstallationDirectory": true,
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  }
+}

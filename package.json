@@ -18,6 +18,8 @@
     "build": "npm run build-client",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run build && electron-builder",
+    "dist:full": "npm run build && electron-builder",
+    "dist:client-only": "npm run build && electron-builder --config electron-builder-client-only.json",
     "start": "electron ."
   },
   "devDependencies": {

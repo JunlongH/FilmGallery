@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import LocationSelect from './LocationSelect.jsx';
-import { getMetadataOptions } from '../api';
+import { getMetadataOptions, API_BASE } from '../api';
 import '../styles/forms.css';
 import '../styles/sidebar.css';
 
@@ -73,10 +73,9 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       iso: iso !== '' ? parseInt(iso) : null
     };
     try {
-      const API = process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000';
       const targets = isBatch ? photos : [photo];
       for (const p of targets) {
-        await fetch(`${API}/api/photos/${p.id}`, {
+        await fetch(`${API_BASE}/api/photos/${p.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)

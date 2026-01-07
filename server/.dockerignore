@@ -1,0 +1,15 @@
+.DS_Store
+node_modules/
+npm-debug.log
+yarn-error.log
+.env
+.git
+.gitignore
+docker-compose.yml
+Dockerfile
+# Ignore client/electron artifacts if building from root context
+../client
+../dist_v9
+../electron-*
+../mobile
+../watch-app
