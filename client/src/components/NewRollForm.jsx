@@ -6,14 +6,18 @@ import LocationSelect from './LocationSelect.jsx';
 import '../styles/forms.css';
 import FilmSelector from './FilmSelector';
 import ModalDialog from './ModalDialog';
+import EquipmentSelector from './EquipmentSelector';
 
 export default function NewRollForm({ onCreated }) {
   const location = useLocation();
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [camera, setCamera] = useState('');
-  const [lens, setLens] = useState('');
+  const [camera, setCamera] = useState(''); // legacy text field
+  const [lens, setLens] = useState(''); // legacy text field
+  const [cameraEquipId, setCameraEquipId] = useState(null);
+  const [lensEquipId, setLensEquipId] = useState(null);
+  const [selectedCamera, setSelectedCamera] = useState(null);
   const [photographer, setPhotographer] = useState('');
   const [filmId, setFilmId] = useState(null);
   const [exposures, setExposures] = useState(''); //数量
@@ -169,7 +173,18 @@ export default function NewRollForm({ onCreated }) {
         showAlert('Invalid Date', 'Start date cannot be later than end date');
         return;
       }
-      const fieldsBase = { title, start_date: startDate || null, end_date: endDate || null, camera, lens, photographer, exposures, notes };
+      const fieldsBase = { 
+        title, 
+        start_date: startDate || null, 
+        end_date: endDate || null, 
+        camera, 
+        lens, 
+        camera_equip_id: cameraEquipId || null,
+        lens_equip_id: lensEquipId || null,
+        photographer, 
+        exposures, 
+        notes 
+      };
       const fields = useInventory && filmItemId
         ? { ...fieldsBase, film_item_id: filmItemId }
         : { ...fieldsBase, filmId };
@@ -356,17 +371,50 @@ export default function NewRollForm({ onCreated }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div className="fg-field">
             <label className="fg-label">Camera</label>
-            <input className="fg-input" list="camera-options" value={camera} onChange={e => setCamera(e.target.value)} placeholder="Select or type..." />
-            <datalist id="camera-options">
-              {options.cameras.map((c, i) => <option key={i} value={c} />)}
-            </datalist>
+            <EquipmentSelector 
+              type="camera" 
+              value={cameraEquipId} 
+              onChange={(id, item) => {
+                setCameraEquipId(id);
+                setSelectedCamera(item);
+                // Generate display text for legacy field
+                if (item) {
+                  setCamera(`${item.brand} ${item.model}`);
+                  // If camera has fixed lens, clear lens selection
+                  if (item.has_fixed_lens) {
+                    setLensEquipId(null);
+                    setLens(item.fixed_lens_focal_length ? `${item.fixed_lens_focal_length}mm f/${item.fixed_lens_max_aperture || '?'}` : 'Fixed');
+                  }
+                } else {
+                  setCamera('');
+                }
+              }}
+              placeholder="Select camera..."
+            />
           </div>
           <div className="fg-field">
             <label className="fg-label">Lens</label>
-            <input className="fg-input" list="lens-options" value={lens} onChange={e => setLens(e.target.value)} placeholder="Select or type..." />
-            <datalist id="lens-options">
-              {options.lenses.map((l, i) => <option key={i} value={l} />)}
-            </datalist>
+            {selectedCamera?.has_fixed_lens ? (
+              <div className="fg-input" style={{ background: '#f5f5f5', cursor: 'not-allowed', color: '#666' }}>
+                Fixed lens: {selectedCamera.fixed_lens_focal_length ? `${selectedCamera.fixed_lens_focal_length}mm` : 'Built-in'} 
+                {selectedCamera.fixed_lens_max_aperture ? ` f/${selectedCamera.fixed_lens_max_aperture}` : ''}
+              </div>
+            ) : (
+              <EquipmentSelector 
+                type="lens" 
+                value={lensEquipId} 
+                cameraId={cameraEquipId}
+                onChange={(id, item) => {
+                  setLensEquipId(id);
+                  if (item) {
+                    setLens(`${item.brand} ${item.model}`);
+                  } else {
+                    setLens('');
+                  }
+                }}
+                placeholder="Select lens..."
+              />
+            )}
           </div>
           <div className="fg-field">
             <label className="fg-label">Photographer</label>

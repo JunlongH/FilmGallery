@@ -52,6 +52,10 @@ router.post('/', (req, res) => {
       const film_type = body.film_type || null;
       const filmIdRaw = body.filmId ? Number(body.filmId) : null;
       const film_item_id = body.film_item_id ? Number(body.film_item_id) : null;
+      // Equipment IDs (new)
+      const camera_equip_id = body.camera_equip_id ? Number(body.camera_equip_id) : null;
+      const lens_equip_id = body.lens_equip_id ? Number(body.lens_equip_id) : null;
+      const flash_equip_id = body.flash_equip_id ? Number(body.flash_equip_id) : null;
       let filmId = filmIdRaw;
       let filmIso = null;
       const notes = body.notes || null;
@@ -96,7 +100,7 @@ router.post('/', (req, res) => {
         }
       }
 
-      const sql = `INSERT INTO rolls (title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id) VALUES (?,?,?,?,?,?,?,?,?,?)`;
+      const sql = `INSERT INTO rolls (title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id, camera_equip_id, lens_equip_id, flash_equip_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
       // ==============================
       // ATOMIC CREATE (DB + FILES)
@@ -170,7 +174,7 @@ router.post('/', (req, res) => {
 
         // Begin transaction AFTER validation so we can fully rollback.
         await runAsync('BEGIN');
-        const rollInsertRes = await runAsync(sql, [title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id]);
+        const rollInsertRes = await runAsync(sql, [title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id, camera_equip_id, lens_equip_id, flash_equip_id]);
         rollId = rollInsertRes?.lastID;
         if (!rollId) throw new Error('Failed to create roll');
 
@@ -753,9 +757,35 @@ router.get('/:id', async (req, res) => {
   const id = req.params.id;
   try {
     const sql = `
-      SELECT rolls.*, films.name AS film_name_joined, films.iso AS film_iso_joined
+      SELECT rolls.*, 
+             films.name AS film_name_joined, 
+             films.iso AS film_iso_joined,
+             cam.name AS camera_equip_name,
+             cam.brand AS camera_equip_brand,
+             cam.model AS camera_equip_model,
+             cam.mount AS camera_equip_mount,
+             cam.type AS camera_equip_type,
+             cam.has_fixed_lens AS camera_has_fixed_lens,
+             cam.fixed_lens_focal_length AS camera_fixed_lens_focal_length,
+             cam.fixed_lens_max_aperture AS camera_fixed_lens_max_aperture,
+             cam.image_path AS camera_equip_image,
+             lens.name AS lens_equip_name,
+             lens.brand AS lens_equip_brand,
+             lens.model AS lens_equip_model,
+             lens.focal_length_min AS lens_equip_focal_min,
+             lens.focal_length_max AS lens_equip_focal_max,
+             lens.max_aperture AS lens_equip_max_aperture,
+             lens.image_path AS lens_equip_image,
+             flash.name AS flash_equip_name,
+             flash.brand AS flash_equip_brand,
+             flash.model AS flash_equip_model,
+             flash.guide_number AS flash_equip_gn,
+             flash.image_path AS flash_equip_image
       FROM rolls
       LEFT JOIN films ON rolls.filmId = films.id
+      LEFT JOIN equip_cameras cam ON rolls.camera_equip_id = cam.id
+      LEFT JOIN equip_lenses lens ON rolls.lens_equip_id = lens.id
+      LEFT JOIN equip_flashes flash ON rolls.flash_equip_id = flash.id
       WHERE rolls.id = ?
     `;
     const row = await new Promise((resolve, reject) => {
@@ -876,7 +906,7 @@ router.delete('/:id/preset', (req, res) => {
 // PUT /api/rolls/:id
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  const { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note } = req.body;
+  const { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
   if (start_date !== undefined && end_date !== undefined) {
     const sd = new Date(start_date);
     const ed = new Date(end_date);
@@ -887,7 +917,7 @@ router.put('/:id', async (req, res) => {
   // Build dynamic UPDATE query to only update provided fields
   const updates = [];
   const values = [];
-  const fieldMap = { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note };
+  const fieldMap = { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id };
   
   for (const [key, val] of Object.entries(fieldMap)) {
     if (val !== undefined) {

@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import ModalDialog from './ModalDialog';
 import { updateFilmItem, getMetadataOptions } from '../api';
+import EquipmentSelector from './EquipmentSelector';
 
 export function LoadFilmModal({ item, isOpen, onClose, onLoaded }) {
   const [camera, setCamera] = useState('');
+  const [cameraEquipId, setCameraEquipId] = useState(null);
   const [loadedDate, setLoadedDate] = useState(new Date().toISOString().split('T')[0]);
   const [options, setOptions] = useState({ cameras: [] });
   const [loading, setLoading] = useState(false);
@@ -24,6 +26,7 @@ export function LoadFilmModal({ item, isOpen, onClose, onLoaded }) {
     const optimisticPatch = {
       status: 'loaded',
       loaded_camera: camera,
+      loaded_camera_equip_id: cameraEquipId,
       loaded_date: loadedDate || null,
     };
     if (onLoaded && item) {
@@ -36,6 +39,7 @@ export function LoadFilmModal({ item, isOpen, onClose, onLoaded }) {
       const res = await updateFilmItem(item.id, { 
         status: 'loaded', 
         loaded_camera: camera,
+        loaded_camera_equip_id: cameraEquipId,
         loaded_at: new Date().toISOString(),
         loaded_date: loadedDate || null
       });
@@ -71,18 +75,16 @@ export function LoadFilmModal({ item, isOpen, onClose, onLoaded }) {
           </div>
           <div className="fg-field">
             <label className="fg-label">Camera (Optional)</label>
-            <input 
-              className="fg-input" 
-              list="camera-options-load" 
-              value={camera} 
-              onChange={e => setCamera(e.target.value)} 
-              placeholder="Select or type camera..." 
-              autoFocus
+            <EquipmentSelector 
+              type="camera" 
+              value={cameraEquipId} 
+              onChange={(id, item) => {
+                setCameraEquipId(id);
+                setCamera(item ? `${item.brand} ${item.model}` : '');
+              }}
+              placeholder="Select camera..." 
               disabled={loading}
             />
-            <datalist id="camera-options-load">
-              {options.cameras.map((c, i) => <option key={i} value={c} />)}
-            </datalist>
           </div>
           <div className="fg-modal-footer" style={{ marginTop: 20 }}>
             <button type="button" className="fg-btn" onClick={onClose} disabled={loading}>Cancel</button>

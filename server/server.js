@@ -12,6 +12,7 @@ const { uploadsDir, tmpUploadDir, localTmpDir, rollsDir } = require('./config/pa
 const { getDbPath } = require('./config/db-config');
 const { runMigration } = require('./utils/migration');
 const { runSchemaMigration } = require('./utils/schema-migration');
+const { runEquipmentMigration } = require('./utils/equipment-migration');
 const { cacheSeconds } = require('./utils/cache');
 const { requestProfiler, getProfilerStats, scheduleProfilerLog } = require('./utils/profiler');
 const PreparedStmt = require('./utils/prepared-statements');
@@ -131,6 +132,7 @@ const mountRoutes = () => {
   app.use('/api/tags', cacheSeconds(120), require('./routes/tags'));
   app.use('/api/locations', cacheSeconds(300), require('./routes/locations'));
   app.use('/api/stats', cacheSeconds(60), require('./routes/stats'));
+  app.use('/api/equipment', cacheSeconds(120), require('./routes/equipment')); // Equipment management
   // rolls/photos change more often; keep very short cache to help bursts
   app.use('/api/rolls', cacheSeconds(10), require('./routes/rolls'));
   app.use('/api/photos', cacheSeconds(10), require('./routes/photos'));
@@ -223,6 +225,11 @@ const seedLocations = async () => {
         console.log('[SERVER] Starting schema migration...');
         await runSchemaMigration();
         console.log('[SERVER] Schema migration complete.');
+
+        // 2b. Run Equipment Migration (Cameras, Lenses, Flashes, Film Formats)
+        console.log('[SERVER] Starting equipment migration...');
+        await runEquipmentMigration();
+        console.log('[SERVER] Equipment migration complete.');
 
 		// 3. Load DB now that file is ready
 		const db = require('./db');

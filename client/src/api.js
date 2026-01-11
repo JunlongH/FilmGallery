@@ -541,3 +541,161 @@ export async function filmlabPreview({ photoId, params, maxWidth = 1400 }) {
   return { ok: false, error: err && (err.error || err.message) };
 }
 
+// ========================================
+// EQUIPMENT MANAGEMENT API
+// ========================================
+
+// Get equipment constants (camera types, lens mounts, etc.)
+export async function getEquipmentConstants() {
+  return jsonFetch('/api/equipment/constants');
+}
+
+// Get all equipment suggestions (cameras, lenses, flashes, formats)
+export async function getEquipmentSuggestions() {
+  return jsonFetch('/api/equipment/suggestions');
+}
+
+// Film Formats
+export async function getFilmFormats() {
+  return jsonFetch('/api/equipment/formats');
+}
+
+export async function createFilmFormat(data) {
+  return jsonFetch('/api/equipment/formats', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+// Cameras
+export async function getCameras(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return jsonFetch(`/api/equipment/cameras${qs ? '?' + qs : ''}`);
+}
+
+export async function getCamera(id) {
+  return jsonFetch(`/api/equipment/cameras/${id}`);
+}
+
+export async function createCamera(data) {
+  return jsonFetch('/api/equipment/cameras', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function updateCamera(id, data) {
+  return jsonFetch(`/api/equipment/cameras/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteCamera(id, hard = false) {
+  return jsonFetch(`/api/equipment/cameras/${id}${hard ? '?hard=true' : ''}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function uploadCameraImage(id, file) {
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch(`${API_BASE}/api/equipment/cameras/${id}/image`, {
+    method: 'POST',
+    body: fd
+  });
+  return res.json();
+}
+
+// Lenses
+export async function getLenses(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return jsonFetch(`/api/equipment/lenses${qs ? '?' + qs : ''}`);
+}
+
+export async function getLens(id) {
+  return jsonFetch(`/api/equipment/lenses/${id}`);
+}
+
+export async function createLens(data) {
+  return jsonFetch('/api/equipment/lenses', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function updateLens(id, data) {
+  return jsonFetch(`/api/equipment/lenses/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteLens(id, hard = false) {
+  return jsonFetch(`/api/equipment/lenses/${id}${hard ? '?hard=true' : ''}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function uploadLensImage(id, file) {
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch(`${API_BASE}/api/equipment/lenses/${id}/image`, {
+    method: 'POST',
+    body: fd
+  });
+  return res.json();
+}
+
+// Flashes
+export async function getFlashes(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return jsonFetch(`/api/equipment/flashes${qs ? '?' + qs : ''}`);
+}
+
+export async function getFlash(id) {
+  return jsonFetch(`/api/equipment/flashes/${id}`);
+}
+
+export async function createFlash(data) {
+  return jsonFetch('/api/equipment/flashes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function updateFlash(id, data) {
+  return jsonFetch(`/api/equipment/flashes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteFlash(id, hard = false) {
+  return jsonFetch(`/api/equipment/flashes/${id}${hard ? '?hard=true' : ''}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function uploadFlashImage(id, file) {
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch(`${API_BASE}/api/equipment/flashes/${id}/image`, {
+    method: 'POST',
+    body: fd
+  });
+  return res.json();
+}
+
+// Get compatible lenses for a camera (based on mount)
+export async function getCompatibleLenses(cameraId) {
+  return jsonFetch(`/api/equipment/compatible-lenses/${cameraId}`);
+}
+

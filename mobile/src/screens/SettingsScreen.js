@@ -130,6 +130,20 @@ export default function SettingsScreen({ navigation }) {
           <Switch value={isDark} onValueChange={toggleDark} />
         </View>
       </View>
+
+      <View style={{ marginTop: 24 }}>
+        <Text style={styles.label}>Equipment Library</Text>
+        <Text style={styles.hint}>Manage your cameras, lenses, and flashes</Text>
+        <Button 
+          mode="outlined" 
+          onPress={() => navigation.navigate('Equipment')} 
+          icon="camera"
+          textColor="#5a4632"
+          style={{ marginTop: 8 }}
+        >
+          Open Equipment Library
+        </Button>
+      </View>
     </View>
   );
 }

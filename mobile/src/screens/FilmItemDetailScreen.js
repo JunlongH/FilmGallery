@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, ScrollView, StyleSheet } from 'react-native';
 import { ActivityIndicator, Button, HelperText, Text, TextInput, useTheme } from 'react-native-paper';
 import DatePickerField from '../components/DatePickerField';
+import EquipmentPicker from '../components/EquipmentPicker';
 import { parseISODate, toISODateString } from '../utils/date';
 import { getFilmItem, updateFilmItem, deleteFilmItem } from '../api/filmItems';
 import { FILM_ITEM_STATUSES, FILM_ITEM_STATUS_LABELS } from '../constants/filmItemStatus';
@@ -18,6 +19,8 @@ export default function FilmItemDetailScreen({ route, navigation }) {
   const [editMode, setEditMode] = useState(false);
   const todayStr = toISODateString(new Date());
   const [actionDate, setActionDate] = useState(todayStr);
+  const [loadCameraId, setLoadCameraId] = useState(null);
+  const [loadCameraName, setLoadCameraName] = useState('');
 
   useEffect(() => {
     navigation.setOptions({ title: filmName || `Film Item #${itemId}` });
@@ -136,14 +139,33 @@ export default function FilmItemDetailScreen({ route, navigation }) {
       {/* Status-specific actions */}
       <View style={styles.actionsBox}>
         {item.status === 'in_stock' && (
-          <View style={styles.actionRow}>
-            <DatePickerField label="Loaded date" value={parseISODate(actionDate) || new Date()} onChange={(d) => setActionDate(toISODateString(d))} />
+          <View style={styles.actionColumn}>
+            <DatePickerField 
+              label="Loaded date" 
+              value={parseISODate(actionDate) || new Date()} 
+              onChange={(d) => setActionDate(toISODateString(d))} 
+            />
+            <EquipmentPicker
+              type="camera"
+              value={loadCameraId}
+              onChange={(id, cam) => {
+                setLoadCameraId(id);
+                setLoadCameraName(cam ? `${cam.brand} ${cam.model}` : '');
+              }}
+              label="Camera (optional)"
+              placeholder="Select camera..."
+            />
             <Button
               mode="contained"
               onPress={async () => {
                 try {
                   setSaving(true);
-                  const patch = { status: 'loaded', loaded_date: actionDate || todayStr };
+                  const patch = { 
+                    status: 'loaded', 
+                    loaded_date: actionDate || todayStr,
+                    loaded_camera: loadCameraName || null,
+                    loaded_camera_equip_id: loadCameraId || null
+                  };
                   const updated = await updateFilmItem(itemId, patch);
                   setItem(updated.item || updated);
                 } finally { setSaving(false); }
@@ -343,4 +365,5 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
   actionsBox: { paddingVertical: spacing.sm },
   actionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  actionColumn: { flexDirection: 'column', gap: 8 },
 });

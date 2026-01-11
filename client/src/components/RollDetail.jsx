@@ -10,6 +10,7 @@ import ModalDialog from './ModalDialog';
 import LocationSelect from './LocationSelect.jsx';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
 import ContactSheetModal from './ContactSheetModal.jsx';
+import EquipmentSelector from './EquipmentSelector';
 import '../styles/sidebar.css';
 import '../styles/forms.css';
 import '../styles/roll-detail-card.css';
@@ -31,6 +32,7 @@ export default function RollDetail() {
   const [showBatchSidebar, setShowBatchSidebar] = useState(false);
   const [showRollSidebar, setShowRollSidebar] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
+  const [selectedCamera, setSelectedCamera] = useState(null); // for fixed lens detection
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -181,6 +183,8 @@ export default function RollDetail() {
       end_date: roll.end_date || '',
       camera: roll.camera || '',
       lens: roll.lens || '',
+      camera_equip_id: roll.camera_equip_id || null,
+      lens_equip_id: roll.lens_equip_id || null,
       photographer: roll.photographer || '',
       film_type: roll.film_type || '',
       filmId: roll.filmId || roll.film_id || '',
@@ -193,6 +197,7 @@ export default function RollDetail() {
       purchase_channel: roll.purchase_channel || '',
       develop_note: roll.develop_note || ''
     });
+    setSelectedCamera(null); // reset camera selection
     setSelectedLocations(Array.isArray(roll.locations) ? roll.locations.slice() : []);
     setIsEditing(false);
     setShowRollSidebar(true);
@@ -577,13 +582,50 @@ export default function RollDetail() {
               <div className="fg-sidepanel-groupGrid cols-2">
                 <div className="fg-field">
                   <label className="fg-label">Camera</label>
-                  <input className="fg-input" list="camera-options" value={editData.camera} onChange={e=>setEditData({...editData, camera:e.target.value})} />
-                  <datalist id="camera-options">{options.cameras.map((c,i)=><option key={i} value={c} />)}</datalist>
+                  <EquipmentSelector 
+                    type="camera" 
+                    value={editData.camera_equip_id} 
+                    onChange={(id, item) => {
+                      setSelectedCamera(item);
+                      setEditData(d => ({
+                        ...d, 
+                        camera_equip_id: id,
+                        camera: item ? `${item.brand} ${item.model}` : ''
+                      }));
+                      // If camera has fixed lens, clear lens selection
+                      if (item?.has_fixed_lens) {
+                        setEditData(d => ({
+                          ...d,
+                          lens_equip_id: null,
+                          lens: item.fixed_lens_focal_length ? `${item.fixed_lens_focal_length}mm f/${item.fixed_lens_max_aperture || '?'}` : 'Fixed'
+                        }));
+                      }
+                    }}
+                    placeholder="Select camera..."
+                  />
                 </div>
                 <div className="fg-field">
                   <label className="fg-label">Lens</label>
-                  <input className="fg-input" list="lens-options" value={editData.lens} onChange={e=>setEditData({...editData, lens:e.target.value})} />
-                  <datalist id="lens-options">{options.lenses.map((l,i)=><option key={i} value={l} />)}</datalist>
+                  {selectedCamera?.has_fixed_lens ? (
+                    <div className="fg-input" style={{ background: '#f5f5f5', cursor: 'not-allowed', color: '#666' }}>
+                      Fixed: {selectedCamera.fixed_lens_focal_length ? `${selectedCamera.fixed_lens_focal_length}mm` : 'Built-in'} 
+                      {selectedCamera.fixed_lens_max_aperture ? ` f/${selectedCamera.fixed_lens_max_aperture}` : ''}
+                    </div>
+                  ) : (
+                    <EquipmentSelector 
+                      type="lens" 
+                      value={editData.lens_equip_id} 
+                      cameraId={editData.camera_equip_id}
+                      onChange={(id, item) => {
+                        setEditData(d => ({
+                          ...d,
+                          lens_equip_id: id,
+                          lens: item ? `${item.brand} ${item.model}` : ''
+                        }));
+                      }}
+                      placeholder="Select lens..."
+                    />
+                  )}
                 </div>
               </div>
               <div className="fg-field">

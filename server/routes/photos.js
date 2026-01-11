@@ -105,17 +105,35 @@ router.get('/', async (req, res) => {
   });
 
   let sql = locationsTableExists ? `
-    SELECT p.*, r.title as roll_title, l.city_name, l.country_name, COALESCE(f.name, r.film_type) AS film_name
+    SELECT p.*, r.title as roll_title, l.city_name, l.country_name, COALESCE(f.name, r.film_type) AS film_name,
+           cam.name AS camera_equip_name, cam.brand AS camera_equip_brand, cam.mount AS camera_equip_mount,
+           cam.has_fixed_lens, cam.fixed_lens_focal_length, cam.fixed_lens_max_aperture,
+           lens.name AS lens_equip_name, lens.brand AS lens_equip_brand,
+           lens.focal_length_min AS lens_equip_focal_min, lens.focal_length_max AS lens_equip_focal_max,
+           lens.max_aperture AS lens_equip_max_aperture,
+           flash.name AS flash_equip_name, flash.brand AS flash_equip_brand, flash.guide_number AS flash_equip_gn
     FROM photos p
     JOIN rolls r ON p.roll_id = r.id
     LEFT JOIN locations l ON p.location_id = l.id
     LEFT JOIN films f ON r.filmId = f.id
+    LEFT JOIN equip_cameras cam ON p.camera_equip_id = cam.id
+    LEFT JOIN equip_lenses lens ON p.lens_equip_id = lens.id
+    LEFT JOIN equip_flashes flash ON p.flash_equip_id = flash.id
     WHERE 1=1
   ` : `
-    SELECT p.*, r.title as roll_title, NULL as city_name, NULL as country_name, COALESCE(f.name, r.film_type) AS film_name
+    SELECT p.*, r.title as roll_title, NULL as city_name, NULL as country_name, COALESCE(f.name, r.film_type) AS film_name,
+           cam.name AS camera_equip_name, cam.brand AS camera_equip_brand, cam.mount AS camera_equip_mount,
+           cam.has_fixed_lens, cam.fixed_lens_focal_length, cam.fixed_lens_max_aperture,
+           lens.name AS lens_equip_name, lens.brand AS lens_equip_brand,
+           lens.focal_length_min AS lens_equip_focal_min, lens.focal_length_max AS lens_equip_focal_max,
+           lens.max_aperture AS lens_equip_max_aperture,
+           flash.name AS flash_equip_name, flash.brand AS flash_equip_brand, flash.guide_number AS flash_equip_gn
     FROM photos p
     JOIN rolls r ON p.roll_id = r.id
     LEFT JOIN films f ON r.filmId = f.id
+    LEFT JOIN equip_cameras cam ON p.camera_equip_id = cam.id
+    LEFT JOIN equip_lenses lens ON p.lens_equip_id = lens.id
+    LEFT JOIN equip_flashes flash ON p.flash_equip_id = flash.id
     WHERE 1=1
   `;
   const params = [];
@@ -248,7 +266,7 @@ router.get('/negatives', async (req, res) => {
 // update photo (adds tags support)
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, camera, lens, photographer, aperture, shutter_speed, iso } = req.body;
+  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, camera, lens, photographer, aperture, shutter_speed, iso, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
   console.log(`[PUT] Update photo ${id}`, req.body);
 
   const updates = [];
@@ -269,6 +287,10 @@ router.put('/:id', async (req, res) => {
   if (aperture !== undefined) { updates.push('aperture=?'); params.push(aperture !== null && aperture !== '' ? parseFloat(aperture) : null); }
   if (shutter_speed !== undefined) { updates.push('shutter_speed=?'); params.push(shutter_speed || null); }
   if (iso !== undefined) { updates.push('iso=?'); params.push(iso !== null && iso !== '' ? parseInt(iso) : null); }
+  // Equipment IDs
+  if (camera_equip_id !== undefined) { updates.push('camera_equip_id=?'); params.push(camera_equip_id); }
+  if (lens_equip_id !== undefined) { updates.push('lens_equip_id=?'); params.push(lens_equip_id); }
+  if (flash_equip_id !== undefined) { updates.push('flash_equip_id=?'); params.push(flash_equip_id); }
 
   if (!updates.length && tags === undefined) {
     return res.json({ updated: 0 });
@@ -999,23 +1021,57 @@ router.post('/:id/download-with-exif', async (req, res) => {
   const os = require('os');
   
   try {
-    // Fetch photo with all metadata including roll and film info
+    // Fetch photo with all metadata including roll, film, and equipment info
     const photo = await getAsync(`
       SELECT p.*, r.title as roll_title, r.camera as roll_camera, r.lens as roll_lens, 
              r.photographer as roll_photographer, r.start_date as roll_start_date,
-             COALESCE(f.name, r.film_type) AS film_name
+             COALESCE(f.name, r.film_type) AS film_name,
+             -- Photo equipment
+             pcam.name AS photo_camera_name, pcam.brand AS photo_camera_brand, pcam.model AS photo_camera_model,
+             pcam.has_fixed_lens, pcam.fixed_lens_focal_length, pcam.fixed_lens_max_aperture,
+             plens.name AS photo_lens_name, plens.brand AS photo_lens_brand, plens.model AS photo_lens_model,
+             plens.focal_length_min AS photo_lens_focal_min, plens.focal_length_max AS photo_lens_focal_max,
+             plens.max_aperture AS photo_lens_max_aperture,
+             -- Roll equipment (fallback)
+             rcam.name AS roll_camera_name, rcam.brand AS roll_camera_brand, rcam.model AS roll_camera_model,
+             rcam.has_fixed_lens AS roll_has_fixed_lens, rcam.fixed_lens_focal_length AS roll_fixed_lens_focal,
+             rcam.fixed_lens_max_aperture AS roll_fixed_lens_aperture,
+             rlens.name AS roll_lens_name, rlens.brand AS roll_lens_brand, rlens.model AS roll_lens_model,
+             rlens.focal_length_min AS roll_lens_focal_min, rlens.focal_length_max AS roll_lens_focal_max,
+             rlens.max_aperture AS roll_lens_max_aperture
       FROM photos p
       JOIN rolls r ON r.id = p.roll_id
       LEFT JOIN films f ON f.id = r.filmId
+      LEFT JOIN equip_cameras pcam ON p.camera_equip_id = pcam.id
+      LEFT JOIN equip_lenses plens ON p.lens_equip_id = plens.id
+      LEFT JOIN equip_cameras rcam ON r.camera_equip_id = rcam.id
+      LEFT JOIN equip_lenses rlens ON r.lens_equip_id = rlens.id
       WHERE p.id = ?
     `, [id]);
     
     if (!photo) return res.status(404).json({ error: 'Photo not found' });
     
+    // Determine camera and lens from equipment tables first, then fallback to text fields
+    const cameraName = photo.photo_camera_name || photo.roll_camera_name || photo.camera || photo.roll_camera;
+    const cameraBrand = photo.photo_camera_brand || photo.roll_camera_brand || (cameraName ? cameraName.split(' ')[0] : null);
+    const lensName = photo.photo_lens_name || photo.roll_lens_name || photo.lens || photo.roll_lens;
+    const lensBrand = photo.photo_lens_brand || photo.roll_lens_brand;
+    
+    // For PS cameras with fixed lens, get lens info from camera
+    let fixedLensFocal = null, fixedLensAperture = null;
+    if (photo.has_fixed_lens || photo.roll_has_fixed_lens) {
+      fixedLensFocal = photo.fixed_lens_focal_length || photo.roll_fixed_lens_focal;
+      fixedLensAperture = photo.fixed_lens_max_aperture || photo.roll_fixed_lens_aperture;
+    }
+    
     console.log('[DOWNLOAD-WITH-EXIF] Photo metadata:', {
       id: photo.id,
-      camera: photo.camera || photo.roll_camera,
-      lens: photo.lens || photo.roll_lens,
+      camera: cameraName,
+      cameraBrand,
+      lens: lensName,
+      lensBrand,
+      fixedLensFocal,
+      fixedLensAperture,
       photographer: photo.photographer || photo.roll_photographer,
       iso: photo.iso,
       aperture: photo.aperture,
@@ -1062,17 +1118,29 @@ router.post('/:id/download-with-exif', async (req, res) => {
     // Build EXIF metadata object
     const exifData = {};
     
-    // Camera info (photo-specific overrides roll default)
-    const camera = photo.camera || photo.roll_camera;
-    if (camera) {
-      exifData.Make = camera.split(' ')[0] || camera;
-      exifData.Model = camera;
+    // Camera info (from equipment library, with text field fallback)
+    if (cameraName) {
+      exifData.Make = cameraBrand || cameraName.split(' ')[0] || cameraName;
+      exifData.Model = cameraName;
     }
     
-    // Lens info
-    const lens = photo.lens || photo.roll_lens;
-    if (lens) {
-      exifData.LensModel = lens;
+    // Lens info (from equipment library, with text field fallback)
+    // For fixed-lens cameras, use the built-in lens info
+    if (fixedLensFocal) {
+      // Fixed lens camera - construct lens model from camera data
+      const lensStr = fixedLensAperture 
+        ? `${fixedLensFocal}mm f/${fixedLensAperture}` 
+        : `${fixedLensFocal}mm`;
+      exifData.LensModel = `${cameraName} ${lensStr}`;
+      // Also set focal length if not already specified
+      if (!photo.focal_length) {
+        exifData.FocalLength = fixedLensFocal;
+      }
+    } else if (lensName) {
+      exifData.LensModel = lensName;
+      if (lensBrand) {
+        exifData.LensMake = lensBrand;
+      }
     }
     
     // Photographer (Artist & Copyright)

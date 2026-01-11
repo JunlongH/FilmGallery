@@ -14,6 +14,7 @@ import TagGallery from './components/TagGallery';
 import Settings from './components/Settings';
 import TitleBar from './components/TitleBar';
 import ConflictBanner from './components/ConflictBanner';
+import EquipmentManager from './components/EquipmentManager';
 import { getTags } from './api';
 import FloatingRefreshButton from './components/FloatingRefreshButton';
 
@@ -142,6 +143,12 @@ function Layout() {
                 </Link>
               </li>
               <li>
+                <Link to="/equipment">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 2v1M12 17v5M4.22 10h-.22a1 1 0 0 0-1 1v0a1 1 0 0 0 1 1h.22M19.78 10h.22a1 1 0 0 1 1 1v0a1 1 0 0 1-1 1h-.22M6.5 4l-.5.5M17.5 4l.5.5M7.5 16l-2 2M16.5 16l2 2"/></svg>
+                  Equipment
+                </Link>
+              </li>
+              <li>
                 <Link to="/settings">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0A1.65 1.65 0 0 0 9 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                   Settings
@@ -162,6 +169,7 @@ function Layout() {
               <Route path="/favorites" element={<Favorites />} />
               <Route path="/themes" element={<TagGallery />} />
               <Route path="/themes/:tagId" element={<TagGallery />} />
+              <Route path="/equipment" element={<EquipmentManager />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </main>

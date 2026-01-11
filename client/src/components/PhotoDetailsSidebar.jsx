@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import LocationSelect from './LocationSelect.jsx';
 import { getMetadataOptions, API_BASE } from '../api';
+import EquipmentSelector from './EquipmentSelector';
 import '../styles/forms.css';
 import '../styles/sidebar.css';
 
@@ -12,6 +13,9 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   const [detailLocation, setDetailLocation] = useState(base?.detail_location || '');
   const [camera, setCamera] = useState(base?.camera || roll?.camera || '');
   const [lens, setLens] = useState(base?.lens || roll?.lens || '');
+  const [cameraEquipId, setCameraEquipId] = useState(base?.camera_equip_id || roll?.camera_equip_id || null);
+  const [lensEquipId, setLensEquipId] = useState(base?.lens_equip_id || roll?.lens_equip_id || null);
+  const [selectedCamera, setSelectedCamera] = useState(null);
   const [photographer, setPhotographer] = useState(base?.photographer || roll?.photographer || '');
   const [aperture, setAperture] = useState(base?.aperture != null ? base.aperture : '');
   const [shutterSpeed, setShutterSpeed] = useState(base?.shutter_speed || '');
@@ -67,6 +71,8 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       longitude: location.longitude ?? null,
       camera: camera || null,
       lens: lens || null,
+      camera_equip_id: cameraEquipId || null,
+      lens_equip_id: lensEquipId || null,
       photographer: photographer || null,
       aperture: aperture !== '' ? parseFloat(aperture) : null,
       shutter_speed: shutterSpeed || null,
@@ -134,31 +140,41 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         <div className="fg-sidepanel-groupGrid cols-2" style={{ marginTop: 10 }}>
           <div className="fg-field">
             <label className="fg-label">Camera</label>
-            <input 
-              className="fg-input" 
-              type="text" 
-              list="camera-options"
-              placeholder={roll?.camera ? `Default: ${roll.camera}` : 'e.g. Nikon FM2'} 
-              value={camera} 
-              onChange={e=>setCamera(e.target.value)} 
+            <EquipmentSelector 
+              type="camera" 
+              value={cameraEquipId} 
+              onChange={(id, item) => {
+                setCameraEquipId(id);
+                setSelectedCamera(item);
+                setCamera(item ? `${item.brand} ${item.model}` : '');
+                // If camera has fixed lens, clear lens selection
+                if (item?.has_fixed_lens) {
+                  setLensEquipId(null);
+                  setLens(item.fixed_lens_focal_length ? `${item.fixed_lens_focal_length}mm f/${item.fixed_lens_max_aperture || '?'}` : 'Fixed');
+                }
+              }}
+              placeholder={roll?.camera ? `Default: ${roll.camera}` : 'Select camera...'}
             />
-            <datalist id="camera-options">
-              {(options.cameras || []).map((c, i) => <option key={i} value={c} />)}
-            </datalist>
           </div>
           <div className="fg-field">
             <label className="fg-label">Lens</label>
-            <input 
-              className="fg-input" 
-              type="text" 
-              list="lens-options"
-              placeholder={roll?.lens ? `Default: ${roll.lens}` : 'e.g. 50mm f/1.8'} 
-              value={lens} 
-              onChange={e=>setLens(e.target.value)} 
-            />
-            <datalist id="lens-options">
-              {(options.lenses || []).map((l, i) => <option key={i} value={l} />)}
-            </datalist>
+            {selectedCamera?.has_fixed_lens ? (
+              <div className="fg-input" style={{ background: '#f5f5f5', cursor: 'not-allowed', color: '#666', display: 'flex', alignItems: 'center' }}>
+                Fixed: {selectedCamera.fixed_lens_focal_length ? `${selectedCamera.fixed_lens_focal_length}mm` : 'Built-in'} 
+                {selectedCamera.fixed_lens_max_aperture ? ` f/${selectedCamera.fixed_lens_max_aperture}` : ''}
+              </div>
+            ) : (
+              <EquipmentSelector 
+                type="lens" 
+                value={lensEquipId} 
+                cameraId={cameraEquipId}
+                onChange={(id, item) => {
+                  setLensEquipId(id);
+                  setLens(item ? `${item.brand} ${item.model}` : '');
+                }}
+                placeholder={roll?.lens ? `Default: ${roll.lens}` : 'Select lens...'}
+              />
+            )}
           </div>
         </div>
         <div className="fg-sidepanel-groupGrid cols-3" style={{ marginTop: 8 }}>

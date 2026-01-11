@@ -22,6 +22,7 @@ import InventoryScreen from './src/screens/InventoryScreen';
 import FilmItemDetailScreen from './src/screens/FilmItemDetailScreen';
 import ShotLogScreen from './src/screens/ShotLogScreen';
 import StatsScreen from './src/screens/StatsScreen';
+import EquipmentScreen from './src/screens/EquipmentScreen';
 import { ApiContext } from './src/context/ApiContext';
 import { configureAxios } from './src/setupAxios';
 import appTheme, { appDarkTheme } from './src/theme';
@@ -150,6 +151,11 @@ export default function App() {
               name="ShotLog" 
               component={ShotLogScreen} 
               options={{ title: 'Shot Log' }}
+            />
+            <Stack.Screen 
+              name="Equipment" 
+              component={EquipmentScreen} 
+              options={{ title: 'Equipment' }}
             />
           </Stack.Navigator>
           <StatusBar style={darkMode ? 'light' : 'dark'} />
