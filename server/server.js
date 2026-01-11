@@ -12,7 +12,6 @@ const { uploadsDir, tmpUploadDir, localTmpDir, rollsDir } = require('./config/pa
 const { getDbPath } = require('./config/db-config');
 const { runMigration } = require('./utils/migration');
 const { runSchemaMigration } = require('./utils/schema-migration');
-const { migratePhotoColumns } = require('./migrate-add-photo-columns');
 const { cacheSeconds } = require('./utils/cache');
 const { requestProfiler, getProfilerStats, scheduleProfilerLog } = require('./utils/profiler');
 const PreparedStmt = require('./utils/prepared-statements');
@@ -42,14 +41,8 @@ app.use(requestProfiler());
 app.use(bodyParser.json({ limit: '10mb' }));
 // gzip/deflate for API JSON responses (not applied to static uploads)
 app.use(compression({ threshold: 1024 }));
-
-// CORS: Must match any configured client origin
-app.use(cors({ 
-  origin: true, // Allow all origins for now (simplifies Docker/lan setup)
-  credentials: true, 
-  preflightContinue: true 
-}));
-
+// CORS: reflect origin (including 'null' from file://) and allow private network
+app.use(cors({ origin: true, credentials: false, preflightContinue: true }));
 app.use((req, res, next) => {
 	res.setHeader('Access-Control-Allow-Private-Network', 'true');
 	next();
@@ -231,20 +224,10 @@ const seedLocations = async () => {
         await runSchemaMigration();
         console.log('[SERVER] Schema migration complete.');
 
-        // 3. Run Photo Columns Migration (Add missing columns)
-        console.log('[SERVER] Checking photos table columns...');
-        try {
-            await migratePhotoColumns(getDbPath());
-            console.log('[SERVER] Photo columns migration complete.');
-        } catch (err) {
-            console.error('[SERVER] Photo columns migration failed:', err.message);
-            console.error('[SERVER] This may cause errors when uploading photos.');
-        }
-
-		// 4. Load DB now that file is ready
+		// 3. Load DB now that file is ready
 		const db = require('./db');
 
-		// 5. Ensure Schema (Legacy check, kept for safety but mostly handled by schema-migration)
+		// 4. Ensure Schema (Legacy check, kept for safety but mostly handled by schema-migration)
 		await new Promise((resolve, reject) => {
 			db.exec(schemaSQL, (err) => {
 				if (err) reject(err);
@@ -253,7 +236,7 @@ const seedLocations = async () => {
 		});
 		console.log('DB schema ensured');
 
-        // 6. Recompute roll sequence on startup
+        // 5. Recompute roll sequence on startup
         console.log('[SERVER] Recomputing roll sequence...');
         const { recomputeRollSequence } = require('./services/roll-service');
         await recomputeRollSequence();

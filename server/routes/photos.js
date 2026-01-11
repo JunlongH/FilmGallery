@@ -989,4 +989,174 @@ router.delete('/:id', (req, res) => {
   });
 });
 
+// POST /api/photos/:id/download-with-exif
+// Returns JPEG with embedded EXIF metadata (camera, lens, ISO, aperture, shutter, GPS, tags, etc.)
+router.post('/:id/download-with-exif', async (req, res) => {
+  const id = req.params.id;
+  console.log('[DOWNLOAD-WITH-EXIF] Request received for photo ID:', id);
+  
+  const { exiftool } = require('exiftool-vendored');
+  const os = require('os');
+  
+  try {
+    // Fetch photo with all metadata including roll and film info
+    const photo = await getAsync(`
+      SELECT p.*, r.title as roll_title, r.camera as roll_camera, r.lens as roll_lens, 
+             r.photographer as roll_photographer, r.start_date as roll_start_date,
+             COALESCE(f.name, r.film_type) AS film_name
+      FROM photos p
+      JOIN rolls r ON r.id = p.roll_id
+      LEFT JOIN films f ON f.id = r.filmId
+      WHERE p.id = ?
+    `, [id]);
+    
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+    
+    console.log('[DOWNLOAD-WITH-EXIF] Photo metadata:', {
+      id: photo.id,
+      camera: photo.camera || photo.roll_camera,
+      lens: photo.lens || photo.roll_lens,
+      photographer: photo.photographer || photo.roll_photographer,
+      iso: photo.iso,
+      aperture: photo.aperture,
+      shutter_speed: photo.shutter_speed,
+      focal_length: photo.focal_length,
+      date_taken: photo.date_taken,
+      latitude: photo.latitude,
+      longitude: photo.longitude
+    });
+    
+    // Get tags for this photo
+    const tagRows = await allAsync('SELECT t.name FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.photo_id = ?', [id]);
+    const tags = tagRows.map(t => t.name);
+    console.log('[DOWNLOAD-WITH-EXIF] Tags:', tags);
+    
+    // Determine source image path (prefer positive, fallback to full)
+    let sourcePath = photo.positive_rel_path || photo.full_rel_path;
+    if (!sourcePath) {
+      return res.status(400).json({ error: 'No image available for download' });
+    }
+    
+    const sourceAbs = path.join(uploadsDir, sourcePath);
+    if (!fs.existsSync(sourceAbs)) {
+      console.error('[DOWNLOAD-WITH-EXIF] Source file not found:', sourceAbs);
+      return res.status(404).json({ error: 'Image file not found on disk' });
+    }
+    
+    console.log('[DOWNLOAD-WITH-EXIF] Source file:', sourceAbs);
+    
+    // Only process JPEG files for EXIF writing
+    const ext = path.extname(sourceAbs).toLowerCase();
+    if (!['.jpg', '.jpeg'].includes(ext)) {
+      // For non-JPEG, just return the file as-is
+      const filename = photo.filename ? path.basename(photo.filename) : `photo_${id}${ext}`;
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.sendFile(sourceAbs);
+    }
+    
+    // Create temp file for EXIF writing (avoid modifying original)
+    const tempPath = path.join(os.tmpdir(), `filmgallery_exif_${Date.now()}.jpg`);
+    fs.copyFileSync(sourceAbs, tempPath);
+    console.log('[DOWNLOAD-WITH-EXIF] Created temp file:', tempPath);
+    
+    // Build EXIF metadata object
+    const exifData = {};
+    
+    // Camera info (photo-specific overrides roll default)
+    const camera = photo.camera || photo.roll_camera;
+    if (camera) {
+      exifData.Make = camera.split(' ')[0] || camera;
+      exifData.Model = camera;
+    }
+    
+    // Lens info
+    const lens = photo.lens || photo.roll_lens;
+    if (lens) {
+      exifData.LensModel = lens;
+    }
+    
+    // Photographer (Artist & Copyright)
+    const photographer = photo.photographer || photo.roll_photographer;
+    if (photographer) {
+      exifData.Artist = photographer;
+      exifData.Copyright = `© ${photographer}`;
+    }
+    
+    // Shooting parameters
+    if (photo.iso) exifData.ISO = photo.iso;
+    if (photo.aperture) exifData.FNumber = photo.aperture;
+    if (photo.shutter_speed) exifData.ExposureTime = photo.shutter_speed;
+    if (photo.focal_length) exifData.FocalLength = photo.focal_length;
+    
+    // Date/Time (format: YYYY:MM:DD HH:mm:ss)
+    if (photo.date_taken) {
+      const dateStr = photo.date_taken;
+      const timeStr = photo.time_taken || '12:00:00';
+      const formatted = `${dateStr.replace(/-/g, ':')} ${timeStr}`;
+      exifData.DateTimeOriginal = formatted;
+      exifData.CreateDate = formatted;
+    }
+    
+    // GPS Location
+    if (photo.latitude && photo.longitude) {
+      exifData.GPSLatitude = photo.latitude;
+      exifData.GPSLongitude = photo.longitude;
+    }
+    
+    // Description combining caption, roll info, film info, frame number
+    const descParts = [];
+    if (photo.caption) descParts.push(photo.caption);
+    if (photo.roll_title) descParts.push(`Roll: ${photo.roll_title}`);
+    if (photo.film_name) descParts.push(`Film: ${photo.film_name}`);
+    if (photo.frame_number) descParts.push(`Frame: ${photo.frame_number}`);
+    if (descParts.length > 0) {
+      exifData.ImageDescription = descParts.join(' | ');
+    }
+    
+    // Keywords (tags) - IPTC/XMP compatible
+    if (tags.length > 0) {
+      exifData.Subject = tags;
+      exifData.Keywords = tags;
+    }
+    
+    // Software tag
+    exifData.Software = 'FilmGallery v1.8.0';
+    
+    console.log('[DOWNLOAD-WITH-EXIF] EXIF data to write:', JSON.stringify(exifData, null, 2));
+    
+    // Write EXIF to temp file
+    try {
+      console.log('[DOWNLOAD-WITH-EXIF] Writing EXIF with exiftool...');
+      await exiftool.write(tempPath, exifData, ['-overwrite_original']);
+      console.log('[DOWNLOAD-WITH-EXIF] ✅ EXIF write successful');
+    } catch (exifErr) {
+      console.error('[DOWNLOAD-WITH-EXIF] exiftool write failed:', exifErr);
+      // Clean up and return original file if EXIF write fails
+      try { fs.unlinkSync(tempPath); } catch(_) {}
+      const filename = photo.filename ? path.basename(photo.filename) : `photo_${id}.jpg`;
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      return res.sendFile(sourceAbs);
+    }
+    
+    // Send file with embedded EXIF
+    const filename = photo.filename ? path.basename(photo.filename) : `photo_${id}.jpg`;
+    console.log('[DOWNLOAD-WITH-EXIF] Sending file with EXIF:', filename);
+    res.download(tempPath, filename, (err) => {
+      // Clean up temp file after download completes
+      try {
+        fs.unlinkSync(tempPath);
+      } catch (cleanupErr) {
+        console.warn('[DOWNLOAD-WITH-EXIF] Failed to cleanup temp file:', cleanupErr.message);
+      }
+      if (err && !res.headersSent) {
+        console.error('[DOWNLOAD-WITH-EXIF] Download error:', err);
+      }
+    });
+    
+  } catch (err) {
+    console.error('[DOWNLOAD-WITH-EXIF] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

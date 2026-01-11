@@ -5,6 +5,7 @@ import { IconButton, Chip, Text, Snackbar } from 'react-native-paper';
 // Removed direct legacy FileSystem usage (downloadAsync deprecated).
 // Use unified helper built on new File/Directory API.
 import { downloadImageAsync } from '../utils/fileSystem';
+import * as FileSystem from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 import TagEditModal from '../components/TagEditModal';
 import NoteEditModal from '../components/NoteEditModal';
@@ -72,15 +73,58 @@ export default function PhotoViewScreen({ route, navigation }) {
   };
 
   const downloadPhoto = async () => {
-    if (!fullUrl || downloading) return;
+    if (downloading) return;
     setDownloading(true);
     try {
-      const fileName = `film_${photo.id || Date.now()}.jpg`;
-      const localUri = await downloadImageAsync(fullUrl, { fileName, saveToLibrary: true });
-      setSnack({ visible:true, msg:`Saved: ${fileName}` });
+      // Call server endpoint that returns JPEG with embedded EXIF metadata
+      const response = await fetch(`${baseUrl}/api/photos/${photo.id}/download-with-exif`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+      
+      const blob = await response.blob();
+      const fileName = `film_${photo.frame_number || photo.id}_${Date.now()}.jpg`;
+      
+      // Convert blob to base64 for FileSystem
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        try {
+          const base64 = reader.result.split(',')[1];
+          const targetUri = FileSystem.documentDirectory + fileName;
+          
+          await FileSystem.writeAsStringAsync(targetUri, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
+          // Request permissions and save to photo library
+          await requestPermissionsIfNeeded();
+          await MediaLibrary.saveToLibraryAsync(targetUri);
+          
+          // Cleanup temp file
+          try {
+            await FileSystem.deleteAsync(targetUri, { idempotent: true });
+          } catch (_) {}
+          
+          setSnack({ visible: true, msg: `Saved with metadata: ${fileName}` });
+        } catch (saveErr) {
+          setSnack({ visible: true, msg: `Save failed: ${saveErr.message}` });
+        } finally {
+          setDownloading(false);
+        }
+      };
+      reader.onerror = () => {
+        setSnack({ visible: true, msg: 'Failed to process image' });
+        setDownloading(false);
+      };
+      reader.readAsDataURL(blob);
     } catch (e) {
-      setSnack({ visible:true, msg: e.message || 'Download error' });
-    } finally {
+      setSnack({ visible: true, msg: e.message || 'Download error' });
       setDownloading(false);
     }
   };

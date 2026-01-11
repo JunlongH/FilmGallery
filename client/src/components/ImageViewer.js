@@ -189,19 +189,65 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   }
 
   const handleDownload = async () => {
+    console.log('[DOWNLOAD] Starting download for photo ID:', img.id);
+    console.log('[DOWNLOAD] Photo metadata:', { 
+      camera: img.camera, 
+      lens: img.lens, 
+      iso: img.iso, 
+      aperture: img.aperture,
+      shutter_speed: img.shutter_speed,
+      photographer: img.photographer
+    });
+    
     try {
+      // Strategy: Use server-side EXIF writing endpoint for reliability
+      // Server has exiftool which is more robust than client-side piexifjs
+      
+      if (img.id && window.__electron) {
+        // For Electron (desktop), use server endpoint to get EXIF-embedded image
+        console.log('[DOWNLOAD] Using server-side EXIF endpoint for photo ID:', img.id);
+        
+        try {
+          const apiBase = window.__electron.API_BASE || 'http://127.0.0.1:4000';
+          const exifUrl = `${apiBase}/api/photos/${img.id}/download-with-exif`;
+          
+          console.log('[DOWNLOAD] Fetching from:', exifUrl);
+          const response = await fetch(exifUrl, { method: 'POST' });
+          
+          if (!response.ok) {
+            throw new Error(`Server returned ${response.status}`);
+          }
+          
+          const blob = await response.blob();
+          console.log('[DOWNLOAD] Received blob size:', blob.size, 'bytes');
+          
+          const defaultName = img.filename ? img.filename.split('/').pop() : `photo_${img.id}.jpg`;
+          const saveRes = await window.__electron.filmLabSaveAs({ blob, defaultName });
+          
+          if (saveRes && saveRes.error) {
+            throw new Error(saveRes.error);
+          }
+          
+          console.log('[DOWNLOAD] ✅ Download with EXIF successful');
+          return;
+        } catch (serverErr) {
+          console.warn('[DOWNLOAD] Server EXIF endpoint failed, falling back to client-side:', serverErr);
+          // Fall through to client-side fallback
+        }
+      }
+      
+      // Fallback: Direct download without EXIF (for web or if server endpoint fails)
+      console.log('[DOWNLOAD] Using fallback direct download');
       const response = await fetch(imgUrl);
       const blob = await response.blob();
-      
+
       if (window.__electron) {
-        // Use Electron "Save As" dialog
         const defaultName = img.filename ? img.filename.split('/').pop() : `image_${i+1}.jpg`;
         const res = await window.__electron.filmLabSaveAs({ blob, defaultName });
         if (res && res.error) {
            showAlert('Error', 'Save failed: ' + res.error);
         }
       } else {
-        // Fallback for web
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
@@ -213,7 +259,7 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
       }
     } catch (e) {
       console.error('Download failed', e);
-      showAlert('Error', 'Download failed');
+      showAlert('Error', 'Download failed: ' + e.message);
     }
   };
 

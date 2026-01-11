@@ -1,12 +1,19 @@
 // electron-preload.js
 const { contextBridge, ipcRenderer, shell } = require('electron');
 
+// Default API base for full version (embedded server)
+const DEFAULT_API_BASE = 'http://127.0.0.1:4000';
+
 // Load API_BASE from saved config synchronously before exposing to renderer
 // This ensures that if user configured a remote server, we use it from startup
-let savedApiBase = 'http://127.0.0.1:4000'; // default fallback
+let savedApiBase = DEFAULT_API_BASE; // default fallback
 try {
   // Get config synchronously during preload initialization
-  savedApiBase = ipcRenderer.sendSync('config-get-api-base-sync');
+  const result = ipcRenderer.sendSync('config-get-api-base-sync');
+  // Only use result if it's a valid non-empty string
+  if (result && typeof result === 'string' && result.trim()) {
+    savedApiBase = result.trim();
+  }
 } catch (e) {
   console.warn('[Preload] Failed to load API_BASE from config, using default:', e);
 }
@@ -14,7 +21,7 @@ try {
 contextBridge.exposeInMainWorld('__electron', {
   platform: process.platform,
   // Use saved config, or env override, or default
-  API_BASE: process.env.ELECTRON_API_BASE || savedApiBase, 
+  API_BASE: process.env.ELECTRON_API_BASE || savedApiBase || DEFAULT_API_BASE, 
   
   // Expose method to change API BASE at runtime (reload required)
   setApiBase: (url) => ipcRenderer.invoke('config-set-api-base', url),

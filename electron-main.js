@@ -749,7 +749,7 @@ _ipcMainAlias.on('filmlab-gpu:result', async (_e, result) => {
     if (photoId) {
       LOG('[GPU-RESULT] Uploading to backend for photoId:', photoId);
       try {
-        const API_BASE = appConfig.apiBase || 'http://127.0.0.1:4000';
+        const API_BASE = 'http://127.0.0.1:4000';
         // Use robust upload instead of fetch+FormData
         const data = await uploadBuffer(`${API_BASE}/api/photos/${photoId}/ingest-positive`, buf, 'gpu_export.jpg');
         
@@ -801,32 +801,38 @@ function saveConfig(next) {
   try { fs.writeFileSync(CONFIG_PATH(), JSON.stringify(appConfig, null, 2)); } catch(e) { LOG('saveConfig error', e && e.message); }
 }
 
+// Default API base for full version (embedded server)
+const DEFAULT_API_BASE = 'http://127.0.0.1:4000';
+
+// IPC for API_BASE configuration (used by client-only mode)
+// Synchronous handler for preload script initialization
+ipcMain.on('config-get-api-base-sync', (event) => {
+  // Load config early if not loaded yet
+  if (!appConfig || Object.keys(appConfig).length === 0) {
+    appConfig = loadConfig();
+  }
+  const apiBase = appConfig.apiBase || DEFAULT_API_BASE;
+  LOG('config-get-api-base-sync: returning', apiBase);
+  event.returnValue = apiBase;
+});
+
+// Async handlers for runtime API_BASE get/set
+ipcMain.handle('config-get-api-base', () => {
+  return appConfig.apiBase || DEFAULT_API_BASE;
+});
+
+ipcMain.handle('config-set-api-base', async (e, url) => {
+  if (!url || typeof url !== 'string') {
+    return { ok: false, error: 'invalid_url' };
+  }
+  const trimmed = url.trim();
+  saveConfig({ apiBase: trimmed });
+  LOG('config-set-api-base: saved', trimmed);
+  return { ok: true, apiBase: trimmed };
+});
+
 // IPC for settings
 ipcMain.handle('config-get', () => appConfig);
-
-// New API Base handlers - SYNC version for preload
-ipcMain.on('config-get-api-base-sync', (event) => {
-  event.returnValue = appConfig.apiBase || 'http://127.0.0.1:4000';
-});
-
-ipcMain.handle('config-get-api-base', () => appConfig.apiBase || 'http://127.0.0.1:4000');
-ipcMain.handle('config-set-api-base', async (event, url) => {
-  // normalize URL
-  let validUrl = url;
-  if (!validUrl.startsWith('http')) validUrl = `http://${validUrl}`;
-  validUrl = validUrl.replace(/\/$/, ''); // remove trailing slash
-  
-  saveConfig({ apiBase: validUrl });
-  
-  // If we're setting it to localhost, we might want to ensure local server is running.
-  // If remote, we might stop local server? For now, we keep local server behavior independent.
-  // But we reload the window to pick up the new API Base in preload
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.reload();
-  }
-  return true;
-});
-
 ipcMain.handle('pick-uploads-root', async () => {
   const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory']});
   if (res.canceled || !res.filePaths || !res.filePaths[0]) return null;
@@ -871,21 +877,11 @@ app.on('ready', async () => {
   appConfig = loadConfig();
   createWindow();
   createTray();
-  
-  // Decide whether to start local server
-  // If apiBase is not localhost/127.0.0.1, we assume remote mode and skip local server
-  const apiBase = appConfig.apiBase || 'http://127.0.0.1:4000';
-  const isLocal = apiBase.includes('localhost') || apiBase.includes('127.0.0.1');
-
-  if (isLocal) {
-    LOG('Starting local backend server...');
-      try {
-      startServer();
-    } catch (e) {
-      LOG('startServer on ready failed', e && e.message);
-    }
-  } else {
-    LOG('Remote API configured, skipping local server startup:', apiBase);
+  // Ensure backend starts when Electron launches (dev and prod)
+  try {
+    startServer();
+  } catch (e) {
+    LOG('startServer on ready failed', e && e.message);
   }
 });
 
