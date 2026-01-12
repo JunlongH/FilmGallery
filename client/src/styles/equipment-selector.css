@@ -125,6 +125,16 @@
   overflow: hidden;
 }
 
+/* Ensure selected item in trigger area is compact */
+.equip-trigger .equip-item {
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+
+.equip-trigger .equip-info {
+  max-width: 200px;
+}
+
 .equip-thumb {
   width: 32px;
   height: 32px;

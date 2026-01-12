@@ -63,7 +63,7 @@ const PickerModal = ({ visible, onClose, data, onSelect, title }) => {
   );
 };
 
-export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }) {
+export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, forcePsMode = false, forcedMaxAperture = null }) {
   const { width, height } = useWindowDimensions();
   const cameraHeight = height * 0.55;
   const insets = useSafeAreaInsets();
@@ -143,9 +143,9 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
   const [diagnosticInfo, setDiagnosticInfo] = useState({ frames: 0, fpRunning: false, brightness: 0, ev: 0 });
   
   // Camera mode state
-  const [cameraMode, setCameraMode] = useState('av'); // av | tv | ps
+  const [cameraMode, setCameraMode] = useState(forcePsMode ? 'ps' : 'av'); // av | tv | ps
   const [psFlashMode, setPsFlashMode] = useState('off');
-  const [psMaxAperture, setPsMaxAperture] = useState(2.8);
+  const [psMaxAperture, setPsMaxAperture] = useState(forcedMaxAperture || 2.8);
 
   // Picker state
   const [pickerVisible, setPickerVisible] = useState(false);
@@ -236,7 +236,8 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
       setLiveExposure(null);
       setSelectedAperture(5.6);
       setSelectedShutter('1/125');
-      setCameraMode('av');
+      setCameraMode(forcePsMode ? 'ps' : 'av');
+      if (forcedMaxAperture) setPsMaxAperture(forcedMaxAperture);
       setDiagnosticInfo({ frames: 0, fpRunning: false });
       fetchLocation();
     } else {
@@ -563,14 +564,16 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                 </Text>
               </TouchableOpacity>
 
-              {/* Camera mode cycle: Av -> Tv -> P&S */}
+              {/* Camera mode cycle: Av -> Tv -> P&S (disabled when forcePsMode) */}
               <TouchableOpacity 
-                style={styles.modeButton} 
+                style={[styles.modeButton, forcePsMode && { opacity: 0.5 }]} 
                 onPress={() => {
+                  if (forcePsMode) return; // PS camera - mode locked
                   const order = ['av', 'tv', 'ps'];
                   const next = order[(order.indexOf(cameraMode) + 1) % order.length];
                   setCameraMode(next);
                 }}
+                disabled={forcePsMode}
               >
                 <MaterialCommunityIcons 
                   name={
@@ -581,7 +584,7 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                   color="white" 
                 />
                 <Text style={styles.modeText}>
-                  {cameraMode === 'av' ? 'Av' : cameraMode === 'tv' ? 'Tv' : 'P&S'}
+                  {forcePsMode ? 'P&S (固定)' : cameraMode === 'av' ? 'Av' : cameraMode === 'tv' ? 'Tv' : 'P&S'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -639,15 +642,17 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400 }
                   </TouchableOpacity>
 
                   <TouchableOpacity 
-                    style={styles.psSettingBtn}
+                    style={[styles.psSettingBtn, forcedMaxAperture && { opacity: 0.5 }]}
                     onPress={() => {
+                      if (forcedMaxAperture) return; // Fixed lens camera - aperture locked
                       setPickerType('max_aperture');
                       setPickerVisible(true);
                     }}
+                    disabled={!!forcedMaxAperture}
                   >
                     <MaterialCommunityIcons name="camera-iris" size={20} color="white" />
                     <Text style={styles.psSettingText}>
-                      Max f/{psMaxAperture}
+                      Max f/{psMaxAperture}{forcedMaxAperture ? ' (固定)' : ''}
                     </Text>
                   </TouchableOpacity>
                 </View>

@@ -23,6 +23,9 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const [newDetail, setNewDetail] = useState('');
   const [selectedLens, setSelectedLens] = useState('');
   const [lensOptions, setLensOptions] = useState(FALLBACK_LENSES);
+  // Inventory-based lens categorization
+  const [nativeLenses, setNativeLenses] = useState([]); // [{ id, displayName, ... }]
+  const [adaptedLenses, setAdaptedLenses] = useState([]); // [{ id, displayName, mount, ... }]
   const [countries, setCountries] = useState([]);
   const [citiesByCountry, setCitiesByCountry] = useState({}); // code -> cities
   const [countryCode, setCountryCode] = useState('');
@@ -33,6 +36,20 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   // Fixed lens camera detection
   const [fixedLensInfo, setFixedLensInfo] = useState(null); // { text, focal_length, max_aperture }
   const [cameraName, setCameraName] = useState('');
+  const [cameraMount, setCameraMount] = useState('');
+
+  // Format lens for display
+  const formatLensDisplay = (lens) => {
+    const name = `${lens.brand || ''} ${lens.model || ''}`.trim();
+    if (lens.focal_length_min) {
+      const focalStr = lens.focal_length_min === lens.focal_length_max || !lens.focal_length_max
+        ? `${lens.focal_length_min}mm`
+        : `${lens.focal_length_min}-${lens.focal_length_max}mm`;
+      const apertureStr = lens.max_aperture ? ` f/${lens.max_aperture}` : '';
+      return name ? `${name} ${focalStr}${apertureStr}` : `${focalStr}${apertureStr}`;
+    }
+    return name || lens.name || 'Unknown Lens';
+  };
 
   const dedupeAndSort = (list) => Array.from(new Set((list || []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
@@ -79,11 +96,14 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       if (!item?.camera_equip_id) {
         setFixedLensInfo(null);
         setCameraName('');
+        setCameraMount('');
+        setNativeLenses([]);
+        setAdaptedLenses([]);
         return;
       }
       
       try {
-        // Use getCompatibleLenses which returns camera info + compatible lenses
+        // Use getCompatibleLenses which returns camera info + compatible lenses (native + adapted)
         const result = await getCompatibleLenses(item.camera_equip_id);
         if (!mounted) return;
         
@@ -94,45 +114,50 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
             : 'Fixed Lens';
           
           setCameraName(result.camera_name || '');
+          setCameraMount('');
           setFixedLensInfo({
             text: lensText,
             focal_length: result.focal_length,
             max_aperture: result.max_aperture
           });
+          setNativeLenses([]);
+          setAdaptedLenses([]);
           
           // Auto-fill lens for new entries
           setSelectedLens(lensText);
           setNewLens('');
         } else {
-          // Interchangeable lens camera - add compatible lenses to options
+          // Interchangeable lens camera - store native and adapted lenses separately
           setFixedLensInfo(null);
           setCameraName(result.camera_name || '');
+          setCameraMount(result.camera_mount || '');
           
-          if (Array.isArray(result.lenses) && result.lenses.length > 0) {
-            // Format lenses as "Brand Model" or with focal length info
-            const compatibleLensNames = result.lenses.map(lens => {
-              const name = `${lens.brand || ''} ${lens.model || ''}`.trim();
-              if (lens.focal_length_min) {
-                const focalStr = lens.focal_length_min === lens.focal_length_max || !lens.focal_length_max
-                  ? `${lens.focal_length_min}mm`
-                  : `${lens.focal_length_min}-${lens.focal_length_max}mm`;
-                return name ? `${name} ${focalStr}` : focalStr;
-              }
-              return name;
-            }).filter(Boolean);
-            
-            // Add compatible lenses to the options (prioritized at top)
-            setLensOptions(prev => {
-              const combined = [...compatibleLensNames, ...prev];
-              return dedupeAndSort(combined);
-            });
-          }
+          // Process native lenses
+          const native = (result.lenses || []).map(lens => ({
+            ...lens,
+            displayName: formatLensDisplay(lens)
+          }));
+          setNativeLenses(native);
+          
+          // Process adapted lenses (grouped by mount)
+          const adapted = (result.adapted_lenses || []).map(lens => ({
+            ...lens,
+            displayName: formatLensDisplay(lens)
+          }));
+          setAdaptedLenses(adapted);
+          
+          // Add to flat lensOptions for backward compatibility (custom input)
+          const allLensNames = [...native, ...adapted].map(l => l.displayName).filter(Boolean);
+          setLensOptions(prev => dedupeAndSort([...allLensNames, ...prev]));
         }
       } catch (err) {
         console.warn('Failed to fetch camera/lens info', err);
         if (mounted) {
           setFixedLensInfo(null);
           setCameraName('');
+          setCameraMount('');
+          setNativeLenses([]);
+          setAdaptedLenses([]);
         }
       }
     };
@@ -147,9 +172,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       .then((opts) => {
         if (!mounted) return;
         const base = Array.isArray(opts?.lenses) && opts.lenses.length ? opts.lenses : FALLBACK_LENSES;
-        setLensOptions(dedupeAndSort(base));
+        // Add to existing options instead of replacing (to preserve compatible lenses)
+        setLensOptions(prev => dedupeAndSort([...prev, ...base]));
       })
-      .catch(() => setLensOptions(dedupeAndSort(FALLBACK_LENSES)));
+      .catch(() => setLensOptions(prev => dedupeAndSort([...prev, ...FALLBACK_LENSES])));
 
     getCountries()
       .then(rows => {
@@ -348,6 +374,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
               <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
                 <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>
                   Lens {fixedLensInfo && <span style={{ opacity: 0.7 }}>(Fixed)</span>}
+                  {cameraMount && !fixedLensInfo && <span style={{ opacity: 0.6, fontSize: 10, marginLeft: 4 }}>({cameraMount})</span>}
                 </label>
                 {fixedLensInfo ? (
                   /* Fixed lens camera - show locked indicator */
@@ -367,7 +394,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     {cameraName && <span style={{ fontSize: 11, color: '#15803d', marginLeft: 'auto' }}>{cameraName}</span>}
                   </div>
                 ) : (
-                  /* Normal lens selection */
+                  /* Inventory lens selection with Native/Adapted categories */
                   <div style={{ display: 'flex', gap: 6 }}>
                     <select
                       className="fg-input"
@@ -375,8 +402,31 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                       onChange={e => setSelectedLens(e.target.value)}
                       style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
                     >
-                      <option value="">Select...</option>
-                      {lensOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                      <option value="">Select lens...</option>
+                      {/* Inventory lenses (Native) */}
+                      {nativeLenses.length > 0 && (
+                        <optgroup label={`📷 Native Lenses${cameraMount ? ` (${cameraMount})` : ''}`}>
+                          {nativeLenses.map(l => (
+                            <option key={`native-${l.id}`} value={l.displayName}>{l.displayName}</option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {/* Inventory lenses (Adapted) */}
+                      {adaptedLenses.length > 0 && (
+                        <optgroup label="🔄 Adapted Lenses">
+                          {adaptedLenses.map(l => (
+                            <option key={`adapted-${l.id}`} value={l.displayName}>
+                              {l.displayName} [{l.mount}]
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {/* Fallback: show flat options if no inventory lenses */}
+                      {nativeLenses.length === 0 && adaptedLenses.length === 0 && lensOptions.length > 0 && (
+                        <optgroup label="Other Lenses">
+                          {lensOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                        </optgroup>
+                      )}
                     </select>
                     <input
                       type="text"

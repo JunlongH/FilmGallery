@@ -681,23 +681,36 @@ router.get('/compatible-lenses/:cameraId', async (req, res) => {
         camera_name: cameraName,
         focal_length: camera.fixed_lens_focal_length,
         max_aperture: camera.fixed_lens_max_aperture,
-        lenses: []
+        lenses: [],
+        adapted_lenses: []
       });
     }
 
-    // Get lenses with matching mount
-    let lenses;
+    // Get native lenses (matching mount or Universal)
+    let nativeLenses = [];
+    let adaptedLenses = [];
+    
     if (camera.mount) {
-      lenses = await allAsync(`
+      // Native lenses: exact mount match or Universal
+      nativeLenses = await allAsync(`
         SELECT id, name, brand, model, mount, focal_length_min, focal_length_max, 
                max_aperture, focus_type, image_path
         FROM equip_lenses 
         WHERE deleted_at IS NULL AND (mount = ? OR mount = 'Universal')
         ORDER BY brand, focal_length_min, name
       `, [camera.mount]);
+      
+      // Adapted lenses: different mount (can be adapted to camera)
+      adaptedLenses = await allAsync(`
+        SELECT id, name, brand, model, mount, focal_length_min, focal_length_max, 
+               max_aperture, focus_type, image_path
+        FROM equip_lenses 
+        WHERE deleted_at IS NULL AND mount != ? AND mount != 'Universal'
+        ORDER BY mount, brand, focal_length_min, name
+      `, [camera.mount]);
     } else {
-      // No mount specified, return all lenses
-      lenses = await allAsync(`
+      // No mount specified, return all lenses as native
+      nativeLenses = await allAsync(`
         SELECT id, name, brand, model, mount, focal_length_min, focal_length_max, 
                max_aperture, focus_type, image_path
         FROM equip_lenses 
@@ -710,7 +723,8 @@ router.get('/compatible-lenses/:cameraId', async (req, res) => {
       fixed_lens: false,
       camera_name: cameraName,
       camera_mount: camera.mount,
-      lenses
+      lenses: nativeLenses,
+      adapted_lenses: adaptedLenses
     });
   } catch (err) {
     console.error('[EQUIPMENT] Error fetching compatible lenses:', err);

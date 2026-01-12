@@ -71,6 +71,23 @@ export default function ShotLogScreen({ route, navigation }) {
   // Fixed lens camera info
   const [fixedLensInfo, setFixedLensInfo] = useState(null);
   const [cameraName, setCameraName] = useState('');
+  const [cameraMount, setCameraMount] = useState('');
+  // Inventory lenses (native and adapted)
+  const [nativeLenses, setNativeLenses] = useState([]); // [{ id, displayName, ... }]
+  const [adaptedLenses, setAdaptedLenses] = useState([]); // [{ id, displayName, mount, ... }]
+
+  // Format lens for display
+  const formatLensDisplay = (lens) => {
+    const name = `${lens.brand || ''} ${lens.model || ''}`.trim();
+    if (lens.focal_length_min) {
+      const focalStr = lens.focal_length_min === lens.focal_length_max || !lens.focal_length_max
+        ? `${lens.focal_length_min}mm`
+        : `${lens.focal_length_min}-${lens.focal_length_max}mm`;
+      const apertureStr = lens.max_aperture ? ` f/${lens.max_aperture}` : '';
+      return name ? `${name} ${focalStr}${apertureStr}` : `${focalStr}${apertureStr}`;
+    }
+    return name || lens.name || 'Unknown Lens';
+  };
 
   useEffect(() => {
     navigation.setOptions({ title: filmName ? `${filmName} Shot Log` : 'Shot Log' });
@@ -121,33 +138,39 @@ export default function ShotLogScreen({ route, navigation }) {
                 ? `${result.focal_length}mm${result.max_aperture ? ` f/${result.max_aperture}` : ''}`
                 : 'Fixed Lens';
               setCameraName(result.camera_name || '');
+              setCameraMount('');
               setFixedLensInfo({
                 text: fixedLensText,
                 focal_length: result.focal_length,
                 max_aperture: result.max_aperture
               });
+              setNativeLenses([]);
+              setAdaptedLenses([]);
               // Auto-fill lens for fixed lens cameras
               setNewLens(fixedLensText);
             } else {
-              // Interchangeable lens camera - add compatible lenses to options
+              // Interchangeable lens camera - store native and adapted lenses
               setCameraName(result.camera_name || '');
+              setCameraMount(result.camera_mount || '');
               setFixedLensInfo(null);
               
-              if (Array.isArray(result.lenses) && result.lenses.length > 0) {
-                const compatibleLensNames = result.lenses.map(lens => {
-                  const name = `${lens.brand || ''} ${lens.model || ''}`.trim();
-                  if (lens.focal_length_min) {
-                    const focalStr = lens.focal_length_min === lens.focal_length_max || !lens.focal_length_max
-                      ? `${lens.focal_length_min}mm`
-                      : `${lens.focal_length_min}-${lens.focal_length_max}mm`;
-                    return name ? `${name} ${focalStr}` : focalStr;
-                  }
-                  return name;
-                }).filter(Boolean);
-                
-                // Add compatible lenses to options (prioritized)
-                setLensOptions(prev => dedupeAndSort([...compatibleLensNames, ...prev]));
-              }
+              // Process native lenses
+              const native = (result.lenses || []).map(lens => ({
+                ...lens,
+                displayName: formatLensDisplay(lens)
+              }));
+              setNativeLenses(native);
+              
+              // Process adapted lenses
+              const adapted = (result.adapted_lenses || []).map(lens => ({
+                ...lens,
+                displayName: formatLensDisplay(lens)
+              }));
+              setAdaptedLenses(adapted);
+              
+              // Add all to flat lensOptions for backward compatibility
+              const allLensNames = [...native, ...adapted].map(l => l.displayName).filter(Boolean);
+              setLensOptions(prev => dedupeAndSort([...allLensNames, ...prev]));
             }
           } catch (e) {
             console.warn('Failed to fetch camera/lens info', e);
@@ -171,9 +194,10 @@ export default function ShotLogScreen({ route, navigation }) {
       .then((opts) => {
         if (!mounted) return;
         const base = Array.isArray(opts?.lenses) && opts.lenses.length ? opts.lenses : FALLBACK_LENSES;
-        setLensOptions(dedupeAndSort(base));
+        // Add to existing options instead of replacing (to preserve compatible lenses from camera)
+        setLensOptions(prev => dedupeAndSort([...prev, ...base]));
       })
-      .catch(() => setLensOptions(dedupeAndSort(FALLBACK_LENSES)));
+      .catch(() => setLensOptions(prev => dedupeAndSort([...prev, ...FALLBACK_LENSES])));
     return () => { mounted = false; };
   }, []);
 
@@ -450,28 +474,82 @@ export default function ShotLogScreen({ route, navigation }) {
             dense
           />
         </View>
-        <Button
-          mode="text"
-          onPress={() => setShowLensOptions(v => !v)}
-          style={{ alignSelf: 'flex-start', marginBottom: showLensOptions ? spacing.xs : spacing.sm }}
-        >
-          {showLensOptions ? 'Hide lens suggestions' : 'Show lens suggestions'}
-        </Button>
-        {showLensOptions ? (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm }}>
-            {lensOptions.map(l => (
-              <Button
-                key={l}
-                mode={newLens === l ? 'contained' : 'outlined'}
-                onPress={() => { setNewLens(l); setShowLensOptions(false); }}
-                compact
-                style={{ marginRight: 4 }}
-              >
-                {l}
-              </Button>
-            ))}
-          </View>
-        ) : null}
+        {/* Lens suggestions - hidden for fixed lens cameras, shown for interchangeable */}
+        {!fixedLensInfo && (
+          <>
+            <Button
+              mode="text"
+              onPress={() => setShowLensOptions(v => !v)}
+              style={{ alignSelf: 'flex-start', marginBottom: showLensOptions ? spacing.xs : spacing.sm }}
+            >
+              {showLensOptions ? 'Hide lens options' : `Select from ${nativeLenses.length + adaptedLenses.length || lensOptions.length} lenses`}
+            </Button>
+            {showLensOptions && (
+              <View style={{ marginBottom: spacing.sm }}>
+                {/* Native lenses section */}
+                {nativeLenses.length > 0 && (
+                  <>
+                    <Text variant="labelMedium" style={{ color: theme.colors.primary, marginBottom: 6, fontWeight: '600' }}>
+                      📷 Native Lenses {cameraMount ? `(${cameraMount})` : ''}
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm }}>
+                      {nativeLenses.map(l => (
+                        <Button
+                          key={`native-${l.id}`}
+                          mode={newLens === l.displayName ? 'contained' : 'outlined'}
+                          onPress={() => { setNewLens(l.displayName); setShowLensOptions(false); }}
+                          compact
+                          style={{ marginRight: 4 }}
+                        >
+                          {l.displayName}
+                        </Button>
+                      ))}
+                    </View>
+                  </>
+                )}
+                
+                {/* Adapted lenses section */}
+                {adaptedLenses.length > 0 && (
+                  <>
+                    <Text variant="labelMedium" style={{ color: theme.colors.secondary, marginBottom: 6, fontWeight: '600' }}>
+                      🔄 Adapted Lenses
+                    </Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm }}>
+                      {adaptedLenses.map(l => (
+                        <Button
+                          key={`adapted-${l.id}`}
+                          mode={newLens === l.displayName ? 'contained' : 'outlined'}
+                          onPress={() => { setNewLens(l.displayName); setShowLensOptions(false); }}
+                          compact
+                          style={{ marginRight: 4 }}
+                        >
+                          {l.displayName} [{l.mount}]
+                        </Button>
+                      ))}
+                    </View>
+                  </>
+                )}
+                
+                {/* Fallback: show flat options if no inventory lenses */}
+                {nativeLenses.length === 0 && adaptedLenses.length === 0 && lensOptions.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm }}>
+                    {lensOptions.map(l => (
+                      <Button
+                        key={l}
+                        mode={newLens === l ? 'contained' : 'outlined'}
+                        onPress={() => { setNewLens(l); setShowLensOptions(false); }}
+                        compact
+                        style={{ marginRight: 4 }}
+                      >
+                        {l}
+                      </Button>
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+          </>
+        )}
 
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
           <TextInput
@@ -578,6 +656,8 @@ export default function ShotLogScreen({ route, navigation }) {
         onClose={() => setShowShotMode(false)}
         onUse={handleShotData}
         filmIso={filmIso}
+        forcePsMode={!!fixedLensInfo}
+        forcedMaxAperture={fixedLensInfo?.max_aperture || null}
       />
     </View>
   );
