@@ -267,21 +267,39 @@ export async function exportShotLogsCsv(id) {
   return blob;
 }
 
-export async function createFilm({ name, iso, category, thumbFile }) {
+// Get film categories list
+export async function getFilmCategories() {
+  const res = await fetch(`${API_BASE}/api/films/categories`);
+  return res.json();
+}
+
+// Get film formats list
+export async function getFilmFormats() {
+  const res = await fetch(`${API_BASE}/api/films/formats`);
+  return res.json();
+}
+
+export async function createFilm({ name, brand, iso, category, format, process, thumbFile }) {
   const fd = new FormData();
   fd.append('name', name);
+  if (brand) fd.append('brand', brand);
   fd.append('iso', iso);
-  fd.append('category', category);
+  if (category) fd.append('category', category);
+  if (format) fd.append('format', format);
+  if (process) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
   const resp = await fetch(`${API_BASE}/api/films`, { method: 'POST', body: fd });
   return resp.json();
 }
 
-export async function updateFilm({ id, name, iso, category, thumbFile }) {
+export async function updateFilm({ id, name, brand, iso, category, format, process, thumbFile }) {
   const fd = new FormData();
   if (name !== undefined) fd.append('name', name);
+  if (brand !== undefined) fd.append('brand', brand);
   if (iso !== undefined) fd.append('iso', iso);
   if (category !== undefined) fd.append('category', category);
+  if (format !== undefined) fd.append('format', format);
+  if (process !== undefined) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
   const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'PUT', body: fd });
   const ct = resp.headers.get('content-type') || '';
@@ -290,12 +308,18 @@ export async function updateFilm({ id, name, iso, category, thumbFile }) {
   return { ok: resp.ok, status: resp.status, text };
 }
 
-export async function deleteFilm(id) {
-  const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'DELETE' });
+export async function deleteFilm(id, hard = false) {
+  const url = hard ? `${API_BASE}/api/films/${id}?hard=true` : `${API_BASE}/api/films/${id}`;
+  const resp = await fetch(url, { method: 'DELETE' });
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('application/json')) return resp.json();
   const text = await resp.text();
   return { ok: resp.ok, status: resp.status, text };
+}
+
+export async function restoreFilm(id) {
+  const resp = await fetch(`${API_BASE}/api/films/${id}/restore`, { method: 'POST' });
+  return resp.json();
 }
 
 export async function deleteRoll(id) {
@@ -550,22 +574,9 @@ export async function getEquipmentConstants() {
   return jsonFetch('/api/equipment/constants');
 }
 
-// Get all equipment suggestions (cameras, lenses, flashes, formats)
+// Get all equipment suggestions (cameras, lenses, flashes)
 export async function getEquipmentSuggestions() {
   return jsonFetch('/api/equipment/suggestions');
-}
-
-// Film Formats
-export async function getFilmFormats() {
-  return jsonFetch('/api/equipment/formats');
-}
-
-export async function createFilmFormat(data) {
-  return jsonFetch('/api/equipment/formats', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
 }
 
 // Cameras

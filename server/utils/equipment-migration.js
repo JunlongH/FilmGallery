@@ -447,24 +447,36 @@ function runEquipmentMigration() {
         }
       }
 
-      // 4g. Migrate film formats
-      const filmsWithFormat = await all(`SELECT id, format FROM films WHERE format IS NOT NULL AND format != '' AND format_id IS NULL`);
-      log(`Found ${filmsWithFormat.length} films to migrate format`);
+      // 4g. Migrate film formats (only if films table has format column)
+      try {
+        const filmsTableInfo = await all(`PRAGMA table_info(films)`);
+        const hasFormatColumn = filmsTableInfo.some(col => col.name === 'format');
+        const hasFormatIdColumn = filmsTableInfo.some(col => col.name === 'format_id');
+        
+        if (hasFormatColumn && hasFormatIdColumn) {
+          const filmsWithFormat = await all(`SELECT id, format FROM films WHERE format IS NOT NULL AND format != '' AND format_id IS NULL`);
+          log(`Found ${filmsWithFormat.length} films to migrate format`);
 
-      for (const film of filmsWithFormat) {
-        // Try to match format
-        let formatName = film.format.trim();
-        // Normalize common variations
-        if (formatName === '35mm' || formatName === '35' || formatName.toLowerCase() === '135mm') {
-          formatName = '135';
-        } else if (formatName.toLowerCase() === 'medium format' || formatName === 'MF') {
-          formatName = '120';
-        }
+          for (const film of filmsWithFormat) {
+            // Try to match format
+            let formatName = film.format.trim();
+            // Normalize common variations
+            if (formatName === '35mm' || formatName === '35' || formatName.toLowerCase() === '135mm') {
+              formatName = '135';
+            } else if (formatName.toLowerCase() === 'medium format' || formatName === 'MF') {
+              formatName = '120';
+            }
 
-        const format = await get(`SELECT id FROM ref_film_formats WHERE name = ?`, [formatName]);
-        if (format) {
-          await run(`UPDATE films SET format_id = ? WHERE id = ?`, [format.id, film.id]);
+            const format = await get(`SELECT id FROM ref_film_formats WHERE name = ?`, [formatName]);
+            if (format) {
+              await run(`UPDATE films SET format_id = ? WHERE id = ?`, [format.id, film.id]);
+            }
+          }
+        } else {
+          log(`Skipping film format migration - format column not found in films table`);
         }
+      } catch (e) {
+        log(`Skipping film format migration due to error: ${e.message}`);
       }
 
       // ========================================

@@ -1,9 +1,9 @@
 /**
  * EquipmentScreen - Mobile equipment management
- * Manage cameras, lenses, and flashes
+ * Manage cameras, lenses, flashes, and films
  */
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl } from 'react-native';
+import { View, FlatList, StyleSheet, RefreshControl, ScrollView } from 'react-native';
 import { 
   Text, 
   FAB, 
@@ -19,6 +19,7 @@ import {
   TextInput
 } from 'react-native-paper';
 import { getCameras, getLenses, getFlashes, createCamera, createLens, createFlash, deleteCamera, deleteLens, deleteFlash } from '../api/equipment';
+import { getFilms } from '../api/filmItems';
 import { spacing, radius } from '../theme';
 
 export default function EquipmentScreen({ navigation }) {
@@ -53,6 +54,8 @@ export default function EquipmentScreen({ navigation }) {
         data = await getLenses();
       } else if (tab === 'flash') {
         data = await getFlashes();
+      } else if (tab === 'film') {
+        data = await getFilms();
       }
       setItems(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -132,6 +135,10 @@ export default function EquipmentScreen({ navigation }) {
 
   // Filter items by search
   const filteredItems = items.filter(item => {
+    if (tab === 'film') {
+      const text = `${item.brand || ''} ${item.name || ''}`.toLowerCase();
+      return text.includes(search.toLowerCase());
+    }
     const text = `${item.brand || ''} ${item.model || ''}`.toLowerCase();
     return text.includes(search.toLowerCase());
   });
@@ -140,10 +147,15 @@ export default function EquipmentScreen({ navigation }) {
     <Card 
       style={styles.card} 
       mode="outlined"
-      onLongPress={() => setDeleteTarget(item)}
+      onLongPress={() => tab !== 'film' && setDeleteTarget(item)}
     >
       <Card.Content>
-        <Text variant="titleMedium">{item.brand} {item.model}</Text>
+        <Text variant="titleMedium">
+          {tab === 'film' 
+            ? `${item.brand || ''} ${item.name || ''}`.trim()
+            : `${item.brand} ${item.model}`
+          }
+        </Text>
         <View style={styles.chipRow}>
           {tab === 'camera' && (
             <>
@@ -169,6 +181,13 @@ export default function EquipmentScreen({ navigation }) {
               {item.ttl_compatible && <Chip compact style={styles.chip} icon="flash">TTL</Chip>}
             </>
           )}
+          {tab === 'film' && (
+            <>
+              <Chip compact style={styles.chip}>ISO {item.iso}</Chip>
+              {item.format && <Chip compact style={styles.chip}>{item.format}</Chip>}
+              {item.category && <Chip compact style={styles.chip}>{item.category}</Chip>}
+            </>
+          )}
         </View>
       </Card.Content>
     </Card>
@@ -176,17 +195,20 @@ export default function EquipmentScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Tabs */}
-      <SegmentedButtons
-        value={tab}
-        onValueChange={setTab}
-        buttons={[
-          { value: 'camera', label: 'Cameras', icon: 'camera' },
-          { value: 'lens', label: 'Lenses', icon: 'camera-iris' },
-          { value: 'flash', label: 'Flashes', icon: 'flash' },
-        ]}
-        style={styles.tabs}
-      />
+      {/* Tabs - using ScrollView for horizontal scroll on small screens */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScrollView}>
+        <SegmentedButtons
+          value={tab}
+          onValueChange={setTab}
+          buttons={[
+            { value: 'camera', label: 'Cameras', icon: 'camera' },
+            { value: 'lens', label: 'Lenses', icon: 'camera-iris' },
+            { value: 'flash', label: 'Flashes', icon: 'flash' },
+            { value: 'film', label: 'Films', icon: 'filmstrip' },
+          ]}
+          style={styles.tabs}
+        />
+      </ScrollView>
 
       {/* Search */}
       <Searchbar
@@ -214,19 +236,24 @@ export default function EquipmentScreen({ navigation }) {
             <View style={styles.emptyContainer}>
               <Text variant="bodyLarge">No {tab}s found</Text>
               <Text variant="bodyMedium" style={{ opacity: 0.6, marginTop: 4 }}>
-                Tap + to add one
+                {tab === 'film' 
+                  ? 'Add films from the desktop Equipment page'
+                  : 'Tap + to add one'
+                }
               </Text>
             </View>
           }
         />
       )}
 
-      {/* FAB */}
-      <FAB
-        icon="plus"
-        style={[styles.fab, { backgroundColor: theme.colors.primary }]}
-        onPress={() => setShowAddDialog(true)}
-      />
+      {/* FAB - not shown for films (managed on desktop) */}
+      {tab !== 'film' && (
+        <FAB
+          icon="plus"
+          style={[styles.fab, { backgroundColor: theme.colors.primary }]}
+          onPress={() => setShowAddDialog(true)}
+        />
+      )}
 
       {/* Add Dialog */}
       <Portal>
@@ -297,8 +324,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  tabs: {
+  tabsScrollView: {
+    flexGrow: 0,
     margin: spacing.md,
+  },
+  tabs: {
+    marginRight: spacing.md,
   },
   searchbar: {
     marginHorizontal: spacing.md,

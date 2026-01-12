@@ -14,7 +14,8 @@ import {
   getCameras, createCamera, updateCamera, deleteCamera, uploadCameraImage,
   getLenses, createLens, updateLens, deleteLens, uploadLensImage,
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
-  getFilmFormats, createFilmFormat,
+  getFilms, createFilm, updateFilm, deleteFilm, 
+  getFilmCategories, getFilmFormats,
   getEquipmentConstants, buildUploadUrl
 } from '../api';
 import ModalDialog from './ModalDialog';
@@ -26,7 +27,7 @@ const TABS = [
   { key: 'cameras', label: '📷 Cameras', icon: '📷' },
   { key: 'lenses', label: '🔭 Lenses', icon: '🔭' },
   { key: 'flashes', label: '⚡ Flashes', icon: '⚡' },
-  { key: 'formats', label: '🎞️ Film Formats', icon: '🎞️' }
+  { key: 'films', label: '🎞️ Films', icon: '🎞️' }
 ];
 
 export default function EquipmentManager() {
@@ -34,6 +35,7 @@ export default function EquipmentManager() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [constants, setConstants] = useState(null);
+  const [filmConstants, setFilmConstants] = useState({ categories: [], formats: [] });
   const [selectedId, setSelectedId] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -42,6 +44,10 @@ export default function EquipmentManager() {
   // Load constants
   useEffect(() => {
     getEquipmentConstants().then(setConstants).catch(console.error);
+    // Load film-specific constants
+    Promise.all([getFilmCategories(), getFilmFormats()])
+      .then(([cats, fmts]) => setFilmConstants({ categories: cats || [], formats: fmts || [] }))
+      .catch(console.error);
   }, []);
 
   // Load items based on active tab
@@ -53,7 +59,7 @@ export default function EquipmentManager() {
         case 'cameras': data = await getCameras(); break;
         case 'lenses': data = await getLenses(); break;
         case 'flashes': data = await getFlashes(); break;
-        case 'formats': data = await getFilmFormats(); break;
+        case 'films': data = await getFilms(); break;
         default: data = [];
       }
       setItems(Array.isArray(data) ? data : []);
@@ -82,7 +88,7 @@ export default function EquipmentManager() {
         case 'cameras': created = await createCamera(data); break;
         case 'lenses': created = await createLens(data); break;
         case 'flashes': created = await createFlash(data); break;
-        case 'formats': created = await createFilmFormat(data); break;
+        case 'films': created = await createFilm(data); break;
         default: return;
       }
       setItems(prev => [...prev, created]);
@@ -102,6 +108,7 @@ export default function EquipmentManager() {
         case 'cameras': updated = await updateCamera(id, data); break;
         case 'lenses': updated = await updateLens(id, data); break;
         case 'flashes': updated = await updateFlash(id, data); break;
+        case 'films': updated = await updateFilm({ id, ...data }); break;
         default: return;
       }
       setItems(prev => prev.map(i => i.id === id ? updated : i));
@@ -119,6 +126,7 @@ export default function EquipmentManager() {
         case 'cameras': await deleteCamera(id); break;
         case 'lenses': await deleteLens(id); break;
         case 'flashes': await deleteFlash(id); break;
+        case 'films': await deleteFilm(id); break;
         default: return;
       }
       setItems(prev => prev.filter(i => i.id !== id));
@@ -130,15 +138,19 @@ export default function EquipmentManager() {
     }
   };
 
-  // Handle image upload
+  // Handle image upload (films use FormData with 'thumb' field)
   const handleImageUpload = async (id, file) => {
     try {
-      let result;
-      switch (activeTab) {
-        case 'cameras': result = await uploadCameraImage(id, file); break;
-        case 'lenses': result = await uploadLensImage(id, file); break;
-        case 'flashes': result = await uploadFlashImage(id, file); break;
-        default: return;
+      if (activeTab === 'films') {
+        // For films, use updateFilm with thumbFile
+        await updateFilm({ id, thumbFile: file });
+      } else {
+        switch (activeTab) {
+          case 'cameras': await uploadCameraImage(id, file); break;
+          case 'lenses': await uploadLensImage(id, file); break;
+          case 'flashes': await uploadFlashImage(id, file); break;
+          default: return;
+        }
       }
       // Reload items to get updated image path
       loadItems();
@@ -153,7 +165,7 @@ export default function EquipmentManager() {
       {/* Header */}
       <div className="equip-header">
         <h1>Equipment Library</h1>
-        <p>Manage your cameras, lenses, flashes, and film formats</p>
+        <p>Manage your cameras, lenses, flashes, and films</p>
       </div>
 
       {/* Tabs */}
@@ -191,25 +203,37 @@ export default function EquipmentManager() {
             </div>
           ) : (
             <div className="equip-list">
-              {items.map(item => (
-                <div
-                  key={item.id}
-                  className={`equip-list-item ${selectedId === item.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedId(item.id)}
-                >
-                  {item.image_path ? (
-                    <img src={buildUploadUrl(item.image_path)} alt={item.name} className="equip-list-thumb" />
-                  ) : (
-                    <div className="equip-list-thumb-placeholder">
-                      {TABS.find(t => t.key === activeTab)?.icon}
+              {items.map(item => {
+                // For films, use thumbPath or thumbnail_url instead of image_path
+                const imagePath = activeTab === 'films' 
+                  ? (item.thumbPath || item.thumbnail_url) 
+                  : item.image_path;
+                return (
+                  <div
+                    key={item.id}
+                    className={`equip-list-item ${selectedId === item.id ? 'selected' : ''}`}
+                    onClick={() => setSelectedId(item.id)}
+                  >
+                    {imagePath ? (
+                      <img src={buildUploadUrl(imagePath)} alt={item.name} className="equip-list-thumb" />
+                    ) : (
+                      <div className="equip-list-thumb-placeholder">
+                        {TABS.find(t => t.key === activeTab)?.icon}
+                      </div>
+                    )}
+                    <div className="equip-list-info">
+                      <div className="equip-list-name">
+                        {activeTab === 'films' && item.brand ? `${item.brand} ` : ''}{item.name}
+                      </div>
+                      {activeTab === 'films' ? (
+                        <div className="equip-list-brand">ISO {item.iso} · {item.format || '135'}</div>
+                      ) : (
+                        item.brand && <div className="equip-list-brand">{item.brand}</div>
+                      )}
                     </div>
-                  )}
-                  <div className="equip-list-info">
-                    <div className="equip-list-name">{item.name}</div>
-                    {item.brand && <div className="equip-list-brand">{item.brand}</div>}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -222,6 +246,7 @@ export default function EquipmentManager() {
                 type={activeTab}
                 item={editItem}
                 constants={constants}
+                filmConstants={filmConstants}
                 onSave={(data) => handleUpdate(editItem.id, data)}
                 onCancel={() => setEditItem(null)}
               />
@@ -247,6 +272,7 @@ export default function EquipmentManager() {
         <AddModal
           type={activeTab}
           constants={constants}
+          filmConstants={filmConstants}
           onSave={handleCreate}
           onClose={() => setShowAddModal(false)}
         />
@@ -275,12 +301,17 @@ function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
     }
   };
 
+  // For films, use thumbPath instead of image_path
+  const imagePath = type === 'films' 
+    ? (item.thumbPath || item.thumbnail_url) 
+    : item.image_path;
+
   return (
     <div className="equip-detail">
       {/* Image section */}
       <div className="equip-detail-image-section">
-        {item.image_path ? (
-          <img src={buildUploadUrl(item.image_path)} alt={item.name} className="equip-detail-image" />
+        {imagePath ? (
+          <img src={buildUploadUrl(imagePath)} alt={item.name} className="equip-detail-image" />
         ) : (
           <div className="equip-detail-image-placeholder">No Image</div>
         )}
@@ -292,10 +323,22 @@ function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
 
       {/* Info section */}
       <div className="equip-detail-info">
-        <h2>{item.name}</h2>
+        <h2>{type === 'films' && item.brand ? `${item.brand} ` : ''}{item.name}</h2>
         
         <div className="equip-detail-grid">
-          {item.brand && <DetailRow label="Brand" value={item.brand} />}
+          {/* Film-specific fields */}
+          {type === 'films' && (
+            <>
+              {item.brand && <DetailRow label="Brand" value={item.brand} />}
+              <DetailRow label="ISO" value={item.iso} />
+              {item.category && <DetailRow label="Category" value={item.category} />}
+              {item.format && <DetailRow label="Format" value={item.format} />}
+              {item.process && <DetailRow label="Process" value={item.process} />}
+            </>
+          )}
+          
+          {/* Non-film equipment fields */}
+          {type !== 'films' && item.brand && <DetailRow label="Brand" value={item.brand} />}
           {item.model && <DetailRow label="Model" value={item.model} />}
           {item.type && <DetailRow label="Type" value={item.type} />}
           {item.mount && <DetailRow label="Mount" value={item.mount} />}
@@ -371,7 +414,7 @@ function DetailRow({ label, value }) {
 }
 
 // Edit Form Component
-function EditForm({ type, item, constants, onSave, onCancel }) {
+function EditForm({ type, item, constants, filmConstants, onSave, onCancel }) {
   const [form, setForm] = useState({ ...item });
 
   const handleChange = (field, value) => {
@@ -387,7 +430,7 @@ function EditForm({ type, item, constants, onSave, onCancel }) {
     <form className="equip-edit-form" onSubmit={handleSubmit}>
       <h3>Edit {type.slice(0, -1)}</h3>
       
-      <FormFields type={type} form={form} onChange={handleChange} constants={constants} />
+      <FormFields type={type} form={form} onChange={handleChange} constants={constants} filmConstants={filmConstants} />
 
       <div className="equip-form-actions">
         <button type="submit" className="btn btn-primary">Save</button>
@@ -398,12 +441,12 @@ function EditForm({ type, item, constants, onSave, onCancel }) {
 }
 
 // Add Modal Component
-function AddModal({ type, constants, onSave, onClose }) {
-  const [form, setForm] = useState({
-    name: '',
-    brand: '',
-    model: ''
-  });
+function AddModal({ type, constants, filmConstants, onSave, onClose }) {
+  const [form, setForm] = useState(
+    type === 'films' 
+      ? { name: '', brand: '', iso: 400, category: 'color-negative', format: '135', process: 'C-41' }
+      : { name: '', brand: '', model: '' }
+  );
 
   const handleChange = (field, value) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -415,6 +458,10 @@ function AddModal({ type, constants, onSave, onClose }) {
       alert('Name is required');
       return;
     }
+    if (type === 'films' && !form.iso) {
+      alert('ISO is required');
+      return;
+    }
     onSave(form);
   };
 
@@ -424,7 +471,7 @@ function AddModal({ type, constants, onSave, onClose }) {
         <h3>Add New {type.slice(0, -1)}</h3>
         
         <form onSubmit={handleSubmit}>
-          <FormFields type={type} form={form} onChange={handleChange} constants={constants} />
+          <FormFields type={type} form={form} onChange={handleChange} constants={constants} filmConstants={filmConstants} />
           
           <div className="equip-form-actions">
             <button type="submit" className="btn btn-primary">Create</button>
@@ -437,12 +484,14 @@ function AddModal({ type, constants, onSave, onClose }) {
 }
 
 // Form Fields Component (shared between edit and add)
-function FormFields({ type, form, onChange, constants }) {
+function FormFields({ type, form, onChange, constants, filmConstants }) {
   const cameraTypes = constants?.cameraTypes || [];
   const lensMounts = constants?.lensMounts || [];
   const focusTypes = constants?.focusTypes || [];
   const conditions = constants?.conditions || [];
   const statuses = constants?.statuses || [];
+  const filmCategories = filmConstants?.categories || [];
+  const filmFormats = filmConstants?.formats || [];
 
   return (
     <div className="equip-form-fields">
@@ -636,31 +685,48 @@ function FormFields({ type, form, onChange, constants }) {
         </>
       )}
 
-      {/* Film format fields */}
-      {type === 'formats' && (
+      {/* Film-specific fields */}
+      {type === 'films' && (
         <>
           <div className="form-row">
-            <label>Description</label>
+            <label>ISO *</label>
             <input
-              type="text"
-              value={form.description || ''}
-              onChange={e => onChange('description', e.target.value)}
+              type="number"
+              value={form.iso || ''}
+              onChange={e => onChange('iso', parseInt(e.target.value) || null)}
+              required
             />
           </div>
+          
           <div className="form-row">
-            <label>Frame Size</label>
-            <input
-              type="text"
-              value={form.frame_size || ''}
-              onChange={e => onChange('frame_size', e.target.value)}
-              placeholder="e.g., 24x36mm"
-            />
+            <label>Category</label>
+            <select value={form.category || 'color-negative'} onChange={e => onChange('category', e.target.value)}>
+              {filmCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          
+          <div className="form-row">
+            <label>Format</label>
+            <select value={form.format || '135'} onChange={e => onChange('format', e.target.value)}>
+              {filmFormats.map(f => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </div>
+          
+          <div className="form-row">
+            <label>Process</label>
+            <select value={form.process || ''} onChange={e => onChange('process', e.target.value)}>
+              <option value="">Select process...</option>
+              <option value="C-41">C-41 (Color Negative)</option>
+              <option value="E-6">E-6 (Slide)</option>
+              <option value="BW">B&W</option>
+              <option value="ECN-2">ECN-2 (Cinema)</option>
+            </select>
           </div>
         </>
       )}
 
-      {/* Common ownership fields (not for formats) */}
-      {type !== 'formats' && (
+      {/* Common ownership fields (not for films) */}
+      {type !== 'films' && (
         <>
           <div className="form-row">
             <label>Serial Number</label>
