@@ -12,6 +12,7 @@ import 'react-lazy-load-image-component/src/effects/opacity.css';
 import SquareImage from './SquareImage';
 import ModalDialog from './ModalDialog';
 import ShotLogModal from './ShotLogModal';
+import { getFilmDisplayName } from '../utils/filmUtils';
 
 export default function FilmLibrary() {
   const navigate = useNavigate();
@@ -272,7 +273,7 @@ export default function FilmLibrary() {
                         {thumbUrl ? (
                           <img 
                             src={thumbUrl} 
-                            alt={film ? film.name : 'Film'} 
+                            alt={film ? getFilmDisplayName(film) : 'Film'} 
                             className="fg-film-item-thumb" 
                             loading="lazy"
                             decoding="async"
@@ -286,7 +287,7 @@ export default function FilmLibrary() {
                           </div>
                         )}
                         <div className="fg-film-item-meta-bottom">
-                          <div className="fg-film-item-meta-type">{film ? film.name : 'Unspecified'}</div>
+                          <div className="fg-film-item-meta-type">{film ? getFilmDisplayName(film) : 'Unspecified'}</div>
                           <div className="fg-film-item-meta-status">{statusLabel}</div>
                         </div>
                       </div>
@@ -665,7 +666,7 @@ export default function FilmLibrary() {
                               >
                                 <option value="">Select film...</option>
                                 {films.map(f => (
-                                  <option key={f.id} value={f.id}>{f.name}</option>
+                                  <option key={f.id} value={f.id}>{getFilmDisplayName(f)}</option>
                                 ))}
                               </select>
                             </div>

@@ -7,6 +7,7 @@ import '../styles/forms.css';
 import FilmSelector from './FilmSelector';
 import ModalDialog from './ModalDialog';
 import EquipmentSelector from './EquipmentSelector';
+import { getFilmDisplayName } from '../utils/filmUtils';
 
 export default function NewRollForm({ onCreated }) {
   const location = useLocation();
@@ -317,7 +318,7 @@ export default function NewRollForm({ onCreated }) {
               <option value="">Select from in-stock / loaded</option>
               {filmItems.map(it => {
                 const f = films.find(x => x.id === it.film_id);
-                const filmName = f ? f.name : `Film #${it.film_id}`;
+                const filmName = getFilmDisplayName(f);
                 const label = [filmName, it.batch_number, it.expiry_date].filter(Boolean).join(' • ');
                 return (
                   <option key={it.id} value={it.id}>{label || `Item #${it.id}`}</option>
@@ -334,7 +335,7 @@ export default function NewRollForm({ onCreated }) {
               const f = films.find(x => x.id === it.film_id);
               return (
                 <div className="fg-card" style={{ marginTop: 12, padding: 16, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontWeight: 600, marginBottom: 8 }}>{f ? f.name : 'Unknown Film'}</div>
+                  <div style={{ fontWeight: 600, marginBottom: 8 }}>{getFilmDisplayName(f)}</div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13, color: '#475569' }}>
                     <div>Status: <span className="fg-pill">{it.status}</span></div>
                     <div>Expiry: {it.expiry_date || '—'}</div>

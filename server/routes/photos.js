@@ -105,7 +105,7 @@ router.get('/', async (req, res) => {
   });
 
   let sql = locationsTableExists ? `
-    SELECT p.*, r.title as roll_title, l.city_name, l.country_name, COALESCE(f.name, r.film_type) AS film_name,
+    SELECT p.*, r.title as roll_title, l.city_name, l.country_name, TRIM(COALESCE(f.brand || ' ', '') || COALESCE(f.name, r.film_type)) AS film_name,
            cam.name AS camera_equip_name, cam.brand AS camera_equip_brand, cam.mount AS camera_equip_mount,
            cam.has_fixed_lens, cam.fixed_lens_focal_length, cam.fixed_lens_max_aperture,
            lens.name AS lens_equip_name, lens.brand AS lens_equip_brand,
@@ -121,7 +121,7 @@ router.get('/', async (req, res) => {
     LEFT JOIN equip_flashes flash ON p.flash_equip_id = flash.id
     WHERE 1=1
   ` : `
-    SELECT p.*, r.title as roll_title, NULL as city_name, NULL as country_name, COALESCE(f.name, r.film_type) AS film_name,
+    SELECT p.*, r.title as roll_title, NULL as city_name, NULL as country_name, TRIM(COALESCE(f.brand || ' ', '') || COALESCE(f.name, r.film_type)) AS film_name,
            cam.name AS camera_equip_name, cam.brand AS camera_equip_brand, cam.mount AS camera_equip_mount,
            cam.has_fixed_lens, cam.fixed_lens_focal_length, cam.fixed_lens_max_aperture,
            lens.name AS lens_equip_name, lens.brand AS lens_equip_brand,
@@ -224,7 +224,7 @@ router.get('/random', async (req, res) => {
 router.get('/favorites', async (req, res) => {
   console.log('[GET] /api/photos/favorites');
   const sql = `
-    SELECT p.*, COALESCE(f.name, r.film_type) AS film_name, r.title AS roll_title
+    SELECT p.*, TRIM(COALESCE(f.brand || ' ', '') || COALESCE(f.name, r.film_type)) AS film_name, r.title AS roll_title
     FROM photos p
     JOIN rolls r ON r.id = p.roll_id
     LEFT JOIN films f ON f.id = r.filmId
@@ -246,7 +246,7 @@ router.get('/favorites', async (req, res) => {
 router.get('/negatives', async (req, res) => {
   console.log('[GET] /api/photos/negatives');
   const sql = `
-    SELECT p.*, COALESCE(f.name, r.film_type) AS film_name, r.title AS roll_title
+    SELECT p.*, TRIM(COALESCE(f.brand || ' ', '') || COALESCE(f.name, r.film_type)) AS film_name, r.title AS roll_title
     FROM photos p
     JOIN rolls r ON r.id = p.roll_id
     LEFT JOIN films f ON f.id = r.filmId
@@ -1025,7 +1025,7 @@ router.post('/:id/download-with-exif', async (req, res) => {
     const photo = await getAsync(`
       SELECT p.*, r.title as roll_title, r.camera as roll_camera, r.lens as roll_lens, 
              r.photographer as roll_photographer, r.start_date as roll_start_date,
-             COALESCE(f.name, r.film_type) AS film_name,
+             TRIM(COALESCE(f.brand || ' ', '') || COALESCE(f.name, r.film_type)) AS film_name,
              -- Photo equipment
              pcam.name AS photo_camera_name, pcam.brand AS photo_camera_brand, pcam.model AS photo_camera_model,
              pcam.has_fixed_lens, pcam.fixed_lens_focal_length, pcam.fixed_lens_max_aperture,

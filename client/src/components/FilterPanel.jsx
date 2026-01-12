@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getMetadataOptions, getLocations, getFilms } from '../api';
+import { getFilmDisplayName } from '../utils/filmUtils';
 
 export default function FilterPanel({ isOpen, onChange }) {
   const [options, setOptions] = useState({ cameras: [], lenses: [], photographers: [], years: [], films: [] });
@@ -119,7 +120,7 @@ export default function FilterPanel({ isOpen, onChange }) {
             <Section title="Lens" items={options.lenses} keyName="lens" />
             <Section title="Photographer" items={options.photographers} keyName="photographer" />
             <Section title="Location" items={locations.map(l=>({ value: String(l.id), label: l.city_name }))} keyName="location_id" />
-            <Section title="Film" items={(options.films||[]).map(f => ({ value: String(f.id), label: f.name }))} keyName="film" />
+            <Section title="Film" items={(options.films||[]).map(f => ({ value: String(f.id), label: getFilmDisplayName(f) }))} keyName="film" />
             <div className="fg-field" style={{display:'flex', flexDirection:'column', gap:8, minWidth:220}}>
               <label className="fg-label">Year</label>
               <div style={{display:'flex', flexWrap:'wrap', gap:8}}>

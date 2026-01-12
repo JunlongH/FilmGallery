@@ -657,7 +657,7 @@ router.post('/', (req, res) => {
 
 // GET /api/rolls
 router.get('/', (req, res) => {
-  const { camera, lens, photographer, location_id, year, month, ym, film } = req.query;
+  const { camera, lens, photographer, location_id, year, month, ym, film, camera_equip_id, lens_equip_id, flash_equip_id, filmId, limit } = req.query;
 
   const toArray = (v) => {
     if (v === undefined || v === null) return [];
@@ -675,13 +675,35 @@ router.get('/', (req, res) => {
   const films = toArray(film);
   
   let sql = `
-    SELECT DISTINCT rolls.*, films.name AS film_name_joined 
+    SELECT DISTINCT rolls.*, TRIM(COALESCE(films.brand || ' ', '') || films.name) AS film_name_joined 
     FROM rolls 
     LEFT JOIN films ON rolls.filmId = films.id 
   `;
   
   const params = [];
   const conditions = [];
+
+  // Equipment ID filters (exact match by equipment inventory ID)
+  if (camera_equip_id) {
+    conditions.push(`rolls.camera_equip_id = ?`);
+    params.push(Number(camera_equip_id));
+  }
+
+  if (lens_equip_id) {
+    conditions.push(`rolls.lens_equip_id = ?`);
+    params.push(Number(lens_equip_id));
+  }
+
+  if (flash_equip_id) {
+    conditions.push(`rolls.flash_equip_id = ?`);
+    params.push(Number(flash_equip_id));
+  }
+
+  // Filter by film ID (for Films tab in Equipment)
+  if (filmId) {
+    conditions.push(`rolls.filmId = ?`);
+    params.push(Number(filmId));
+  }
 
   if (cameras.length) {
     const cameraConds = cameras.map(() => `(
@@ -698,6 +720,7 @@ router.get('/', (req, res) => {
       EXISTS (SELECT 1 FROM roll_gear WHERE roll_id = rolls.id AND type='lens' AND value = ?)
     )`).join(' OR ');
     conditions.push(`(${lensConds})`);
+
     lenses.forEach(l => { params.push(l, l); });
   }
 
@@ -746,6 +769,11 @@ router.get('/', (req, res) => {
 
   sql += ' ORDER BY rolls.start_date DESC, rolls.id DESC';
 
+  // Support limit parameter for pagination/preview
+  if (limit && !isNaN(Number(limit))) {
+    sql += ` LIMIT ${Number(limit)}`;
+  }
+
   db.all(sql, params, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
@@ -758,7 +786,7 @@ router.get('/:id', async (req, res) => {
   try {
     const sql = `
       SELECT rolls.*, 
-             films.name AS film_name_joined, 
+             TRIM(COALESCE(films.brand || ' ', '') || films.name) AS film_name_joined, 
              films.iso AS film_iso_joined,
              cam.name AS camera_equip_name,
              cam.brand AS camera_equip_brand,
@@ -1299,7 +1327,7 @@ router.post('/:id/contact-sheet', async (req, res) => {
 
     // Fetch roll metadata
     const roll = await getAsync(
-      `SELECT r.*, f.name as film_name_joined, f.iso as film_iso_joined
+      `SELECT r.*, TRIM(COALESCE(f.brand || ' ', '') || f.name) as film_name_joined, f.iso as film_iso_joined
        FROM rolls r
        LEFT JOIN films f ON r.filmId = f.id
        WHERE r.id = ?`,

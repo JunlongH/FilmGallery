@@ -120,6 +120,23 @@ export async function getRolls(filters = {}) {
   if (data && Array.isArray(data.rolls)) return data.rolls;
   return [];
 }
+
+/**
+ * Get rolls associated with a specific equipment item
+ * @param {string} type - 'camera' | 'lens' | 'flash' | 'film'
+ * @param {number} id - Equipment or film ID
+ * @param {number} [limit] - Optional limit for preview
+ */
+export async function getRollsByEquipment(type, id, limit) {
+  const filters = {};
+  if (type === 'camera') filters.camera_equip_id = id;
+  else if (type === 'lens') filters.lens_equip_id = id;
+  else if (type === 'flash') filters.flash_equip_id = id;
+  else if (type === 'film') filters.filmId = id;
+  if (limit) filters.limit = limit;
+  return getRolls(filters);
+}
+
 export async function getRoll(id) {
   return jsonFetch(`/api/rolls/${id}`);
 }

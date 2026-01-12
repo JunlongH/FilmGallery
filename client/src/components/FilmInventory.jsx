@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getFilms, getFilmItems, createFilmItemsBatch } from '../api';
 import ModalDialog from './ModalDialog';
+import { getFilmDisplayName, getFilmDisplayNameById } from '../utils/filmUtils';
 
 // Simple status options aligned with backend VALID_STATUSES
 const STATUS_OPTIONS = [
@@ -147,8 +148,7 @@ export default function FilmInventory() {
   };
 
   const filmNameById = (id) => {
-    const f = films.find(x => x.id === id);
-    return f ? f.name : `Film #${id}`;
+    return getFilmDisplayNameById(id, films);
   };
 
   // Helper to get thumb url
@@ -275,7 +275,7 @@ export default function FilmInventory() {
                     >
                       <option value="">Select film</option>
                       {films.map(f => (
-                        <option key={f.id} value={f.id}>{f.name}</option>
+                        <option key={f.id} value={f.id}>{getFilmDisplayName(f)}</option>
                       ))}
                     </select>
                   </div>

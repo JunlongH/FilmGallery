@@ -19,14 +19,14 @@
 - **包含**: 内嵌服务器 + 客户端界面
 - **适用场景**: 单机使用、不需要远程访问
 - **安装包大小**: ~250MB
-- **安装包名称**: `FilmGallery Setup 1.8.0.exe`
+- **安装包名称**: `FilmGallery Setup 1.9.0.exe`
 - **下载位置**: `dist_v9/`
 
 #### 2. **桌面端 - Client-Only Version（轻量版）**
 - **包含**: 仅客户端界面
 - **适用场景**: 连接远程服务器、多设备共享数据
 - **安装包大小**: ~100MB
-- **安装包名称**: `FilmGallery-Client Setup 1.8.0.exe`
+- **安装包名称**: `FilmGallery-Client Setup 1.9.0.exe`
 - **下载位置**: `dist_v9_client/`
 - **要求**: 需要单独部署服务器
 
@@ -59,7 +59,7 @@
 #### Full Version（推荐新手）
 ```bash
 # 1. 下载安装包
-# dist_v9/FilmGallery Setup 1.8.0.exe
+# dist_v9/FilmGallery Setup 1.9.0.exe
 
 # 2. 运行安装程序
 # 双击安装包，按提示完成安装
@@ -77,7 +77,7 @@
 # 1. 先部署服务器（见下方"服务器部署"）
 
 # 2. 下载并安装客户端
-# dist_v9_client/FilmGallery-Client Setup 1.8.0.exe
+# dist_v9_client/FilmGallery-Client Setup 1.9.0.exe
 
 # 3. 配置服务器连接
 # 启动应用 → Settings → Server Configuration

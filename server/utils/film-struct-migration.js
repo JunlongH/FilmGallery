@@ -220,8 +220,17 @@ function runFilmStructMigration() {
 
       log('Starting data migration...');
 
+      // Build SELECT query dynamically based on existing columns
+      const selectCols = ['id', 'name'];
+      if (existingColumns.includes('category')) selectCols.push('category');
+      if (existingColumns.includes('thumbPath')) selectCols.push('thumbPath');
+      if (existingColumns.includes('thumbnail_url')) selectCols.push('thumbnail_url');
+      if (existingColumns.includes('brand')) selectCols.push('brand');
+      if (existingColumns.includes('format')) selectCols.push('format');
+      if (existingColumns.includes('type')) selectCols.push('type');
+
       // Get all films that need brand parsing
-      const filmsToMigrate = await all(`SELECT id, name, category, thumbPath, thumbnail_url, brand, format, type FROM films WHERE brand IS NULL OR brand = ''`);
+      const filmsToMigrate = await all(`SELECT ${selectCols.join(', ')} FROM films WHERE brand IS NULL OR brand = ''`);
       log(`Found ${filmsToMigrate.length} films to migrate brand/format`);
 
       for (const film of filmsToMigrate) {
@@ -230,14 +239,14 @@ function runFilmStructMigration() {
         
         // Detect process from category
         let process = null;
-        if (film.category === 'color-negative' || film.type === 'color-negative') {
+        const categoryOrType = film.category || film.type;
+        if (categoryOrType === 'color-negative') {
           process = 'C-41';
-        } else if (film.category === 'color-reversal' || film.type === 'color-reversal') {
+        } else if (categoryOrType === 'color-reversal') {
           process = 'E-6';
-        } else if (film.category === 'bw-negative' || film.category === 'bw-reversal' || 
-                   film.type === 'bw-negative' || film.type === 'bw-reversal') {
+        } else if (categoryOrType === 'bw-negative' || categoryOrType === 'bw-reversal') {
           process = 'BW';
-        } else if (film.category === 'cine' || film.type === 'cine') {
+        } else if (categoryOrType === 'cine') {
           process = 'ECN-2';
         }
 
@@ -270,27 +279,7 @@ function runFilmStructMigration() {
       await run(`CREATE INDEX IF NOT EXISTS idx_films_deleted ON films(deleted_at)`);
       log('Created indexes on films table');
 
-      // ========================================
-      // 4. CLEANUP - Drop ref_film_formats if exists
-      // ========================================
-
-      try {
-        // Check if ref_film_formats exists
-        const refTable = await get(`SELECT name FROM sqlite_master WHERE type='table' AND name='ref_film_formats'`);
-        if (refTable) {
-          // First check if any tables reference it
-          const filmsHasFormatId = existingColumns.includes('format_id');
-          if (filmsHasFormatId) {
-            // Remove format_id references first (SQLite doesn't support DROP COLUMN easily)
-            log('Note: format_id column exists but SQLite cannot drop columns. Will be ignored.');
-          }
-          // Drop the table
-          await run(`DROP TABLE IF EXISTS ref_film_formats`);
-          log('Dropped ref_film_formats table');
-        }
-      } catch (e) {
-        log(`Note: ref_film_formats cleanup skipped: ${e.message}`);
-      }
+      // NOTE: ref_film_formats is used by equipment system, do NOT drop it
 
       // ========================================
       // DONE

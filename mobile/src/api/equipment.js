@@ -97,3 +97,20 @@ export const getEquipmentSuggestions = async () => {
   const res = await axios.get('/api/equipment/suggestions');
   return res.data;
 };
+
+// ===== Rolls by Equipment =====
+export const getRollsByEquipment = async (type, id, limit = 50) => {
+  const filterMap = {
+    camera: 'camera_equip_id',
+    lens: 'lens_equip_id',
+    flash: 'flash_equip_id',
+    film: 'filmId'
+  };
+  const filterKey = filterMap[type];
+  if (!filterKey) return [];
+  
+  const res = await axios.get('/api/rolls', {
+    params: { [filterKey]: id, limit }
+  });
+  return res.data;
+};

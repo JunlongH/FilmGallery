@@ -1,24 +1,27 @@
 /**
  * EquipmentManager - 设备管理页面
  * 
- * 管理相机、镜头、闪光灯和胶片格式
+ * 管理相机、镜头、闪光灯和胶片
  * 特性：
  * - Tab切换不同设备类型
  * - 设备列表 + 详情编辑
  * - 图片上传
  * - PS机固定镜头/闪光灯设置
+ * - 关联Rolls缩略图展示
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   getCameras, createCamera, updateCamera, deleteCamera, uploadCameraImage,
   getLenses, createLens, updateLens, deleteLens, uploadLensImage,
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
   getFilms, createFilm, updateFilm, deleteFilm, 
   getFilmCategories, getFilmFormats,
-  getEquipmentConstants, buildUploadUrl
+  getEquipmentConstants, buildUploadUrl, getRollsByEquipment
 } from '../api';
 import ModalDialog from './ModalDialog';
+import SquareImage from './SquareImage';
 import '../styles/forms.css';
 import './EquipmentManager.css';
 
@@ -31,6 +34,7 @@ const TABS = [
 ];
 
 export default function EquipmentManager() {
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('cameras');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -257,6 +261,7 @@ export default function EquipmentManager() {
                 onEdit={() => setEditItem(selectedItem)}
                 onDelete={() => setConfirmDelete(selectedItem)}
                 onImageUpload={(file) => handleImageUpload(selectedItem.id, file)}
+                onNavigateToRoll={(rollId) => navigate(`/rolls/${rollId}`)}
               />
             )
           ) : (
@@ -294,12 +299,42 @@ export default function EquipmentManager() {
 }
 
 // Detail View Component
-function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
+function DetailView({ type, item, onEdit, onDelete, onImageUpload, onNavigateToRoll }) {
+  const [rolls, setRolls] = useState([]);
+  const [loadingRolls, setLoadingRolls] = useState(false);
+  const [showRolls, setShowRolls] = useState(true);
+  
   const handleFileChange = (e) => {
     if (e.target.files?.[0]) {
       onImageUpload(e.target.files[0]);
     }
   };
+
+  // Load rolls associated with this equipment
+  useEffect(() => {
+    if (!item?.id) return;
+    setLoadingRolls(true);
+    
+    // Map tab type to API filter type
+    const equipType = type === 'cameras' ? 'camera' 
+                    : type === 'lenses' ? 'lens' 
+                    : type === 'flashes' ? 'flash'
+                    : type === 'films' ? 'film' 
+                    : null;
+    
+    if (!equipType) {
+      setLoadingRolls(false);
+      return;
+    }
+    
+    getRollsByEquipment(equipType, item.id)
+      .then(data => setRolls(Array.isArray(data) ? data : []))
+      .catch(err => {
+        console.error('Failed to load rolls:', err);
+        setRolls([]);
+      })
+      .finally(() => setLoadingRolls(false));
+  }, [type, item?.id]);
 
   // For films, use thumbPath instead of image_path
   const imagePath = type === 'films' 
@@ -399,6 +434,56 @@ function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
           <button className="btn btn-primary" onClick={onEdit}>Edit</button>
           <button className="btn btn-danger" onClick={onDelete}>Delete</button>
         </div>
+      </div>
+
+      {/* Used in Rolls section */}
+      <div className="equip-used-rolls">
+        <div 
+          className="equip-used-rolls-header" 
+          onClick={() => setShowRolls(!showRolls)}
+          style={{ cursor: 'pointer' }}
+        >
+          <h3>
+            <span className="equip-collapse-icon">{showRolls ? '▼' : '▶'}</span>
+            Used in Rolls ({rolls.length})
+          </h3>
+        </div>
+        
+        {showRolls && (
+          <div className="equip-rolls-content">
+            {loadingRolls ? (
+              <div className="equip-rolls-loading">Loading rolls...</div>
+            ) : rolls.length === 0 ? (
+              <div className="equip-rolls-empty">No rolls found with this equipment</div>
+            ) : (
+              <div className="equip-rolls-grid">
+                {rolls.slice(0, 12).map(roll => (
+                  <div 
+                    key={roll.id} 
+                    className="equip-roll-card"
+                    onClick={() => onNavigateToRoll(roll.id)}
+                    title={roll.title || `Roll #${roll.id}`}
+                  >
+                    <SquareImage
+                      src={roll.coverPath ? buildUploadUrl(roll.coverPath) : null}
+                      alt={roll.title || 'Roll'}
+                      radius={4}
+                      aspect="1 / 1"
+                    />
+                    <div className="equip-roll-title">
+                      {roll.title || roll.start_date || `Roll #${roll.id}`}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {rolls.length > 12 && (
+              <div className="equip-rolls-more">
+                +{rolls.length - 12} more rolls
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

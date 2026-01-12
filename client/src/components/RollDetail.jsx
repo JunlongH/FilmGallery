@@ -11,6 +11,7 @@ import LocationSelect from './LocationSelect.jsx';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
 import ContactSheetModal from './ContactSheetModal.jsx';
 import EquipmentSelector from './EquipmentSelector';
+import { getFilmDisplayName } from '../utils/filmUtils';
 import '../styles/sidebar.css';
 import '../styles/forms.css';
 import '../styles/roll-detail-card.css';
@@ -635,9 +636,9 @@ export default function RollDetail() {
               </div>
               <div className="fg-field">
                 <label className="fg-label">Film</label>
-                <select className="fg-select" value={editData.filmId || ''} onChange={e=>{ const fid=e.target.value; const found=availableFilms.find(f=>String(f.id)===String(fid)); setEditData({...editData, filmId: fid, film_type: found?found.name:''}); }}>
+                <select className="fg-select" value={editData.filmId || ''} onChange={e=>{ const fid=e.target.value; const found=availableFilms.find(f=>String(f.id)===String(fid)); setEditData({...editData, filmId: fid, film_type: found ? getFilmDisplayName(found) : ''}); }}>
                   <option value="">Select film</option>
-                  {availableFilms.map(f => <option key={f.id} value={f.id}>{f.name} (ISO {f.iso})</option>)}
+                  {availableFilms.map(f => <option key={f.id} value={f.id}>{getFilmDisplayName(f)} (ISO {f.iso})</option>)}
                 </select>
               </div>
             </section>

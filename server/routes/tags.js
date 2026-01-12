@@ -27,7 +27,7 @@ router.get('/:tagId/photos', async (req, res) => {
   const tagId = req.params.tagId;
   try {
     const rows = await allAsync(`
-      SELECT p.*, COALESCE(f.name, r.film_type) AS film_name, r.title AS roll_title
+      SELECT p.*, TRIM(COALESCE(f.brand || ' ', '') || COALESCE(f.name, r.film_type)) AS film_name, r.title AS roll_title
       FROM photo_tags pt
       JOIN photos p ON p.id = pt.photo_id
       JOIN rolls r ON r.id = p.roll_id

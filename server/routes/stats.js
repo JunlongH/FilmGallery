@@ -43,10 +43,10 @@ router.get('/gear', (req, res) => {
   `;
 
   const sqlFilms = `
-    SELECT f.name, COUNT(r.id) as count 
+    SELECT TRIM(COALESCE(f.brand || ' ', '') || f.name) as name, COUNT(r.id) as count 
     FROM rolls r 
     JOIN films f ON r.filmId = f.id 
-    GROUP BY f.name
+    GROUP BY f.id
   `;
 
   db.all(sqlCameras, (err, cameras) => {
@@ -164,27 +164,29 @@ router.get('/costs', (req, res) => {
     WITH film_costs AS (
       -- Inventory Items
       SELECT 
-        f.name,
+        f.id as film_id,
+        TRIM(COALESCE(f.brand || ' ', '') || f.name) as name,
         COUNT(*) as count,
         SUM(fi.purchase_price + COALESCE(fi.purchase_shipping_share, 0)) as purchase,
         SUM(fi.develop_price) as develop
       FROM film_items fi
       JOIN films f ON fi.film_id = f.id
       WHERE fi.deleted_at IS NULL
-      GROUP BY f.name
+      GROUP BY f.id
 
       UNION ALL
 
       -- Legacy Rolls
       SELECT 
-        f.name,
+        f.id as film_id,
+        TRIM(COALESCE(f.brand || ' ', '') || f.name) as name,
         COUNT(*) as count,
         SUM(r.purchase_cost) as purchase,
         SUM(r.develop_cost) as develop
       FROM rolls r
       JOIN films f ON r.filmId = f.id
       WHERE r.film_item_id IS NULL
-      GROUP BY f.name
+      GROUP BY f.id
     )
     SELECT 
       name,
@@ -192,7 +194,7 @@ router.get('/costs', (req, res) => {
       SUM(purchase) as purchase,
       SUM(develop) as develop
     FROM film_costs
-    GROUP BY name
+    GROUP BY film_id
     ORDER BY purchase DESC
   `;
 
@@ -368,7 +370,7 @@ router.get('/inventory', (req, res) => {
   `;
 
   const sqlExpiring = `
-    SELECT f.name as film_name, fi.* 
+    SELECT TRIM(COALESCE(f.brand || ' ', '') || f.name) as film_name, fi.* 
     FROM film_items fi
     LEFT JOIN films f ON fi.film_id = f.id
     WHERE fi.status = 'in_stock' 
