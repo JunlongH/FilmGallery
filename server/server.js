@@ -13,6 +13,7 @@ const { getDbPath } = require('./config/db-config');
 const { runMigration } = require('./utils/migration');
 const { runSchemaMigration } = require('./utils/schema-migration');
 const { runEquipmentMigration } = require('./utils/equipment-migration');
+const { runFilmStructMigration } = require('./utils/film-struct-migration');
 const { cacheSeconds } = require('./utils/cache');
 const { requestProfiler, getProfilerStats, scheduleProfilerLog } = require('./utils/profiler');
 const PreparedStmt = require('./utils/prepared-statements');
@@ -230,6 +231,11 @@ const seedLocations = async () => {
         console.log('[SERVER] Starting equipment migration...');
         await runEquipmentMigration();
         console.log('[SERVER] Equipment migration complete.');
+
+        // 2c. Run Film Structure Migration (Brand, Format, Process)
+        console.log('[SERVER] Starting film structure migration...');
+        await runFilmStructMigration();
+        console.log('[SERVER] Film structure migration complete.');
 
 		// 3. Load DB now that file is ready
 		const db = require('./db');

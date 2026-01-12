@@ -43,14 +43,20 @@ export default function FilmsScreen({ navigation }) {
 
   const renderItem = ({ item }) => {
     const coverUri = item.thumbPath ? `${baseUrl}${item.thumbPath}` : null;
+    // Build display title with brand if available
+    const displayTitle = item.brand ? `${item.brand} ${item.name}` : item.name;
+    // Build right text with format and category
+    const rightText = item.format && item.format !== '135' 
+      ? `${item.format} • ${item.category}` 
+      : item.category;
     return (
       <FilmCard
         coverUri={coverUri}
-        title={item.name}
+        title={displayTitle}
         leftText={`ISO ${item.iso}`}
-        rightText={item.category}
+        rightText={rightText}
         style={styles.gridItem}
-        onPress={() => navigation.navigate('FilmRolls', { filmId: item.id, filmName: item.name })}
+        onPress={() => navigation.navigate('FilmRolls', { filmId: item.id, filmName: displayTitle })}
       />
     );
   };

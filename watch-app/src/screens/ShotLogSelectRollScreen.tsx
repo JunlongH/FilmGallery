@@ -46,7 +46,10 @@ const ShotLogSelectRollScreen: React.FC = () => {
 
   const handleSelectRoll = async (roll: FilmItem) => {
     const film = roll.film_id ? filmById.get(roll.film_id) : undefined;
-    const filmName = roll.film_type || roll.film_name || film?.name;
+    // Build film name with brand if available
+    const rawFilmName = roll.film_type || roll.film_name || film?.name;
+    const filmBrand = film?.brand || roll.film_brand || '';
+    const filmName = filmBrand && rawFilmName ? `${filmBrand} ${rawFilmName}` : rawFilmName;
     const filmIsoRaw = roll.iso || (film?.iso != null ? String(film.iso) : undefined);
     
     // Check if camera has fixed lens
@@ -75,10 +78,14 @@ const ShotLogSelectRollScreen: React.FC = () => {
   const renderItem = ({ item }: { item: FilmItem }) => {
     // Prepare film type display
     const film = item.film_id ? filmById.get(item.film_id) : undefined;
-    const filmType = item.film_type || item.film_name || film?.name || 'Unknown';
+    // Build film name with brand if available
+    const filmName = film?.name || item.film_name || 'Unknown';
+    const filmBrand = film?.brand || item.film_brand || '';
+    const filmType = filmBrand ? `${filmBrand} ${filmName}` : filmName;
     const cameraInfo = item.loaded_camera || 'Camera';
     const isoValue = item.iso || (film?.iso != null ? String(film.iso) : undefined);
-    const isoInfo = isoValue ? ` ISO ${isoValue}` : '';
+    const formatValue = film?.format && film.format !== '135' ? ` • ${film.format}` : '';
+    const isoInfo = isoValue ? ` ISO ${isoValue}${formatValue}` : '';
     
     return (
       <TouchableOpacity

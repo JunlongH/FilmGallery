@@ -683,7 +683,7 @@ router.post('/', (req, res) => {
 
 // GET /api/rolls
 router.get('/', (req, res) => {
-  const { camera, lens, photographer, location_id, year, month, ym, film, camera_equip_id, lens_equip_id, flash_equip_id } = req.query;
+  const { camera, lens, photographer, location_id, year, month, ym, film, camera_equip_id, lens_equip_id, flash_equip_id, film_id } = req.query;
 
   const toArray = (v) => {
     if (v === undefined || v === null) return [];
@@ -738,6 +738,10 @@ router.get('/', (req, res) => {
   if (flash_equip_id) {
     conditions.push(`rolls.flash_equip_id = ?`);
     params.push(Number(flash_equip_id));
+  }
+  if (film_id) {
+    conditions.push(`rolls.filmId = ?`);
+    params.push(Number(film_id));
   }
 
   if (cameras.length) {

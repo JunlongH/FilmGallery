@@ -2,13 +2,11 @@
  * EquipmentScreen - Mobile equipment management
  * Manage cameras, lenses, and flashes
  */
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl } from 'react-native';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { View, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Image } from 'react-native';
 import { 
   Text, 
   FAB, 
-  Card, 
-  Chip, 
   Searchbar, 
   SegmentedButtons, 
   ActivityIndicator,
@@ -19,10 +17,16 @@ import {
   TextInput
 } from 'react-native-paper';
 import { getCameras, getLenses, getFlashes, createCamera, createLens, createFlash, deleteCamera, deleteLens, deleteFlash } from '../api/equipment';
+import { getFilms } from '../api/filmItems';
 import { spacing, radius } from '../theme';
+import { ApiContext } from '../context/ApiContext';
+import CachedImage from '../components/CachedImage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { buildUploadUrl } from '../utils/urlHelper';
 
 export default function EquipmentScreen({ navigation }) {
   const theme = useTheme();
+  const { baseUrl } = useContext(ApiContext);
   const [tab, setTab] = useState('camera');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -53,6 +57,8 @@ export default function EquipmentScreen({ navigation }) {
         data = await getLenses();
       } else if (tab === 'flash') {
         data = await getFlashes();
+      } else if (tab === 'film') {
+        data = await getFilms();
       }
       setItems(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -132,49 +138,109 @@ export default function EquipmentScreen({ navigation }) {
 
   // Filter items by search
   const filteredItems = items.filter(item => {
-    const text = `${item.brand || ''} ${item.model || ''}`.toLowerCase();
+    const text = `${item.brand || ''} ${item.model || ''} ${item.name || ''}`.toLowerCase();
     return text.includes(search.toLowerCase());
   });
 
-  const renderItem = ({ item }) => (
-    <Card 
-      style={styles.card} 
-      mode="outlined"
-      onLongPress={() => setDeleteTarget(item)}
-    >
-      <Card.Content>
-        <Text variant="titleMedium">{item.brand} {item.model}</Text>
-        <View style={styles.chipRow}>
-          {tab === 'camera' && (
-            <>
-              {item.camera_type && <Chip compact style={styles.chip}>{item.camera_type}</Chip>}
-              {item.mount && <Chip compact style={styles.chip}>{item.mount}</Chip>}
-              {item.has_fixed_lens && <Chip compact style={styles.chip} icon="camera-iris">Fixed Lens</Chip>}
-            </>
-          )}
-          {tab === 'lens' && (
-            <>
-              {item.mount && <Chip compact style={styles.chip}>{item.mount}</Chip>}
-              {item.focal_length_min && (
-                <Chip compact style={styles.chip}>
-                  {item.focal_length_min === item.focal_length_max || !item.focal_length_max
-                    ? `${item.focal_length_min}mm`
-                    : `${item.focal_length_min}-${item.focal_length_max}mm`}
-                </Chip>
-              )}
-              {item.max_aperture && <Chip compact style={styles.chip}>f/{item.max_aperture}</Chip>}
-            </>
-          )}
-          {tab === 'flash' && (
-            <>
-              {item.guide_number && <Chip compact style={styles.chip}>GN{item.guide_number}</Chip>}
-              {item.ttl_compatible && <Chip compact style={styles.chip} icon="flash">TTL</Chip>}
-            </>
-          )}
+  const renderItem = ({ item }) => {
+    // Display title: films use brand+name, equipment uses brand+model
+    const displayTitle = tab === 'film' 
+      ? `${item.brand || ''} ${item.name || ''}`.trim() 
+      : `${item.brand || ''} ${item.model || ''}`.trim();
+    
+    // Build subtitle and tags
+    let subtitle = '';
+    let tags = [];
+    
+    if (tab === 'camera') {
+      subtitle = item.camera_type || '';
+      if (item.mount) tags.push(item.mount);
+      if (item.has_fixed_lens) tags.push('Fixed Lens');
+    } else if (tab === 'lens') {
+      if (item.focal_length_min) {
+        subtitle = item.focal_length_min === item.focal_length_max || !item.focal_length_max
+          ? `${item.focal_length_min}mm`
+          : `${item.focal_length_min}-${item.focal_length_max}mm`;
+      }
+      if (item.mount) tags.push(item.mount);
+      if (item.max_aperture) tags.push(`f/${item.max_aperture}`);
+    } else if (tab === 'flash') {
+      if (item.guide_number) subtitle = `GN${item.guide_number}`;
+      if (item.ttl_compatible) tags.push('TTL');
+    } else if (tab === 'film') {
+      subtitle = item.iso ? `ISO ${item.iso}` : '';
+      if (item.format) tags.push(item.format);
+      if (item.category) tags.push(item.category);
+    }
+    
+    // Get thumbnail URL - use buildUploadUrl for proper path handling
+    const thumbUrl = buildUploadUrl(item.image_path || item.thumbPath, baseUrl);
+    
+    // Debug: log first item to verify data
+    if (filteredItems.indexOf(item) === 0) {
+      console.log(`[${tab}] First item:`, {
+        name: displayTitle,
+        image_path: item.image_path,
+        thumbPath: item.thumbPath,
+        baseUrl,
+        thumbUrl
+      });
+    }
+    
+    return (
+      <TouchableOpacity
+        style={styles.cardWrapper}
+        onPress={() => navigation.navigate('EquipmentRolls', { 
+          type: tab, 
+          id: item.id, 
+          name: displayTitle
+        })}
+        onLongPress={() => tab !== 'film' && setDeleteTarget(item)}
+        activeOpacity={0.7}
+      >
+        <View style={styles.card}>
+          {/* Thumbnail */}
+          <View style={styles.thumbnail}>
+            {thumbUrl ? (
+              <CachedImage uri={thumbUrl} style={styles.thumbImage} contentFit="cover" />
+            ) : (
+              <View style={styles.thumbPlaceholder}>
+                <MaterialCommunityIcons 
+                  name={tab === 'camera' ? 'camera' : tab === 'lens' ? 'camera-iris' : tab === 'flash' ? 'flash' : 'filmstrip'} 
+                  size={32} 
+                  color="#999" 
+                />
+              </View>
+            )}
+          </View>
+          
+          {/* Content */}
+          <View style={styles.cardContent}>
+            <Text variant="titleMedium" style={styles.cardTitle} numberOfLines={1}>
+              {displayTitle}
+            </Text>
+            {subtitle ? (
+              <Text variant="bodySmall" style={styles.cardSubtitle} numberOfLines={1}>
+                {subtitle}
+              </Text>
+            ) : null}
+            {tags.length > 0 && (
+              <View style={styles.tagRow}>
+                {tags.map((tag, idx) => (
+                  <View key={idx} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+          
+          {/* Arrow */}
+          <MaterialCommunityIcons name="chevron-right" size={24} color="#999" style={styles.arrow} />
         </View>
-      </Card.Content>
-    </Card>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -186,8 +252,10 @@ export default function EquipmentScreen({ navigation }) {
           { value: 'camera', label: 'Cameras', icon: 'camera' },
           { value: 'lens', label: 'Lenses', icon: 'camera-iris' },
           { value: 'flash', label: 'Flashes', icon: 'flash' },
+          { value: 'film', label: 'Films', icon: 'filmstrip' },
         ]}
         style={styles.tabs}
+        density="small"
       />
 
       {/* Search */}
@@ -233,7 +301,7 @@ export default function EquipmentScreen({ navigation }) {
       {/* Add Dialog */}
       <Portal>
         <Dialog visible={showAddDialog} onDismiss={() => setShowAddDialog(false)}>
-          <Dialog.Title>Add {tab === 'camera' ? 'Camera' : tab === 'lens' ? 'Lens' : 'Flash'}</Dialog.Title>
+          <Dialog.Title>Add {tab === 'camera' ? 'Camera' : tab === 'lens' ? 'Lens' : tab === 'flash' ? 'Flash' : 'Film'}</Dialog.Title>
           <Dialog.Content>
             <TextInput
               label="Brand"
@@ -279,7 +347,7 @@ export default function EquipmentScreen({ navigation }) {
 
         {/* Delete Dialog */}
         <Dialog visible={!!deleteTarget} onDismiss={() => setDeleteTarget(null)}>
-          <Dialog.Title>Delete {tab === 'camera' ? 'Camera' : tab === 'lens' ? 'Lens' : 'Flash'}?</Dialog.Title>
+          <Dialog.Title>Delete {tab === 'camera' ? 'Camera' : tab === 'lens' ? 'Lens' : tab === 'flash' ? 'Flash' : 'Film'}?</Dialog.Title>
           <Dialog.Content>
             <Text>
               Are you sure you want to delete {deleteTarget?.brand} {deleteTarget?.model}?
@@ -310,17 +378,72 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     paddingBottom: 80,
   },
-  card: {
+  cardWrapper: {
     marginBottom: spacing.sm,
   },
-  chipRow: {
+  card: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  thumbnail: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
+    backgroundColor: '#f3f4f6',
+    flexShrink: 0,
+  },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  thumbPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f3f4f6',
+  },
+  cardContent: {
+    flex: 1,
+    marginLeft: spacing.sm,
+    marginRight: spacing.sm,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 2,
+  },
+  cardSubtitle: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  tagRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 4,
-    marginTop: spacing.xs,
+    marginTop: 4,
   },
-  chip: {
-    height: 24,
+  tag: {
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 4,
+  },
+  tagText: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  arrow: {
+    flexShrink: 0,
   },
   loadingContainer: {
     flex: 1,

@@ -36,15 +36,18 @@ router.get('/', async (req, res) => {
     };
     let items = await listFilmItems(filters);
     
-    // Enrich each item with film name and ISO from films table
+    // Enrich each item with film name, brand, format, and ISO from films table
     items = await Promise.all(items.map(async (item) => {
       if (item.film_id) {
         try {
           const filmRow = await new Promise((resolve, reject) => {
-            db.get('SELECT name, iso FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
+            db.get('SELECT name, brand, iso, format, category FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
           });
           if (filmRow) {
             item.film_name = filmRow.name || undefined;
+            item.film_brand = filmRow.brand || undefined;
+            item.film_format = filmRow.format || undefined;
+            item.film_category = filmRow.category || undefined;
             item.iso = filmRow.iso || undefined;
           }
         } catch (e) {
@@ -72,17 +75,21 @@ router.get('/:id', async (req, res) => {
     const item = await getFilmItemById(id);
     if (!item) return res.status(404).json({ ok: false, error: 'Film item not found' });
 
-    // Fetch ISO from films table if available
+    // Fetch film details from films table if available
     if (item.film_id) {
       try {
         const filmRow = await new Promise((resolve, reject) => {
-          db.get('SELECT iso FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
+          db.get('SELECT name, brand, iso, format, category FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
         });
-        if (filmRow && filmRow.iso) {
-          item.iso = filmRow.iso;
+        if (filmRow) {
+          item.film_name = filmRow.name || undefined;
+          item.film_brand = filmRow.brand || undefined;
+          item.film_format = filmRow.format || undefined;
+          item.film_category = filmRow.category || undefined;
+          item.iso = filmRow.iso || undefined;
         }
       } catch (e) {
-        console.warn('[film-items] failed to fetch iso', e);
+        console.warn('[film-items] failed to fetch film details', e);
       }
     }
 

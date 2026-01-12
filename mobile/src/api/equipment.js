@@ -122,7 +122,7 @@ export const getRollsByEquipment = async (type, id) => {
       param = `flash_equip_id=${id}`;
       break;
     case 'film':
-      param = `filmId=${id}`;
+      param = `film_id=${id}`;
       break;
     default:
       throw new Error(`Unknown equipment type: ${type}`);

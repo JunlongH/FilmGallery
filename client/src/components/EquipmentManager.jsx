@@ -9,13 +9,15 @@
  * - PS机固定镜头/闪光灯设置
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   getCameras, createCamera, updateCamera, deleteCamera, uploadCameraImage,
   getLenses, createLens, updateLens, deleteLens, uploadLensImage,
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
   getFilmFormats, createFilmFormat,
-  getEquipmentConstants, buildUploadUrl
+  getFilms, createFilm, updateFilm, deleteFilm, getFilmConstants,
+  getEquipmentConstants, buildUploadUrl, getRolls
 } from '../api';
 import ModalDialog from './ModalDialog';
 import '../styles/forms.css';
@@ -26,7 +28,7 @@ const TABS = [
   { key: 'cameras', label: '📷 Cameras', icon: '📷' },
   { key: 'lenses', label: '🔭 Lenses', icon: '🔭' },
   { key: 'flashes', label: '⚡ Flashes', icon: '⚡' },
-  { key: 'formats', label: '🎞️ Film Formats', icon: '🎞️' }
+  { key: 'films', label: '🎞️ Films', icon: '🎞️' }
 ];
 
 export default function EquipmentManager() {
@@ -34,6 +36,7 @@ export default function EquipmentManager() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [constants, setConstants] = useState(null);
+  const [filmConstants, setFilmConstants] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -42,6 +45,7 @@ export default function EquipmentManager() {
   // Load constants
   useEffect(() => {
     getEquipmentConstants().then(setConstants).catch(console.error);
+    getFilmConstants().then(setFilmConstants).catch(console.error);
   }, []);
 
   // Load items based on active tab
@@ -53,7 +57,7 @@ export default function EquipmentManager() {
         case 'cameras': data = await getCameras(); break;
         case 'lenses': data = await getLenses(); break;
         case 'flashes': data = await getFlashes(); break;
-        case 'formats': data = await getFilmFormats(); break;
+        case 'films': data = await getFilms(); break;
         default: data = [];
       }
       setItems(Array.isArray(data) ? data : []);
@@ -82,7 +86,7 @@ export default function EquipmentManager() {
         case 'cameras': created = await createCamera(data); break;
         case 'lenses': created = await createLens(data); break;
         case 'flashes': created = await createFlash(data); break;
-        case 'formats': created = await createFilmFormat(data); break;
+        case 'films': created = await createFilm(data); break;
         default: return;
       }
       setItems(prev => [...prev, created]);
@@ -102,6 +106,7 @@ export default function EquipmentManager() {
         case 'cameras': updated = await updateCamera(id, data); break;
         case 'lenses': updated = await updateLens(id, data); break;
         case 'flashes': updated = await updateFlash(id, data); break;
+        case 'films': updated = await updateFilm({ id, ...data }); break;
         default: return;
       }
       setItems(prev => prev.map(i => i.id === id ? updated : i));
@@ -119,6 +124,7 @@ export default function EquipmentManager() {
         case 'cameras': await deleteCamera(id); break;
         case 'lenses': await deleteLens(id); break;
         case 'flashes': await deleteFlash(id); break;
+        case 'films': await deleteFilm(id); break;
         default: return;
       }
       setItems(prev => prev.filter(i => i.id !== id));
@@ -186,7 +192,7 @@ export default function EquipmentManager() {
             <div className="equip-empty-list">
               <p>No {activeTab} in your library yet.</p>
               <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-                Add Your First {activeTab.slice(0, -1)}
+                Add Your First {activeTab === 'films' ? 'film' : activeTab.slice(0, -1)}
               </button>
             </div>
           ) : (
@@ -197,16 +203,22 @@ export default function EquipmentManager() {
                   className={`equip-list-item ${selectedId === item.id ? 'selected' : ''}`}
                   onClick={() => setSelectedId(item.id)}
                 >
-                  {item.image_path ? (
-                    <img src={buildUploadUrl(item.image_path)} alt={item.name} className="equip-list-thumb" />
+                  {(item.image_path || item.thumbPath) ? (
+                    <img src={buildUploadUrl(item.image_path || item.thumbPath)} alt={item.name} className="equip-list-thumb" />
                   ) : (
                     <div className="equip-list-thumb-placeholder">
                       {TABS.find(t => t.key === activeTab)?.icon}
                     </div>
                   )}
                   <div className="equip-list-info">
-                    <div className="equip-list-name">{item.name}</div>
-                    {item.brand && <div className="equip-list-brand">{item.brand}</div>}
+                    <div className="equip-list-name">
+                      {activeTab === 'films' && item.brand ? `${item.brand} ` : ''}{item.name}
+                    </div>
+                    {activeTab === 'films' ? (
+                      <div className="equip-list-brand">ISO {item.iso} • {item.format || '135'}</div>
+                    ) : (
+                      item.brand && <div className="equip-list-brand">{item.brand}</div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -269,18 +281,66 @@ export default function EquipmentManager() {
 
 // Detail View Component
 function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
+  const navigate = useNavigate();
+  const [relatedRolls, setRelatedRolls] = useState([]);
+  const [loadingRolls, setLoadingRolls] = useState(false);
+
+  // Fetch related rolls based on equipment type
+  useEffect(() => {
+    if (!item?.id) return;
+    
+    const fetchRolls = async () => {
+      setLoadingRolls(true);
+      try {
+        let filter = {};
+        if (type === 'cameras') {
+          filter = { camera_equip_id: item.id };
+        } else if (type === 'lenses') {
+          filter = { lens_equip_id: item.id };
+        } else if (type === 'flashes') {
+          filter = { flash_equip_id: item.id };
+        } else if (type === 'films') {
+          filter = { film_id: item.id };
+        }
+        const rolls = await getRolls(filter);
+        setRelatedRolls(rolls || []);
+      } catch (err) {
+        console.error('Failed to load related rolls:', err);
+        setRelatedRolls([]);
+      } finally {
+        setLoadingRolls(false);
+      }
+    };
+    
+    fetchRolls();
+  }, [type, item?.id]);
+
   const handleFileChange = (e) => {
     if (e.target.files?.[0]) {
       onImageUpload(e.target.files[0]);
     }
   };
 
+  // Category display label
+  const getCategoryLabel = (cat) => {
+    const labels = {
+      'color-negative': 'Color Negative (C-41)',
+      'color-reversal': 'Color Reversal (E-6)',
+      'bw-negative': 'B&W Negative',
+      'bw-reversal': 'B&W Reversal',
+      'instant': 'Instant',
+      'cine': 'Cinema (ECN-2)',
+      'other': 'Other'
+    };
+    return labels[cat] || cat;
+  };
+
   return (
     <div className="equip-detail">
       {/* Image section */}
       <div className="equip-detail-image-section">
-        {item.image_path ? (
-          <img src={buildUploadUrl(item.image_path)} alt={item.name} className="equip-detail-image" />
+        {(item.image_path || item.thumbPath) ? (
+          <img src={buildUploadUrl(item.image_path || item.thumbPath)} alt={item.name} className="equip-detail-image" />
         ) : (
           <div className="equip-detail-image-placeholder">No Image</div>
         )}
@@ -292,12 +352,23 @@ function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
 
       {/* Info section */}
       <div className="equip-detail-info">
-        <h2>{item.name}</h2>
+        <h2>{item.model ? `${item.brand || ''} ${item.model}`.trim() : item.name}</h2>
         
         <div className="equip-detail-grid">
-          {item.brand && <DetailRow label="Brand" value={item.brand} />}
+          {/* Film-specific fields */}
+          {type === 'films' && (
+            <>
+              {item.iso && <DetailRow label="ISO" value={item.iso} />}
+              {item.category && <DetailRow label="Category" value={getCategoryLabel(item.category)} />}
+              {item.format && <DetailRow label="Format" value={item.format} />}
+              {item.process && <DetailRow label="Process" value={item.process} />}
+            </>
+          )}
+          
+          {/* Non-film fields */}
+          {type !== 'films' && item.brand && <DetailRow label="Brand" value={item.brand} />}
           {item.model && <DetailRow label="Model" value={item.model} />}
-          {item.type && <DetailRow label="Type" value={item.type} />}
+          {type !== 'films' && item.type && <DetailRow label="Type" value={item.type} />}
           {item.mount && <DetailRow label="Mount" value={item.mount} />}
           {item.format_name && <DetailRow label="Format" value={item.format_name} />}
           
@@ -351,6 +422,37 @@ function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
             <p>{item.notes}</p>
           </div>
         )}
+
+        {/* Related Rolls Section */}
+        <div className="equip-related-rolls">
+          <h3>Related Rolls ({relatedRolls.length})</h3>
+          {loadingRolls ? (
+            <div className="equip-rolls-loading">Loading...</div>
+          ) : relatedRolls.length > 0 ? (
+            <div className="equip-rolls-grid">
+              {relatedRolls.map(roll => (
+                <div 
+                  key={roll.id} 
+                  className="equip-roll-thumb"
+                  onClick={() => navigate(`/rolls/${roll.id}`)}
+                  title={roll.title || `Roll #${roll.id}`}
+                >
+                  {(roll.coverPath || roll.cover_photo) ? (
+                    <img 
+                      src={buildUploadUrl(roll.coverPath || roll.cover_photo)} 
+                      alt={roll.title || `Roll #${roll.id}`} 
+                    />
+                  ) : (
+                    <div className="equip-roll-placeholder">🎞️</div>
+                  )}
+                  <span className="equip-roll-title">{roll.title || `Roll #${roll.id}`}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="equip-rolls-empty">No rolls found</div>
+          )}
+        </div>
 
         <div className="equip-detail-actions">
           <button className="btn btn-primary" onClick={onEdit}>Edit</button>
@@ -659,8 +761,65 @@ function FormFields({ type, form, onChange, constants }) {
         </>
       )}
 
-      {/* Common ownership fields (not for formats) */}
-      {type !== 'formats' && (
+      {/* Film (stock) fields */}
+      {type === 'films' && (
+        <>
+          <div className="form-row">
+            <label>ISO *</label>
+            <input
+              type="number"
+              value={form.iso || ''}
+              onChange={e => onChange('iso', parseInt(e.target.value) || null)}
+              required
+            />
+          </div>
+          <div className="form-row">
+            <label>Category *</label>
+            <select value={form.category || ''} onChange={e => onChange('category', e.target.value)} required>
+              <option value="">Select category...</option>
+              <option value="color-negative">Color Negative (C-41)</option>
+              <option value="color-reversal">Color Reversal (E-6)</option>
+              <option value="bw-negative">B&W Negative</option>
+              <option value="bw-reversal">B&W Reversal</option>
+              <option value="instant">Instant</option>
+              <option value="cine">Cinema (ECN-2)</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="form-row">
+            <label>Format</label>
+            <select value={form.format || '135'} onChange={e => onChange('format', e.target.value)}>
+              <option value="135">35mm (135)</option>
+              <option value="120">Medium Format (120)</option>
+              <option value="220">Medium Format (220)</option>
+              <option value="110">110</option>
+              <option value="127">127</option>
+              <option value="4x5">4x5 Large Format</option>
+              <option value="8x10">8x10 Large Format</option>
+              <option value="Instant">Instant</option>
+              <option value="APS">APS</option>
+              <option value="Half Frame">Half Frame</option>
+              <option value="Super 8">Super 8</option>
+              <option value="16mm">16mm Cine</option>
+              <option value="35mm Cine">35mm Cinema</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div className="form-row">
+            <label>Process</label>
+            <select value={form.process || ''} onChange={e => onChange('process', e.target.value)}>
+              <option value="">Auto-detect from category</option>
+              <option value="C-41">C-41</option>
+              <option value="E-6">E-6</option>
+              <option value="BW">Black & White</option>
+              <option value="ECN-2">ECN-2 (Cinema)</option>
+            </select>
+          </div>
+        </>
+      )}
+
+      {/* Common ownership fields (not for formats or films) */}
+      {type !== 'formats' && type !== 'films' && (
         <>
           <div className="form-row">
             <label>Serial Number</label>

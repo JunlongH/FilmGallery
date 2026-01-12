@@ -6,16 +6,28 @@ const path = require('path');
 const { uploadFilm } = require('../config/multer');
 const { uploadsDir } = require('../config/paths');
 const PreparedStmt = require('../utils/prepared-statements');
+const { FILM_CATEGORIES, FILM_FORMATS, KNOWN_BRANDS } = require('../utils/film-struct-migration');
+
+// Get film constants (for dropdowns)
+router.get('/constants', (req, res) => {
+  res.json({
+    categories: FILM_CATEGORIES,
+    formats: FILM_FORMATS,
+    brands: KNOWN_BRANDS
+  });
+});
 
 // create a film
 router.post('/', uploadFilm.single('thumb'), (req, res) => {
   try {
-    const { name, iso, category } = req.body || {};
+    const { name, iso, category, brand, format, process } = req.body || {};
     if (!name || !iso || !category) return res.status(400).json({ error: 'name, iso and category are required' });
     const thumbPath = req.file ? `/uploads/films/${req.file.filename}` : null;
 
-    db.run('INSERT INTO films (name, iso, category, thumbPath) VALUES (?,?,?,?)',
-      [name, Number(iso), category, thumbPath], function(err) {
+    db.run(
+      'INSERT INTO films (name, iso, category, thumbPath, brand, format, process, thumbnail_url) VALUES (?,?,?,?,?,?,?,?)',
+      [name, Number(iso), category, thumbPath, brand || null, format || '135', process || null, thumbPath],
+      function(err) {
         if (err) {
           console.error('Insert film error', err);
           return res.status(500).json({ error: err.message });
@@ -32,48 +44,78 @@ router.post('/', uploadFilm.single('thumb'), (req, res) => {
   }
 });
 
-// list films
+// list films (exclude soft-deleted)
 router.get('/', (req, res) => {
-  db.all('SELECT * FROM films ORDER BY name', (err, rows) => {
+  const includeDeleted = req.query.includeDeleted === 'true';
+  const whereClause = includeDeleted ? '' : 'WHERE deleted_at IS NULL';
+  db.all(`SELECT * FROM films ${whereClause} ORDER BY brand, name`, (err, rows) => {
     if (err) return res.status(500).json({ error: err.message });
     res.json(rows);
   });
 });
 
-// delete film
+// soft delete film (set deleted_at)
 router.delete('/:id', (req, res) => {
   const id = req.params.id;
-  db.get('SELECT thumbPath FROM films WHERE id = ?', [id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (row && row.thumbPath) {
-      const rel = row.thumbPath.replace(/^\/uploads\//, '');
-      const filePath = path.join(uploadsDir, rel);
-      fs.unlink(filePath, () => { /* ignore error */ });
-    }
-    db.run('DELETE FROM films WHERE id = ?', [id], function(err) {
+  const hard = req.query.hard === 'true';
+  
+  if (hard) {
+    // Hard delete: remove thumbnail file and delete record
+    db.get('SELECT thumbPath FROM films WHERE id = ?', [id], (err, row) => {
       if (err) return res.status(500).json({ error: err.message });
-      res.json({ deleted: this.changes });
+      if (row && row.thumbPath) {
+        const rel = row.thumbPath.replace(/^\/uploads\//, '');
+        const filePath = path.join(uploadsDir, rel);
+        fs.unlink(filePath, () => { /* ignore error */ });
+      }
+      db.run('DELETE FROM films WHERE id = ?', [id], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ deleted: this.changes, hard: true });
+      });
+    });
+  } else {
+    // Soft delete: set deleted_at timestamp
+    db.run('UPDATE films SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?', [id], function(err) {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({ deleted: this.changes, soft: true });
+    });
+  }
+});
+
+// restore soft-deleted film
+router.post('/:id/restore', (req, res) => {
+  const id = req.params.id;
+  db.run('UPDATE films SET deleted_at = NULL WHERE id = ?', [id], function(err) {
+    if (err) return res.status(500).json({ error: err.message });
+    if (this.changes === 0) return res.status(404).json({ error: 'film_not_found' });
+    db.get('SELECT * FROM films WHERE id = ?', [id], (e, row) => {
+      if (e) return res.status(500).json({ error: e.message });
+      res.json(row);
     });
   });
 });
 
-// update film (name, iso, category, optional new thumb)
+// update film (name, iso, category, brand, format, process, optional new thumb)
 router.put('/:id', uploadFilm.single('thumb'), (req, res) => {
   const id = req.params.id;
   db.get('SELECT * FROM films WHERE id = ?', [id], (err, filmRow) => {
     if (err) return res.status(500).json({ error: err.message });
     if (!filmRow) return res.status(404).json({ error: 'film_not_found' });
 
-    const { name, iso, category } = req.body || {};
+    const { name, iso, category, brand, format, process } = req.body || {};
     const updates = {};
-    if (name) updates.name = name;
-    if (iso) updates.iso = Number(iso);
-    if (category) updates.category = category;
+    if (name !== undefined) updates.name = name;
+    if (iso !== undefined) updates.iso = Number(iso);
+    if (category !== undefined) updates.category = category;
+    if (brand !== undefined) updates.brand = brand || null;
+    if (format !== undefined) updates.format = format || '135';
+    if (process !== undefined) updates.process = process || null;
 
     // handle thumb replacement
     if (req.file) {
       const newThumbPath = `/uploads/films/${req.file.filename}`;
       updates.thumbPath = newThumbPath;
+      updates.thumbnail_url = newThumbPath;
     }
 
     const keys = Object.keys(updates);

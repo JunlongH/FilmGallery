@@ -60,7 +60,14 @@ export default function InventoryScreen({ navigation }) {
 
   const renderItem = ({ item }) => {
     const film = filmById.get(item.film_id) || null;
-    const filmName = film?.name || `Film #${item.film_id || ''}`;
+    // Build film name with brand if available
+    const filmName = film 
+      ? (film.brand ? `${film.brand} ${film.name}` : film.name) 
+      : `Film #${item.film_id || ''}`;
+    // Build subtitle with format and ISO
+    const filmMeta = film 
+      ? `ISO ${film.iso}${film.format && film.format !== '135' ? ` • ${film.format}` : ''}`
+      : '';
     // For loaded items, show the camera used when available
     const statusLabel =
       item.status === 'loaded' && item.loaded_camera
@@ -79,6 +86,9 @@ export default function InventoryScreen({ navigation }) {
           ) : null}
           <View style={styles.cardBody}>
             <Text variant="titleMedium" numberOfLines={1}>{filmName}</Text>
+            {filmMeta ? (
+              <Text variant="bodySmall" numberOfLines={1} style={{ opacity: 0.7 }}>{filmMeta}</Text>
+            ) : null}
             {label ? (
               <Text variant="bodySmall" numberOfLines={1}>{label}</Text>
             ) : null}

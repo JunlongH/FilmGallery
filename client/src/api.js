@@ -202,6 +202,10 @@ export async function getFilms() {
   return [];
 }
 
+export async function getFilmConstants() {
+  return jsonFetch('/api/films/constants');
+}
+
 // FilmItems API
 export async function createFilmItemsBatch(batch) {
   const res = await fetch(`${API_BASE}/api/film-items/purchase-batch`, {
@@ -267,21 +271,27 @@ export async function exportShotLogsCsv(id) {
   return blob;
 }
 
-export async function createFilm({ name, iso, category, thumbFile }) {
+export async function createFilm({ name, iso, category, brand, format, process, thumbFile }) {
   const fd = new FormData();
   fd.append('name', name);
   fd.append('iso', iso);
   fd.append('category', category);
+  if (brand) fd.append('brand', brand);
+  if (format) fd.append('format', format);
+  if (process) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
   const resp = await fetch(`${API_BASE}/api/films`, { method: 'POST', body: fd });
   return resp.json();
 }
 
-export async function updateFilm({ id, name, iso, category, thumbFile }) {
+export async function updateFilm({ id, name, iso, category, brand, format, process, thumbFile }) {
   const fd = new FormData();
   if (name !== undefined) fd.append('name', name);
   if (iso !== undefined) fd.append('iso', iso);
   if (category !== undefined) fd.append('category', category);
+  if (brand !== undefined) fd.append('brand', brand);
+  if (format !== undefined) fd.append('format', format);
+  if (process !== undefined) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
   const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'PUT', body: fd });
   const ct = resp.headers.get('content-type') || '';
