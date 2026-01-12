@@ -25,6 +25,7 @@ const ShotLogParamsScreen: React.FC = () => {
   const roll: FilmItem = route.params?.roll;
   const filmNameParam: string | undefined = route.params?.filmName;
   const filmIsoParam: string | undefined = route.params?.filmIso;
+  const fixedLensInfo: { text: string; focal_length?: number; max_aperture?: number } | undefined = route.params?.fixedLensInfo;
 
   const [count, setCount] = useState(1);
   const [shutterSpeed, setShutterSpeed] = useState('1/125');
@@ -47,6 +48,7 @@ const ShotLogParamsScreen: React.FC = () => {
       count,
       shutterSpeed,
       aperture,
+      fixedLensInfo,
     });
   };
 
@@ -61,9 +63,16 @@ const ShotLogParamsScreen: React.FC = () => {
       <Text style={[styles.rollInfo, { fontSize: 14, marginBottom: 4, fontWeight: '600' }]}>
         {filmDisplayName}
       </Text>
-      <Text style={[styles.rollInfo, { fontSize: 12, marginBottom: 24 }]}>
+      <Text style={[styles.rollInfo, { fontSize: 12, marginBottom: fixedLensInfo ? 8 : 24 }]}>
         {isoDisplay ? `ISO ${isoDisplay}` : ''} {roll?.loaded_camera ? `• ${roll.loaded_camera}` : ''}
       </Text>
+      
+      {/* Fixed Lens Indicator */}
+      {fixedLensInfo && (
+        <View style={styles.fixedLensIndicator}>
+          <Text style={styles.fixedLensText}>🔒 {fixedLensInfo.text}</Text>
+        </View>
+      )}
 
       {/* Shot Count */}
       <View style={styles.section}>
@@ -241,6 +250,19 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  fixedLensIndicator: {
+    backgroundColor: '#1a3a1a',
+    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 16,
+    alignSelf: 'center',
+  },
+  fixedLensText: {
+    color: '#86efac',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });
 

@@ -96,11 +96,11 @@ export default function RollDetailScreen({ route, navigation }) {
               <View style={styles.metaRow}>
                 <View style={styles.metaItem}>
                   <Text style={styles.metaLabel}>Camera</Text>
-                  <Text style={styles.metaValue}>{roll.camera || '-'}</Text>
+                  <Text style={styles.metaValue}>{roll.display_camera || '-'}</Text>
                 </View>
                 <View style={styles.metaItem}>
                   <Text style={styles.metaLabel}>Lens</Text>
-                  <Text style={styles.metaValue}>{roll.lens || '-'}</Text>
+                  <Text style={styles.metaValue}>{roll.display_lens || '-'}</Text>
                 </View>
               </View>
 

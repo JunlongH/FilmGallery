@@ -17,10 +17,13 @@ import { api } from '../services/api';
 const ShotLogLocationScreen: React.FC = () => {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { roll, filmName, filmIso, count, shutterSpeed, aperture } = route.params;
+  const { roll, filmName, filmIso, count, shutterSpeed, aperture, fixedLensInfo } = route.params;
 
   const filmDisplayName = roll?.film_type || roll?.film_name || filmName || 'Unknown Film';
   const isoDisplay = roll?.iso || filmIso;
+  
+  // Use fixed lens text if available, otherwise use roll.lens
+  const lensForLog = fixedLensInfo?.text || roll.lens || undefined;
 
   const [country, setCountry] = useState('');
   const [city, setCity] = useState('');
@@ -61,7 +64,7 @@ const ShotLogLocationScreen: React.FC = () => {
       const newLog: ShotLog = {
         date: new Date().toISOString().split('T')[0],
         count,
-        lens: roll.lens || undefined,
+        lens: lensForLog,
         aperture,
         shutter_speed: shutterSpeed,
         country: country || undefined,

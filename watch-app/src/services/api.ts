@@ -134,6 +134,24 @@ class ApiService {
       film_type: roll.film_type || roll.film_name_joined || undefined,
     }));
   }
+
+  async getCamera(id: number): Promise<{
+    id: number;
+    brand?: string;
+    model?: string;
+    has_fixed_lens?: boolean;
+    fixed_lens_focal_length?: number;
+    fixed_lens_max_aperture?: number;
+    mount?: string;
+  } | null> {
+    try {
+      const response = await this.client.get(`/api/equipment/cameras/${id}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get camera:', error);
+      return null;
+    }
+  }
 }
 
 export const api = new ApiService();

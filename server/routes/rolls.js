@@ -100,6 +100,32 @@ router.post('/', (req, res) => {
         }
       }
 
+      // ==============================
+      // FIXED LENS CAMERA HANDLING
+      // ==============================
+      // If the selected camera has a fixed lens, enforce implicit lens:
+      // - Set lens_equip_id to NULL (lens is derived from camera)
+      // - Optionally set legacy text for backward compatibility
+      let finalLensEquipId = lens_equip_id;
+      let finalLensText = lens;
+      
+      if (camera_equip_id) {
+        try {
+          const camRow = await new Promise((resolve, reject) => {
+            db.get('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', 
+              [camera_equip_id], (err, row) => err ? reject(err) : resolve(row));
+          });
+          if (camRow && camRow.has_fixed_lens === 1) {
+            // Fixed lens camera: nullify explicit lens, set text for backward compat
+            finalLensEquipId = null;
+            finalLensText = `${camRow.fixed_lens_focal_length}mm f/${camRow.fixed_lens_max_aperture}`;
+            console.log(`[CREATE ROLL] Fixed lens camera detected. Setting implicit lens: ${finalLensText}`);
+          }
+        } catch (camErr) {
+          console.warn('[CREATE ROLL] Failed to check camera fixed lens status', camErr.message);
+        }
+      }
+
       const sql = `INSERT INTO rolls (title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id, camera_equip_id, lens_equip_id, flash_equip_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
       // ==============================
@@ -174,7 +200,7 @@ router.post('/', (req, res) => {
 
         // Begin transaction AFTER validation so we can fully rollback.
         await runAsync('BEGIN');
-        const rollInsertRes = await runAsync(sql, [title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id, camera_equip_id, lens_equip_id, flash_equip_id]);
+        const rollInsertRes = await runAsync(sql, [title, start_date, end_date, camera, finalLensText, photographer, filmId, film_type, notes, film_item_id, camera_equip_id, finalLensEquipId, flash_equip_id]);
         rollId = rollInsertRes?.lastID;
         if (!rollId) throw new Error('Failed to create roll');
 
@@ -657,7 +683,7 @@ router.post('/', (req, res) => {
 
 // GET /api/rolls
 router.get('/', (req, res) => {
-  const { camera, lens, photographer, location_id, year, month, ym, film } = req.query;
+  const { camera, lens, photographer, location_id, year, month, ym, film, camera_equip_id, lens_equip_id, flash_equip_id } = req.query;
 
   const toArray = (v) => {
     if (v === undefined || v === null) return [];
@@ -674,14 +700,45 @@ router.get('/', (req, res) => {
   const yms = toArray(ym);
   const films = toArray(film);
   
+  // Dynamic camera/lens resolution: Equipment ID → Fixed Lens (implicit) → Legacy Text
   let sql = `
-    SELECT DISTINCT rolls.*, films.name AS film_name_joined 
+    SELECT DISTINCT rolls.*, 
+           films.name AS film_name_joined,
+           -- Camera resolution: prefer equipment name, fallback to legacy text
+           COALESCE(cam.brand || ' ' || cam.model, rolls.camera) AS display_camera,
+           -- Lens resolution: prefer explicit lens, then fixed lens from camera, then legacy text
+           COALESCE(
+             lens.brand || ' ' || lens.model,
+             CASE WHEN cam.has_fixed_lens = 1 THEN 
+               cam.fixed_lens_focal_length || 'mm f/' || cam.fixed_lens_max_aperture 
+             END,
+             rolls.lens
+           ) AS display_lens,
+           cam.has_fixed_lens AS camera_has_fixed_lens,
+           cam.fixed_lens_focal_length,
+           cam.fixed_lens_max_aperture
     FROM rolls 
     LEFT JOIN films ON rolls.filmId = films.id 
+    LEFT JOIN equip_cameras cam ON rolls.camera_equip_id = cam.id
+    LEFT JOIN equip_lenses lens ON rolls.lens_equip_id = lens.id
   `;
   
   const params = [];
   const conditions = [];
+
+  // Equipment ID filters (exact match)
+  if (camera_equip_id) {
+    conditions.push(`rolls.camera_equip_id = ?`);
+    params.push(Number(camera_equip_id));
+  }
+  if (lens_equip_id) {
+    conditions.push(`rolls.lens_equip_id = ?`);
+    params.push(Number(lens_equip_id));
+  }
+  if (flash_equip_id) {
+    conditions.push(`rolls.flash_equip_id = ?`);
+    params.push(Number(flash_equip_id));
+  }
 
   if (cameras.length) {
     const cameraConds = cameras.map(() => `(
@@ -780,7 +837,16 @@ router.get('/:id', async (req, res) => {
              flash.brand AS flash_equip_brand,
              flash.model AS flash_equip_model,
              flash.guide_number AS flash_equip_gn,
-             flash.image_path AS flash_equip_image
+             flash.image_path AS flash_equip_image,
+             -- Dynamic display fields: Equipment → Implicit Fixed Lens → Legacy Text
+             COALESCE(cam.brand || ' ' || cam.model, rolls.camera) AS display_camera,
+             COALESCE(
+               lens.brand || ' ' || lens.model,
+               CASE WHEN cam.has_fixed_lens = 1 THEN 
+                 cam.fixed_lens_focal_length || 'mm f/' || cam.fixed_lens_max_aperture 
+               END,
+               rolls.lens
+             ) AS display_lens
       FROM rolls
       LEFT JOIN films ON rolls.filmId = films.id
       LEFT JOIN equip_cameras cam ON rolls.camera_equip_id = cam.id
@@ -906,12 +972,35 @@ router.delete('/:id/preset', (req, res) => {
 // PUT /api/rolls/:id
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  const { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
+  let { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
   if (start_date !== undefined && end_date !== undefined) {
     const sd = new Date(start_date);
     const ed = new Date(end_date);
     if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return res.status(400).json({ error: 'Invalid start_date or end_date' });
     if (sd > ed) return res.status(400).json({ error: 'start_date cannot be later than end_date' });
+  }
+  
+  // ==============================
+  // FIXED LENS CAMERA HANDLING
+  // ==============================
+  // If the camera being set has a fixed lens, enforce implicit lens:
+  // - Set lens_equip_id to NULL
+  // - Set legacy lens text for backward compatibility
+  if (camera_equip_id !== undefined && camera_equip_id !== null) {
+    try {
+      const camRow = await new Promise((resolve, reject) => {
+        db.get('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', 
+          [camera_equip_id], (err, row) => err ? reject(err) : resolve(row));
+      });
+      if (camRow && camRow.has_fixed_lens === 1) {
+        // Fixed lens camera: nullify explicit lens, set text for backward compat
+        lens_equip_id = null;
+        lens = `${camRow.fixed_lens_focal_length}mm f/${camRow.fixed_lens_max_aperture}`;
+        console.log(`[UPDATE ROLL ${id}] Fixed lens camera detected. Setting implicit lens: ${lens}`);
+      }
+    } catch (camErr) {
+      console.warn('[UPDATE ROLL] Failed to check camera fixed lens status', camErr.message);
+    }
   }
   
   // Build dynamic UPDATE query to only update provided fields

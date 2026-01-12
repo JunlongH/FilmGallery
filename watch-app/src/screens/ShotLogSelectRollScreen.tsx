@@ -44,11 +44,32 @@ const ShotLogSelectRollScreen: React.FC = () => {
     }
   };
 
-  const handleSelectRoll = (roll: FilmItem) => {
+  const handleSelectRoll = async (roll: FilmItem) => {
     const film = roll.film_id ? filmById.get(roll.film_id) : undefined;
     const filmName = roll.film_type || roll.film_name || film?.name;
     const filmIsoRaw = roll.iso || (film?.iso != null ? String(film.iso) : undefined);
-    navigation.navigate('ShotLogParams', { roll, filmName, filmIso: filmIsoRaw });
+    
+    // Check if camera has fixed lens
+    let fixedLensInfo: { text: string; focal_length?: number; max_aperture?: number } | undefined;
+    if (roll.camera_equip_id) {
+      try {
+        const camera = await api.getCamera(roll.camera_equip_id);
+        if (camera?.has_fixed_lens) {
+          const lensText = camera.fixed_lens_focal_length 
+            ? `${camera.fixed_lens_focal_length}mm${camera.fixed_lens_max_aperture ? ` f/${camera.fixed_lens_max_aperture}` : ''}`
+            : 'Fixed Lens';
+          fixedLensInfo = {
+            text: lensText,
+            focal_length: camera.fixed_lens_focal_length,
+            max_aperture: camera.fixed_lens_max_aperture,
+          };
+        }
+      } catch (e) {
+        console.warn('Failed to fetch camera info for fixed lens check', e);
+      }
+    }
+    
+    navigation.navigate('ShotLogParams', { roll, filmName, filmIso: filmIsoRaw, fixedLensInfo });
   };
 
   const renderItem = ({ item }: { item: FilmItem }) => {

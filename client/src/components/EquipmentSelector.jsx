@@ -58,6 +58,8 @@ export default function EquipmentSelector({
   const [showAddForm, setShowAddForm] = useState(false);
   const [newName, setNewName] = useState('');
   const [fixedLensInfo, setFixedLensInfo] = useState(null); // For PS cameras
+  const [useAdapter, setUseAdapter] = useState(false); // Show all lenses regardless of mount
+  const [cameraMount, setCameraMount] = useState(null); // Camera's mount for display
   const dropdownRef = useRef(null);
 
   // Load equipment list
@@ -78,17 +80,28 @@ export default function EquipmentSelector({
               focal_length: result.focal_length,
               max_aperture: result.max_aperture
             });
+            setCameraMount(null);
             setItems([]);
-          } else {
-            setFixedLensInfo(null);
-            data = result.lenses || [];
-            if (mounted) setItems(data);
+            if (mounted) setLoading(false);
+            return;
           }
+          setFixedLensInfo(null);
+          setCameraMount(result.camera_mount || null);
+          
+          if (useAdapter) {
+            // Adapter mode: fetch ALL lenses regardless of mount
+            data = await config.fetchAll();
+          } else {
+            // Normal mode: only compatible lenses
+            data = result.lenses || [];
+          }
+          if (mounted) setItems(Array.isArray(data) ? data : []);
         } else {
           data = await config.fetchAll();
           if (mounted) {
             setItems(Array.isArray(data) ? data : []);
             setFixedLensInfo(null);
+            setCameraMount(null);
           }
         }
       } catch (err) {
@@ -101,7 +114,7 @@ export default function EquipmentSelector({
     
     fetchItems();
     return () => { mounted = false; };
-  }, [type, cameraId, config]);
+  }, [type, cameraId, config, useAdapter]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -236,6 +249,23 @@ export default function EquipmentSelector({
             autoFocus
           />
 
+          {/* Adapter toggle for lens selection with camera */}
+          {type === 'lens' && cameraId && cameraMount && (
+            <div className="equip-adapter-toggle">
+              <label className="equip-adapter-label">
+                <input
+                  type="checkbox"
+                  checked={useAdapter}
+                  onChange={(e) => setUseAdapter(e.target.checked)}
+                />
+                <span>Use Adapter (show all lenses)</span>
+              </label>
+              <span className="equip-mount-info">
+                Camera mount: {cameraMount}
+              </span>
+            </div>
+          )}
+
           {/* Items list */}
           <div className="equip-list">
             {filteredItems.length === 0 ? (
@@ -246,10 +276,13 @@ export default function EquipmentSelector({
               filteredItems.map(item => (
                 <div 
                   key={item.id} 
-                  className={`equip-option ${item.id === value ? 'selected' : ''}`}
+                  className={`equip-option ${item.id === value ? 'selected' : ''} ${type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount ? 'adapted' : ''}`}
                   onClick={() => handleSelect(item)}
                 >
                   {renderItemDisplay(item, true)}
+                  {type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount && (
+                    <span className="equip-adapter-badge">Adapter</span>
+                  )}
                 </div>
               ))
             )}
@@ -518,5 +551,46 @@ export const equipmentSelectorStyles = `
   border-radius: 6px;
   color: #166534;
   font-size: 14px;
+}
+
+.equip-adapter-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #fefce8;
+  border-bottom: 1px solid #fde047;
+  font-size: 12px;
+}
+
+.equip-adapter-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: #854d0e;
+}
+
+.equip-adapter-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.equip-mount-info {
+  color: #a16207;
+  font-size: 11px;
+}
+
+.equip-option.adapted {
+  background: #fffbeb;
+}
+
+.equip-adapter-badge {
+  font-size: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: auto;
+  font-weight: 500;
 }
 `;

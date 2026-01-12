@@ -27,19 +27,47 @@ router.get('/summary', (req, res) => {
 
 // GET /api/stats/gear
 router.get('/gear', (req, res) => {
-  // Aggregate from both legacy columns and new roll_gear table
-  // This is a bit complex, so we'll do two queries and merge in JS or use a UNION
+  // Aggregate from:
+  // 1. Legacy roll_gear table
+  // 2. Legacy rolls.camera/lens text columns
+  // 3. New equipment IDs (camera_equip_id, lens_equip_id)
+  // 4. Fixed-lens cameras (implicit lens from camera's fixed_lens_focal_length)
   
   const sqlCameras = `
     SELECT value as name, COUNT(*) as count FROM roll_gear WHERE type='camera' AND value NOT IN ('', '-', '--', '—') GROUP BY value
     UNION ALL
-    SELECT camera as name, COUNT(*) as count FROM rolls WHERE camera IS NOT NULL AND camera != '' AND camera NOT IN ('-','--','—') GROUP BY camera
+    SELECT camera as name, COUNT(*) as count FROM rolls WHERE camera IS NOT NULL AND camera != '' AND camera NOT IN ('-','--','—') AND camera_equip_id IS NULL GROUP BY camera
+    UNION ALL
+    SELECT (c.brand || ' ' || c.model) as name, COUNT(*) as count 
+    FROM rolls r 
+    JOIN equip_cameras c ON r.camera_equip_id = c.id 
+    GROUP BY c.id
   `;
 
   const sqlLenses = `
+    -- Legacy roll_gear text
     SELECT value as name, COUNT(*) as count FROM roll_gear WHERE type='lens' AND value NOT IN ('', '-', '--', '—') GROUP BY value
     UNION ALL
-    SELECT lens as name, COUNT(*) as count FROM rolls WHERE lens IS NOT NULL AND lens != '' AND lens NOT IN ('-','--','—') GROUP BY lens
+    -- Legacy rolls.lens text (only for rolls without lens_equip_id and without fixed-lens camera)
+    SELECT lens as name, COUNT(*) as count FROM rolls 
+    WHERE lens IS NOT NULL AND lens != '' AND lens NOT IN ('-','--','—') 
+      AND lens_equip_id IS NULL 
+      AND (camera_equip_id IS NULL OR camera_equip_id NOT IN (SELECT id FROM equip_cameras WHERE has_fixed_lens = 1))
+    GROUP BY lens
+    UNION ALL
+    -- Equipment lens IDs
+    SELECT (l.brand || ' ' || l.model) as name, COUNT(*) as count 
+    FROM rolls r 
+    JOIN equip_lenses l ON r.lens_equip_id = l.id 
+    GROUP BY l.id
+    UNION ALL
+    -- Fixed-lens cameras (implicit lens from camera data)
+    -- Use camera name + focal length as unique identifier for each fixed lens
+    SELECT (c.brand || ' ' || c.model || ' ' || COALESCE(c.fixed_lens_focal_length, '') || 'mm') as name, COUNT(*) as count 
+    FROM rolls r 
+    JOIN equip_cameras c ON r.camera_equip_id = c.id 
+    WHERE c.has_fixed_lens = 1 
+    GROUP BY c.id
   `;
 
   const sqlFilms = `

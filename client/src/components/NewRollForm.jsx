@@ -13,8 +13,6 @@ export default function NewRollForm({ onCreated }) {
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [camera, setCamera] = useState(''); // legacy text field
-  const [lens, setLens] = useState(''); // legacy text field
   const [cameraEquipId, setCameraEquipId] = useState(null);
   const [lensEquipId, setLensEquipId] = useState(null);
   const [selectedCamera, setSelectedCamera] = useState(null);
@@ -89,7 +87,7 @@ export default function NewRollForm({ onCreated }) {
       if (item) {
         if (item.loaded_date) setStartDate(item.loaded_date);
         if (item.finished_date) setEndDate(item.finished_date);
-        if (item.loaded_camera) setCamera(item.loaded_camera);
+        // Note: loaded_camera is legacy text, not used in submission (equipment IDs are used instead)
         
         // Parse shot logs
         if (item.shot_logs) {
@@ -177,8 +175,6 @@ export default function NewRollForm({ onCreated }) {
         title, 
         start_date: startDate || null, 
         end_date: endDate || null, 
-        camera, 
-        lens, 
         camera_equip_id: cameraEquipId || null,
         lens_equip_id: lensEquipId || null,
         photographer, 
@@ -377,16 +373,9 @@ export default function NewRollForm({ onCreated }) {
               onChange={(id, item) => {
                 setCameraEquipId(id);
                 setSelectedCamera(item);
-                // Generate display text for legacy field
-                if (item) {
-                  setCamera(`${item.brand} ${item.model}`);
-                  // If camera has fixed lens, clear lens selection
-                  if (item.has_fixed_lens) {
-                    setLensEquipId(null);
-                    setLens(item.fixed_lens_focal_length ? `${item.fixed_lens_focal_length}mm f/${item.fixed_lens_max_aperture || '?'}` : 'Fixed');
-                  }
-                } else {
-                  setCamera('');
+                // If camera has fixed lens, clear lens selection (server will handle text)
+                if (item?.has_fixed_lens) {
+                  setLensEquipId(null);
                 }
               }}
               placeholder="Select camera..."
@@ -404,14 +393,7 @@ export default function NewRollForm({ onCreated }) {
                 type="lens" 
                 value={lensEquipId} 
                 cameraId={cameraEquipId}
-                onChange={(id, item) => {
-                  setLensEquipId(id);
-                  if (item) {
-                    setLens(`${item.brand} ${item.model}`);
-                  } else {
-                    setLens('');
-                  }
-                }}
+                onChange={(id) => setLensEquipId(id)}
                 placeholder="Select lens..."
               />
             )}

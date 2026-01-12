@@ -181,8 +181,6 @@ export default function RollDetail() {
       title: roll.title || '',
       start_date: roll.start_date || '',
       end_date: roll.end_date || '',
-      camera: roll.camera || '',
-      lens: roll.lens || '',
       camera_equip_id: roll.camera_equip_id || null,
       lens_equip_id: roll.lens_equip_id || null,
       photographer: roll.photographer || '',
@@ -309,25 +307,25 @@ export default function RollDetail() {
               <div className="roll-collapsible-content" style={{ paddingTop: 20 }}>
                 <div className="roll-meta-grid" style={{ gap: '24px' }}>
                   
-                  {/* Cameras */}
+                  {/* Cameras - display_camera includes: Equipment Name → Legacy Text */}
                   <div className="meta-group">
                     <span className="meta-label">Cameras</span>
                     <div className="tags-list">
-                      {(roll.gear?.cameras?.length ? roll.gear.cameras : (roll.camera ? [roll.camera] : [])).map((v, i) => (
+                      {(roll.gear?.cameras?.length ? roll.gear.cameras : (roll.display_camera ? [roll.display_camera] : [])).map((v, i) => (
                         <span key={i} className="tag-pill">{v}</span>
                       ))}
-                      {!(roll.gear?.cameras?.length || roll.camera) && <span className="meta-value-text" style={{opacity:0.5, fontSize:13}}>—</span>}
+                      {!(roll.gear?.cameras?.length || roll.display_camera) && <span className="meta-value-text" style={{opacity:0.5, fontSize:13}}>—</span>}
                     </div>
                   </div>
 
-                  {/* Lenses */}
+                  {/* Lenses - display_lens includes: Explicit Lens → Fixed Lens → Legacy Text */}
                   <div className="meta-group">
                     <span className="meta-label">Lenses</span>
                     <div className="tags-list">
-                      {(roll.gear?.lenses?.length ? roll.gear.lenses : (roll.lens ? [roll.lens] : [])).map((v, i) => (
+                      {(roll.gear?.lenses?.length ? roll.gear.lenses : (roll.display_lens ? [roll.display_lens] : [])).map((v, i) => (
                         <span key={i} className="tag-pill">{v}</span>
                       ))}
-                      {!(roll.gear?.lenses?.length || roll.lens) && <span className="meta-value-text" style={{opacity:0.5, fontSize:13}}>—</span>}
+                      {!(roll.gear?.lenses?.length || roll.display_lens) && <span className="meta-value-text" style={{opacity:0.5, fontSize:13}}>—</span>}
                     </div>
                   </div>
 
@@ -590,16 +588,9 @@ export default function RollDetail() {
                       setEditData(d => ({
                         ...d, 
                         camera_equip_id: id,
-                        camera: item ? `${item.brand} ${item.model}` : ''
+                        // If camera has fixed lens, clear lens selection (server will handle text)
+                        lens_equip_id: item?.has_fixed_lens ? null : d.lens_equip_id
                       }));
-                      // If camera has fixed lens, clear lens selection
-                      if (item?.has_fixed_lens) {
-                        setEditData(d => ({
-                          ...d,
-                          lens_equip_id: null,
-                          lens: item.fixed_lens_focal_length ? `${item.fixed_lens_focal_length}mm f/${item.fixed_lens_max_aperture || '?'}` : 'Fixed'
-                        }));
-                      }
                     }}
                     placeholder="Select camera..."
                   />
@@ -616,13 +607,7 @@ export default function RollDetail() {
                       type="lens" 
                       value={editData.lens_equip_id} 
                       cameraId={editData.camera_equip_id}
-                      onChange={(id, item) => {
-                        setEditData(d => ({
-                          ...d,
-                          lens_equip_id: id,
-                          lens: item ? `${item.brand} ${item.model}` : ''
-                        }));
-                      }}
+                      onChange={(id) => setEditData(d => ({ ...d, lens_equip_id: id }))}
                       placeholder="Select lens..."
                     />
                   )}

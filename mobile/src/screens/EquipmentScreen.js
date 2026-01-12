@@ -157,7 +157,9 @@ export default function EquipmentScreen({ navigation }) {
               {item.mount && <Chip compact style={styles.chip}>{item.mount}</Chip>}
               {item.focal_length_min && (
                 <Chip compact style={styles.chip}>
-                  {item.focal_length_min}{item.focal_length_max ? `-${item.focal_length_max}` : ''}mm
+                  {item.focal_length_min === item.focal_length_max || !item.focal_length_max
+                    ? `${item.focal_length_min}mm`
+                    : `${item.focal_length_min}-${item.focal_length_max}mm`}
                 </Chip>
               )}
               {item.max_aperture && <Chip compact style={styles.chip}>f/{item.max_aperture}</Chip>}

@@ -24,6 +24,8 @@ export default function EquipmentPicker({
   const [search, setSearch] = useState('');
   const [selectedItem, setSelectedItem] = useState(null);
   const [fixedLensInfo, setFixedLensInfo] = useState(null);
+  const [useAdapter, setUseAdapter] = useState(false);
+  const [cameraMount, setCameraMount] = useState(null);
   
   // Quick add state
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -45,6 +47,7 @@ export default function EquipmentPicker({
       let data;
       if (type === 'camera') {
         data = await getCameras();
+        setCameraMount(null);
       } else if (type === 'lens') {
         if (cameraId) {
           // Get compatible lenses for this camera
@@ -52,11 +55,21 @@ export default function EquipmentPicker({
           if (result.fixed_lens) {
             // Camera has fixed lens, show info instead of list
             setFixedLensInfo(result);
+            setCameraMount(null);
             setItems([]);
             setLoading(false);
             return;
           }
-          data = result.lenses || [];
+          setFixedLensInfo(null);
+          setCameraMount(result.camera_mount || null);
+          
+          if (useAdapter) {
+            // Adapter mode: fetch all lenses
+            data = await getLenses();
+          } else {
+            // Normal mode: only compatible lenses
+            data = result.lenses || [];
+          }
         } else {
           data = await getLenses();
         }
@@ -179,6 +192,26 @@ export default function EquipmentPicker({
               style={styles.searchbar}
             />
 
+            {/* Adapter toggle for lens selection with camera */}
+            {type === 'lens' && cameraId && cameraMount && !fixedLensInfo && (
+              <View style={styles.adapterToggle}>
+                <TouchableOpacity 
+                  style={styles.adapterCheckbox}
+                  onPress={() => {
+                    setUseAdapter(!useAdapter);
+                    // Refetch with new adapter setting
+                    setTimeout(fetchItems, 0);
+                  }}
+                >
+                  <View style={[styles.checkbox, useAdapter && styles.checkboxChecked]}>
+                    {useAdapter && <Text style={{ color: '#fff', fontSize: 12 }}>✓</Text>}
+                  </View>
+                  <Text style={styles.adapterLabel}>Use Adapter (show all lenses)</Text>
+                </TouchableOpacity>
+                <Text style={styles.mountInfo}>Camera mount: {cameraMount}</Text>
+              </View>
+            )}
+
             {/* Fixed lens info */}
             {fixedLensInfo && (
               <View style={[styles.fixedLensInfo, { backgroundColor: theme.colors.primaryContainer }]}>
@@ -221,11 +254,12 @@ export default function EquipmentPicker({
                   <TouchableOpacity
                     style={[
                       styles.listItem,
-                      item.id === value && { backgroundColor: theme.colors.primaryContainer }
+                      item.id === value && { backgroundColor: theme.colors.primaryContainer },
+                      type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount && styles.adaptedItem
                     ]}
                     onPress={() => handleSelect(item)}
                   >
-                    <View>
+                    <View style={{ flex: 1 }}>
                       <Text variant="bodyLarge">{item.brand} {item.model}</Text>
                       {type === 'camera' && item.camera_type && (
                         <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -236,10 +270,15 @@ export default function EquipmentPicker({
                       {type === 'lens' && (
                         <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
                           {item.mount || 'Universal'}
-                          {item.focal_length_min ? ` • ${item.focal_length_min}${item.focal_length_max ? `-${item.focal_length_max}` : ''}mm` : ''}
+                          {item.focal_length_min ? ` • ${item.focal_length_min === item.focal_length_max || !item.focal_length_max ? `${item.focal_length_min}mm` : `${item.focal_length_min}-${item.focal_length_max}mm`}` : ''}
                         </Text>
                       )}
                     </View>
+                    {type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount && (
+                      <View style={styles.adapterBadge}>
+                        <Text style={styles.adapterBadgeText}>Adapter</Text>
+                      </View>
+                    )}
                     {item.id === value && <Text style={{ color: theme.colors.primary }}>✓</Text>}
                   </TouchableOpacity>
                 )}
@@ -355,6 +394,56 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: 8,
     marginBottom: spacing.md,
+  },
+  adapterToggle: {
+    backgroundColor: '#fefce8',
+    padding: spacing.sm,
+    marginBottom: spacing.md,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fde047',
+  },
+  adapterCheckbox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderWidth: 2,
+    borderColor: '#854d0e',
+    borderRadius: 4,
+    marginRight: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxChecked: {
+    backgroundColor: '#854d0e',
+  },
+  adapterLabel: {
+    color: '#854d0e',
+    fontSize: 14,
+  },
+  mountInfo: {
+    color: '#a16207',
+    fontSize: 12,
+    marginLeft: 28,
+  },
+  adaptedItem: {
+    backgroundColor: '#fffbeb',
+  },
+  adapterBadge: {
+    backgroundColor: '#fef3c7',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 8,
+  },
+  adapterBadgeText: {
+    color: '#92400e',
+    fontSize: 10,
+    fontWeight: '500',
   },
   quickAddForm: {
     padding: spacing.md,

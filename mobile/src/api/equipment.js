@@ -97,3 +97,36 @@ export const getEquipmentSuggestions = async () => {
   const res = await axios.get('/api/equipment/suggestions');
   return res.data;
 };
+
+// ===== Rolls by Equipment =====
+/**
+ * Get rolls that use a specific piece of equipment.
+ * For fixed-lens cameras (type='camera'), this also matches rolls with the camera's implicit lens.
+ * @param {string} type - 'camera' | 'lens' | 'flash' | 'film'
+ * @param {number} id - Equipment ID
+ * @returns {Promise<Array>} List of rolls with display_camera and display_lens fields
+ */
+export const getRollsByEquipment = async (type, id) => {
+  // Use the rolls endpoint with appropriate filter
+  let param;
+  switch (type) {
+    case 'camera':
+      // For cameras, the server will include rolls where camera_equip_id matches
+      // display_camera and display_lens are computed dynamically
+      param = `camera_equip_id=${id}`;
+      break;
+    case 'lens':
+      param = `lens_equip_id=${id}`;
+      break;
+    case 'flash':
+      param = `flash_equip_id=${id}`;
+      break;
+    case 'film':
+      param = `filmId=${id}`;
+      break;
+    default:
+      throw new Error(`Unknown equipment type: ${type}`);
+  }
+  const res = await axios.get(`/api/rolls?${param}`);
+  return res.data;
+};

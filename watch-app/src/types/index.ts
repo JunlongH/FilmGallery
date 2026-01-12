@@ -18,6 +18,7 @@ export interface FilmItem {
   title?: string | null;
   status: string;
   loaded_camera?: string | null;
+  camera_equip_id?: number | null;
   loaded_date?: string | null;
   shot_logs?: string; // JSON string
   created_at: string;

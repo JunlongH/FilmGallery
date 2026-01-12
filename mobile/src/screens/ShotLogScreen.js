@@ -7,6 +7,7 @@ import DraggableFab from '../components/DraggableFab';
 import ShotModeModal from '../components/ShotModeModal';
 import { parseISODate, toISODateString } from '../utils/date';
 import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations, getFilms } from '../api/filmItems';
+import { getCamera } from '../api/equipment';
 import { spacing, radius } from '../theme';
 
 function parseShotLog(raw) {
@@ -67,6 +68,9 @@ export default function ShotLogScreen({ route, navigation }) {
   const [showShotMode, setShowShotMode] = useState(false);
   const [filmIso, setFilmIso] = useState(400);
   const [didAutoOpen, setDidAutoOpen] = useState(false);
+  // Fixed lens camera info
+  const [fixedLensInfo, setFixedLensInfo] = useState(null);
+  const [cameraName, setCameraName] = useState('');
 
   useEffect(() => {
     navigation.setOptions({ title: filmName ? `${filmName} Shot Log` : 'Shot Log' });
@@ -104,6 +108,32 @@ export default function ShotLogScreen({ route, navigation }) {
           } catch (e) {
             console.warn('Failed to fetch film ISO fallback', e);
           }
+        }
+        
+        // Check if camera has fixed lens
+        if (base.camera_equip_id) {
+          try {
+            const camera = await getCamera(base.camera_equip_id);
+            if (camera) {
+              setCameraName(`${camera.brand || ''} ${camera.model || ''}`.trim());
+              if (camera.has_fixed_lens) {
+                const fixedLensText = camera.fixed_lens_focal_length 
+                  ? `${camera.fixed_lens_focal_length}mm${camera.fixed_lens_max_aperture ? ` f/${camera.fixed_lens_max_aperture}` : ''}`
+                  : 'Fixed Lens';
+                setFixedLensInfo({
+                  text: fixedLensText,
+                  focal_length: camera.fixed_lens_focal_length,
+                  max_aperture: camera.fixed_lens_max_aperture
+                });
+                // Auto-fill lens for fixed lens cameras
+                setNewLens(fixedLensText);
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to fetch camera info', e);
+          }
+        } else if (base.loaded_camera) {
+          setCameraName(base.loaded_camera);
         }
       } catch (err) {
         console.log('Failed to load shot log', err);
@@ -357,13 +387,27 @@ export default function ShotLogScreen({ route, navigation }) {
           </Button>
         </View>
 
+        {/* Fixed Lens Camera Indicator */}
+        {fixedLensInfo && (
+          <View style={styles.fixedLensIndicator}>
+            <Text style={styles.fixedLensText}>
+              🔒 Fixed Lens Camera: {fixedLensInfo.text}
+            </Text>
+            <Text style={styles.fixedLensSubtext}>
+              Lens is automatically set for {cameraName || 'this camera'}
+            </Text>
+          </View>
+        )}
+
+        {/* Lens input - disabled for fixed lens cameras */}
         <TextInput
-          label="Lens (custom or pick below)"
+          label={fixedLensInfo ? "Lens (Fixed)" : "Lens (custom or pick below)"}
           mode="outlined"
           value={newLens}
-          onChangeText={setNewLens}
-          style={[styles.input, { marginBottom: spacing.xs }]}
+          onChangeText={fixedLensInfo ? undefined : setNewLens}
+          style={[styles.input, { marginBottom: spacing.xs }, fixedLensInfo && styles.disabledInput]}
           dense
+          disabled={!!fixedLensInfo}
         />
         <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
           <TextInput
@@ -542,6 +586,25 @@ const styles = StyleSheet.create({
   },
   inputRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
   input: { backgroundColor: '#fff' },
+  disabledInput: { backgroundColor: '#f0fdf4', opacity: 0.8 },
   addButton: { justifyContent: 'center', marginTop: 6 },
-  saveButton: { marginTop: 0 }
+  saveButton: { marginTop: 0 },
+  fixedLensIndicator: {
+    backgroundColor: '#f0fdf4',
+    borderWidth: 1,
+    borderColor: '#86efac',
+    borderRadius: 8,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  fixedLensText: {
+    color: '#166534',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  fixedLensSubtext: {
+    color: '#15803d',
+    fontSize: 12,
+    marginTop: 2,
+  },
 });
