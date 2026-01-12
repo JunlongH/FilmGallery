@@ -26,7 +26,7 @@ export function LoadFilmModal({ item, isOpen, onClose, onLoaded }) {
     const optimisticPatch = {
       status: 'loaded',
       loaded_camera: camera,
-      loaded_camera_equip_id: cameraEquipId,
+      camera_equip_id: cameraEquipId,
       loaded_date: loadedDate || null,
     };
     if (onLoaded && item) {
@@ -39,7 +39,7 @@ export function LoadFilmModal({ item, isOpen, onClose, onLoaded }) {
       const res = await updateFilmItem(item.id, { 
         status: 'loaded', 
         loaded_camera: camera,
-        loaded_camera_equip_id: cameraEquipId,
+        camera_equip_id: cameraEquipId,
         loaded_at: new Date().toISOString(),
         loaded_date: loadedDate || null
       });

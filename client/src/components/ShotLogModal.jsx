@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ModalDialog from './ModalDialog';
-import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations } from '../api';
+import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCamera } from '../api';
 
 const FALLBACK_LENSES = [
   '50mm f/1.8',
@@ -30,6 +30,9 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [exporting, setExporting] = useState(false);
+  // Fixed lens camera detection
+  const [fixedLensInfo, setFixedLensInfo] = useState(null); // { text, focal_length, max_aperture }
+  const [cameraName, setCameraName] = useState('');
 
   const dedupeAndSort = (list) => Array.from(new Set((list || []).filter(Boolean))).sort((a, b) => a.localeCompare(b));
 
@@ -67,6 +70,55 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       setSelectedDate(today);
     }
   }, [item]);
+
+  // Detect fixed lens camera
+  useEffect(() => {
+    let mounted = true;
+    
+    const checkFixedLensCamera = async () => {
+      if (!item?.camera_equip_id) {
+        setFixedLensInfo(null);
+        setCameraName('');
+        return;
+      }
+      
+      try {
+        const camera = await getCamera(item.camera_equip_id);
+        if (!mounted) return;
+        
+        if (camera) {
+          setCameraName(`${camera.brand || ''} ${camera.model || ''}`.trim());
+          
+          if (camera.has_fixed_lens) {
+            const lensText = camera.fixed_lens_focal_length 
+              ? `${camera.fixed_lens_focal_length}mm${camera.fixed_lens_max_aperture ? ` f/${camera.fixed_lens_max_aperture}` : ''}`
+              : 'Fixed Lens';
+            
+            setFixedLensInfo({
+              text: lensText,
+              focal_length: camera.fixed_lens_focal_length,
+              max_aperture: camera.fixed_lens_max_aperture
+            });
+            
+            // Auto-fill lens for new entries
+            setSelectedLens(lensText);
+            setNewLens('');
+          } else {
+            setFixedLensInfo(null);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to fetch camera info for fixed lens check', err);
+        if (mounted) {
+          setFixedLensInfo(null);
+          setCameraName('');
+        }
+      }
+    };
+    
+    checkFixedLensCamera();
+    return () => { mounted = false; };
+  }, [item?.camera_equip_id]);
 
   useEffect(() => {
     let mounted = true;
@@ -118,7 +170,8 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
 
   const handleAdd = () => {
     if (!newDate || !newCount || Number(newCount) <= 0) return;
-    const lensVal = newLens.trim() || selectedLens || '';
+    // For fixed lens cameras, always use the fixed lens text
+    const lensVal = fixedLensInfo ? fixedLensInfo.text : (newLens.trim() || selectedLens || '');
     const last = logs[logs.length - 1] || {};
     const apertureVal = newAperture !== '' ? Number(newAperture) : (last.aperture ?? null);
     const shutterVal = newShutter || last.shutter_speed || '';
@@ -272,27 +325,49 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                 />
               </div>
               <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
-                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Lens</label>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <select
-                    className="fg-input"
-                    value={selectedLens}
-                    onChange={e => setSelectedLens(e.target.value)}
-                    style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
-                  >
-                    <option value="">Select...</option>
-                    {lensOptions.map(l => <option key={l} value={l}>{l}</option>)}
-                  </select>
-                  <input
-                    type="text"
-                    className="fg-input"
-                    value={newLens}
-                    onChange={e => setNewLens(e.target.value)}
-                    placeholder="Custom"
-                    style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
-                    onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                  />
-                </div>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>
+                  Lens {fixedLensInfo && <span style={{ opacity: 0.7 }}>(Fixed)</span>}
+                </label>
+                {fixedLensInfo ? (
+                  /* Fixed lens camera - show locked indicator */
+                  <div style={{ 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    gap: 8, 
+                    background: '#f0fdf4', 
+                    border: '1px solid #86efac', 
+                    borderRadius: 6, 
+                    padding: '8px 12px',
+                    height: 38,
+                    boxSizing: 'border-box'
+                  }}>
+                    <span style={{ fontSize: 14 }}>🔒</span>
+                    <span style={{ fontSize: 13, color: '#166534', fontWeight: 500 }}>{fixedLensInfo.text}</span>
+                    {cameraName && <span style={{ fontSize: 11, color: '#15803d', marginLeft: 'auto' }}>{cameraName}</span>}
+                  </div>
+                ) : (
+                  /* Normal lens selection */
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select
+                      className="fg-input"
+                      value={selectedLens}
+                      onChange={e => setSelectedLens(e.target.value)}
+                      style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
+                    >
+                      <option value="">Select...</option>
+                      {lensOptions.map(l => <option key={l} value={l}>{l}</option>)}
+                    </select>
+                    <input
+                      type="text"
+                      className="fg-input"
+                      value={newLens}
+                      onChange={e => setNewLens(e.target.value)}
+                      placeholder="Custom"
+                      style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
+                      onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                    />
+                  </div>
+                )}
               </div>
             </div>
             

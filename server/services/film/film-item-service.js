@@ -149,7 +149,7 @@ async function updateFilmItem(id, patch) {
     'expiry_date', 'batch_number', 'purchase_shipping_share', 'purchase_note',
     'develop_lab', 'develop_process', 'develop_price', 'develop_shipping',
     'develop_date', 'develop_channel', 'develop_note',
-    'loaded_camera', 'loaded_at', 'shot_at', 'sent_to_lab_at', 'developed_at', 'archived_at',
+    'loaded_camera', 'camera_equip_id', 'loaded_at', 'shot_at', 'sent_to_lab_at', 'developed_at', 'archived_at',
     'loaded_date', 'finished_date',
     'roll_id', 'negative_archived', 'shot_logs'
   ];
