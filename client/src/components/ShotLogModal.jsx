@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ModalDialog from './ModalDialog';
-import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCamera } from '../api';
+import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCamera, getCompatibleLenses } from '../api';
 
 const FALLBACK_LENSES = [
   '50mm f/1.8',
@@ -71,11 +71,11 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     }
   }, [item]);
 
-  // Detect fixed lens camera
+  // Detect fixed lens camera OR fetch compatible lenses for interchangeable lens cameras
   useEffect(() => {
     let mounted = true;
     
-    const checkFixedLensCamera = async () => {
+    const checkCameraAndLenses = async () => {
       if (!item?.camera_equip_id) {
         setFixedLensInfo(null);
         setCameraName('');
@@ -83,32 +83,53 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       }
       
       try {
-        const camera = await getCamera(item.camera_equip_id);
+        // Use getCompatibleLenses which returns camera info + compatible lenses
+        const result = await getCompatibleLenses(item.camera_equip_id);
         if (!mounted) return;
         
-        if (camera) {
-          setCameraName(`${camera.brand || ''} ${camera.model || ''}`.trim());
+        if (result.fixed_lens) {
+          // Fixed lens camera
+          const lensText = result.focal_length 
+            ? `${result.focal_length}mm${result.max_aperture ? ` f/${result.max_aperture}` : ''}`
+            : 'Fixed Lens';
           
-          if (camera.has_fixed_lens) {
-            const lensText = camera.fixed_lens_focal_length 
-              ? `${camera.fixed_lens_focal_length}mm${camera.fixed_lens_max_aperture ? ` f/${camera.fixed_lens_max_aperture}` : ''}`
-              : 'Fixed Lens';
+          setCameraName(result.camera_name || '');
+          setFixedLensInfo({
+            text: lensText,
+            focal_length: result.focal_length,
+            max_aperture: result.max_aperture
+          });
+          
+          // Auto-fill lens for new entries
+          setSelectedLens(lensText);
+          setNewLens('');
+        } else {
+          // Interchangeable lens camera - add compatible lenses to options
+          setFixedLensInfo(null);
+          setCameraName(result.camera_name || '');
+          
+          if (Array.isArray(result.lenses) && result.lenses.length > 0) {
+            // Format lenses as "Brand Model" or with focal length info
+            const compatibleLensNames = result.lenses.map(lens => {
+              const name = `${lens.brand || ''} ${lens.model || ''}`.trim();
+              if (lens.focal_length_min) {
+                const focalStr = lens.focal_length_min === lens.focal_length_max || !lens.focal_length_max
+                  ? `${lens.focal_length_min}mm`
+                  : `${lens.focal_length_min}-${lens.focal_length_max}mm`;
+                return name ? `${name} ${focalStr}` : focalStr;
+              }
+              return name;
+            }).filter(Boolean);
             
-            setFixedLensInfo({
-              text: lensText,
-              focal_length: camera.fixed_lens_focal_length,
-              max_aperture: camera.fixed_lens_max_aperture
+            // Add compatible lenses to the options (prioritized at top)
+            setLensOptions(prev => {
+              const combined = [...compatibleLensNames, ...prev];
+              return dedupeAndSort(combined);
             });
-            
-            // Auto-fill lens for new entries
-            setSelectedLens(lensText);
-            setNewLens('');
-          } else {
-            setFixedLensInfo(null);
           }
         }
       } catch (err) {
-        console.warn('Failed to fetch camera info for fixed lens check', err);
+        console.warn('Failed to fetch camera/lens info', err);
         if (mounted) {
           setFixedLensInfo(null);
           setCameraName('');
@@ -116,7 +137,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       }
     };
     
-    checkFixedLensCamera();
+    checkCameraAndLenses();
     return () => { mounted = false; };
   }, [item?.camera_equip_id]);
 

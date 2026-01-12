@@ -664,18 +664,21 @@ router.get('/suggestions', async (req, res) => {
 router.get('/compatible-lenses/:cameraId', async (req, res) => {
   try {
     const camera = await getAsync(`
-      SELECT mount, has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture 
+      SELECT id, brand, model, mount, has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture 
       FROM equip_cameras WHERE id = ?
     `, [req.params.cameraId]);
 
     if (!camera) {
       return res.status(404).json({ error: 'Camera not found' });
     }
+    
+    const cameraName = `${camera.brand || ''} ${camera.model || ''}`.trim();
 
     // If camera has fixed lens, return that info
     if (camera.has_fixed_lens) {
       return res.json({
         fixed_lens: true,
+        camera_name: cameraName,
         focal_length: camera.fixed_lens_focal_length,
         max_aperture: camera.fixed_lens_max_aperture,
         lenses: []
@@ -705,6 +708,7 @@ router.get('/compatible-lenses/:cameraId', async (req, res) => {
 
     res.json({
       fixed_lens: false,
+      camera_name: cameraName,
       camera_mount: camera.mount,
       lenses
     });

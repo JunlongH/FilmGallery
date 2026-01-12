@@ -7,7 +7,7 @@ import DraggableFab from '../components/DraggableFab';
 import ShotModeModal from '../components/ShotModeModal';
 import { parseISODate, toISODateString } from '../utils/date';
 import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations, getFilms } from '../api/filmItems';
-import { getCamera } from '../api/equipment';
+import { getCamera, getCompatibleLenses } from '../api/equipment';
 import { spacing, radius } from '../theme';
 
 function parseShotLog(raw) {
@@ -110,27 +110,47 @@ export default function ShotLogScreen({ route, navigation }) {
           }
         }
         
-        // Check if camera has fixed lens
+        // Check camera: fixed lens or get compatible lenses for interchangeable lens cameras
         if (base.camera_equip_id) {
           try {
-            const camera = await getCamera(base.camera_equip_id);
-            if (camera) {
-              setCameraName(`${camera.brand || ''} ${camera.model || ''}`.trim());
-              if (camera.has_fixed_lens) {
-                const fixedLensText = camera.fixed_lens_focal_length 
-                  ? `${camera.fixed_lens_focal_length}mm${camera.fixed_lens_max_aperture ? ` f/${camera.fixed_lens_max_aperture}` : ''}`
-                  : 'Fixed Lens';
-                setFixedLensInfo({
-                  text: fixedLensText,
-                  focal_length: camera.fixed_lens_focal_length,
-                  max_aperture: camera.fixed_lens_max_aperture
-                });
-                // Auto-fill lens for fixed lens cameras
-                setNewLens(fixedLensText);
+            const result = await getCompatibleLenses(base.camera_equip_id);
+            
+            if (result.fixed_lens) {
+              // Fixed lens camera
+              const fixedLensText = result.focal_length 
+                ? `${result.focal_length}mm${result.max_aperture ? ` f/${result.max_aperture}` : ''}`
+                : 'Fixed Lens';
+              setCameraName(result.camera_name || '');
+              setFixedLensInfo({
+                text: fixedLensText,
+                focal_length: result.focal_length,
+                max_aperture: result.max_aperture
+              });
+              // Auto-fill lens for fixed lens cameras
+              setNewLens(fixedLensText);
+            } else {
+              // Interchangeable lens camera - add compatible lenses to options
+              setCameraName(result.camera_name || '');
+              setFixedLensInfo(null);
+              
+              if (Array.isArray(result.lenses) && result.lenses.length > 0) {
+                const compatibleLensNames = result.lenses.map(lens => {
+                  const name = `${lens.brand || ''} ${lens.model || ''}`.trim();
+                  if (lens.focal_length_min) {
+                    const focalStr = lens.focal_length_min === lens.focal_length_max || !lens.focal_length_max
+                      ? `${lens.focal_length_min}mm`
+                      : `${lens.focal_length_min}-${lens.focal_length_max}mm`;
+                    return name ? `${name} ${focalStr}` : focalStr;
+                  }
+                  return name;
+                }).filter(Boolean);
+                
+                // Add compatible lenses to options (prioritized)
+                setLensOptions(prev => dedupeAndSort([...compatibleLensNames, ...prev]));
               }
             }
           } catch (e) {
-            console.warn('Failed to fetch camera info', e);
+            console.warn('Failed to fetch camera/lens info', e);
           }
         } else if (base.loaded_camera) {
           setCameraName(base.loaded_camera);
