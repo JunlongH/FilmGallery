@@ -266,7 +266,7 @@ router.get('/negatives', async (req, res) => {
 // update photo (adds tags support)
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, camera, lens, photographer, aperture, shutter_speed, iso, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
+  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, altitude, location_name, country, city, camera, lens, photographer, aperture, shutter_speed, iso, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
   console.log(`[PUT] Update photo ${id}`, req.body);
 
   const updates = [];
@@ -281,6 +281,10 @@ router.put('/:id', async (req, res) => {
   if (detail_location !== undefined) { updates.push('detail_location=?'); params.push(detail_location); }
   if (latitude !== undefined) { updates.push('latitude=?'); params.push(latitude); }
   if (longitude !== undefined) { updates.push('longitude=?'); params.push(longitude); }
+  if (altitude !== undefined) { updates.push('altitude=?'); params.push(altitude); }
+  if (location_name !== undefined) { updates.push('location_name=?'); params.push(location_name); }
+  if (country !== undefined) { updates.push('country=?'); params.push(country); }
+  if (city !== undefined) { updates.push('city=?'); params.push(city); }
   if (camera !== undefined) { updates.push('camera=?'); params.push(camera); }
   if (lens !== undefined) { updates.push('lens=?'); params.push(lens); }
   if (photographer !== undefined) { updates.push('photographer=?'); params.push(photographer); }

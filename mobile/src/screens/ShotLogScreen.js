@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { ActivityIndicator, Button, HelperText, IconButton, Text, TextInput, useTheme, FAB } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import DatePickerField from '../components/DatePickerField';
 import DraggableFab from '../components/DraggableFab';
 import ShotModeModal from '../components/ShotModeModal';
+import locationService from '../services/locationService.native';
 import { parseISODate, toISODateString } from '../utils/date';
 import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations, getFilms } from '../api/filmItems';
 import { getCamera, getCompatibleLenses } from '../api/equipment';
@@ -24,7 +26,9 @@ function parseShotLog(raw) {
         shutter_speed: entry.shutter_speed || '',
         country: entry.country || '',
         city: entry.city || '',
-        detail_location: entry.detail_location || ''
+        detail_location: entry.detail_location || '',
+        latitude: entry.latitude ?? null,
+        longitude: entry.longitude ?? null
       }))
       .filter(e => e.date && e.count > 0);
   } catch {
@@ -68,6 +72,11 @@ export default function ShotLogScreen({ route, navigation }) {
   const [showShotMode, setShowShotMode] = useState(false);
   const [filmIso, setFilmIso] = useState(400);
   const [didAutoOpen, setDidAutoOpen] = useState(false);
+  // Geolocation state
+  const [newLatitude, setNewLatitude] = useState(null);
+  const [newLongitude, setNewLongitude] = useState(null);
+  // Preloaded location for ShotModeModal - starts fetching when screen opens
+  const [preloadedLocation, setPreloadedLocation] = useState(null);
   // Fixed lens camera info
   const [fixedLensInfo, setFixedLensInfo] = useState(null);
   const [cameraName, setCameraName] = useState('');
@@ -92,6 +101,78 @@ export default function ShotLogScreen({ route, navigation }) {
   useEffect(() => {
     navigation.setOptions({ title: filmName ? `${filmName} Shot Log` : 'Shot Log' });
   }, [navigation, filmName]);
+
+  // Preload location when screen opens - this gives ShotModeModal a head start
+  useEffect(() => {
+    let mounted = true;
+    
+    const preloadLocation = async () => {
+      try {
+        // Use locationService for preloading - it now includes geocode
+        const result = await locationService.preloadLocation();
+        
+        if (!mounted) return;
+        
+        // Check if successful
+        if (result.success && result.coords) {
+          __DEV__ && console.log('[ShotLogScreen] Preloaded location:', result.source);
+          
+          // Use geocode from service if available
+          if (result.geocode && (result.geocode.country || result.geocode.city)) {
+            __DEV__ && console.log('[ShotLogScreen] Using geocode from service:', result.geocode);
+            setPreloadedLocation({
+              country: result.geocode.country || '',
+              city: result.geocode.city || '',
+              detail: result.geocode.detail || '',
+              latitude: result.coords.latitude,
+              longitude: result.coords.longitude,
+              altitude: result.coords.altitude
+            });
+          } else {
+            // Fallback: do our own reverse geocoding
+            try {
+              const [reverseEN] = await Location.reverseGeocodeAsync({
+                latitude: result.coords.latitude,
+                longitude: result.coords.longitude
+              }, { locale: 'en-US' }).catch(() => []);
+              
+              const addr = reverseEN?.[0] || {};
+              setPreloadedLocation({
+                country: addr.country || '',
+                city: addr.city || addr.subregion || '',
+                detail: '',
+                latitude: result.coords.latitude,
+                longitude: result.coords.longitude,
+                altitude: result.coords.altitude
+              });
+            } catch (e) {
+              // Reverse geocode failed, still save coords
+              setPreloadedLocation({
+                country: '',
+                city: '',
+                detail: '',
+                latitude: result.coords.latitude,
+                longitude: result.coords.longitude,
+                altitude: result.coords.altitude
+              });
+            }
+          }
+        } else {
+          __DEV__ && console.log('[ShotLogScreen] Preload failed:', result?.error);
+        }
+
+      } catch (e) {
+        console.warn('[ShotLogScreen] Location preload failed:', e);
+      }
+    };
+
+    preloadLocation();
+
+    return () => {
+      mounted = false;
+      locationService.stopWatch();
+    };
+  }, []);
 
   useEffect(() => {
     if (!loading && autoOpenShotMode && !didAutoOpen) {
@@ -211,6 +292,9 @@ export default function ShotLogScreen({ route, navigation }) {
       setNewCountry(data.location.country || '');
       setNewCity(data.location.city || '');
       setNewDetail(data.location.detail || '');
+      // Extract GPS coordinates
+      if (data.location.latitude != null) setNewLatitude(data.location.latitude);
+      if (data.location.longitude != null) setNewLongitude(data.location.longitude);
     }
     setNewDate(new Date().toISOString().split('T')[0]);
   };
@@ -270,7 +354,9 @@ export default function ShotLogScreen({ route, navigation }) {
         shutter_speed: shutterVal,
         country: newCountry || last.country || '',
         city: newCity || last.city || '',
-        detail_location: newDetail || last.detail_location || ''
+        detail_location: newDetail || last.detail_location || '',
+        latitude: newLatitude,
+        longitude: newLongitude
       }];
       return next.sort((a, b) => a.date.localeCompare(b.date));
     });
@@ -281,6 +367,9 @@ export default function ShotLogScreen({ route, navigation }) {
     setNewCountry(prev => prev || last.country || '');
     setNewCity(prev => prev || last.city || '');
     setNewDetail(prev => prev || last.detail_location || '');
+    // Reset coordinates for next entry
+    setNewLatitude(null);
+    setNewLongitude(null);
     setShowLensOptions(false);
     setShowCountryOptions(false);
     setShowCityOptions(false);
@@ -305,7 +394,9 @@ export default function ShotLogScreen({ route, navigation }) {
           shutter_speed: e.shutter_speed || '',
           country: e.country || '',
           city: e.city || '',
-          detail_location: e.detail_location || ''
+          detail_location: e.detail_location || '',
+          latitude: e.latitude ?? null,
+          longitude: e.longitude ?? null
         }));
       await updateFilmItem(itemId, { shot_logs: JSON.stringify(payload) });
       navigation.goBack();
@@ -389,6 +480,11 @@ export default function ShotLogScreen({ route, navigation }) {
               {(item.country || item.city || item.detail_location) ? (
                 <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
                   { [item.country, item.city].filter(Boolean).join(' / ') || '—' }{ item.detail_location ? ` · ${item.detail_location}` : '' }
+                </Text>
+              ) : null}
+              {item.latitude != null && item.longitude != null ? (
+                <Text variant="bodySmall" style={{ color: '#4ade80' }}>
+                  📍 {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
                 </Text>
               ) : null}
             </View>
@@ -627,9 +723,24 @@ export default function ShotLogScreen({ route, navigation }) {
           mode="outlined"
           value={newDetail}
           onChangeText={setNewDetail}
-          style={[styles.input, { marginBottom: spacing.md }]}
+          style={[styles.input, { marginBottom: spacing.xs }]}
           dense
         />
+        
+        {/* GPS Coordinates Indicator */}
+        {newLatitude != null && newLongitude != null ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md, paddingHorizontal: 4 }}>
+            <Text style={{ color: '#4ade80', fontSize: 13 }}>
+              📍 GPS: {newLatitude.toFixed(5)}, {newLongitude.toFixed(5)}
+            </Text>
+          </View>
+        ) : (
+          <View style={{ marginBottom: spacing.md, paddingHorizontal: 4 }}>
+            <Text style={{ color: theme.colors.onSurfaceVariant, fontSize: 12 }}>
+              💡 Use Shot Mode to capture GPS coordinates
+            </Text>
+          </View>
+        )}
 
         <Button
           mode="contained"
@@ -658,6 +769,7 @@ export default function ShotLogScreen({ route, navigation }) {
         filmIso={filmIso}
         forcePsMode={!!fixedLensInfo}
         forcedMaxAperture={fixedLensInfo?.max_aperture || null}
+        preloadedLocation={preloadedLocation}
       />
     </View>
   );

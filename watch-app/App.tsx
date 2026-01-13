@@ -11,6 +11,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StatusBar, StyleSheet } from 'react-native';
 import { api } from './src/services/api';
+import { startLocationWatch } from './src/services/location';
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
@@ -29,6 +30,11 @@ function App() {
   useEffect(() => {
     // Load server URL on app start
     api.loadServerURL();
+    
+    // Start location watch in background - so position is ready when user needs it
+    startLocationWatch().catch(err => {
+      console.log('[App] Location preload failed:', err);
+    });
   }, []);
 
   return (

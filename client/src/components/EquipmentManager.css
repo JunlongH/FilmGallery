@@ -338,6 +338,21 @@
   gap: 16px;
 }
 
+/* For 3-column inline rows */
+.form-row-inline:has(> :nth-child(3)) {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* Section headers in forms */
+.form-section-header {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  margin: 16px 0 8px 0;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
 .checkbox-row {
   flex-direction: row;
   align-items: center;

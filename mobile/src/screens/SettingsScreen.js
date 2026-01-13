@@ -144,6 +144,20 @@ export default function SettingsScreen({ navigation }) {
           Open Equipment Library
         </Button>
       </View>
+      
+      <View style={{ marginTop: 24 }}>
+        <Text style={styles.label}>Location Diagnostic (位置诊断)</Text>
+        <Text style={styles.hint}>Debug location issues on HyperOS/MIUI devices</Text>
+        <Button 
+          mode="outlined" 
+          onPress={() => navigation.navigate('LocationDiagnostic')} 
+          icon="crosshairs-gps"
+          textColor="#f59e0b"
+          style={{ marginTop: 8 }}
+        >
+          Open Location Diagnostic
+        </Button>
+      </View>
     </View>
   );
 }

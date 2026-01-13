@@ -83,7 +83,11 @@ router.get('/constants', (req, res) => {
     lensMounts: LENS_MOUNTS,
     focusTypes: ['manual', 'auto', 'hybrid'],
     conditions: ['mint', 'excellent', 'good', 'fair', 'poor'],
-    statuses: ['owned', 'sold', 'wishlist', 'borrowed']
+    statuses: ['owned', 'sold', 'wishlist', 'borrowed'],
+    // New specification constants (2026-01-12)
+    meterTypes: ['none', 'match-needle', 'center-weighted', 'matrix', 'spot', 'evaluative'],
+    shutterTypes: ['focal-plane', 'leaf', 'electronic', 'hybrid'],
+    magnificationRatios: ['1:1', '1:2', '1:3', '1:4', '1:5', '1:10']
   });
 });
 
@@ -189,6 +193,7 @@ router.post('/cameras', async (req, res) => {
       has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture, fixed_lens_min_aperture,
       has_built_in_flash, flash_gn,
       production_year_start, production_year_end,
+      meter_type, shutter_type, shutter_speed_min, shutter_speed_max, weight_g, battery_type,
       serial_number, purchase_date, purchase_price, condition, notes, status
     } = req.body;
 
@@ -200,14 +205,16 @@ router.post('/cameras', async (req, res) => {
         has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture, fixed_lens_min_aperture,
         has_built_in_flash, flash_gn,
         production_year_start, production_year_end,
+        meter_type, shutter_type, shutter_speed_min, shutter_speed_max, weight_g, battery_type,
         serial_number, purchase_date, purchase_price, condition, notes, status,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [
       name, brand || null, model || null, type || null, format_id || null, sub_format || null, mount || null,
       has_fixed_lens ? 1 : 0, fixed_lens_focal_length || null, fixed_lens_max_aperture || null, fixed_lens_min_aperture || null,
       has_built_in_flash ? 1 : 0, flash_gn || null,
       production_year_start || null, production_year_end || null,
+      meter_type || null, shutter_type || null, shutter_speed_min || null, shutter_speed_max || null, weight_g || null, battery_type || null,
       serial_number || null, purchase_date || null, purchase_price || null, condition || null, notes || null, status || 'owned'
     ]);
 
@@ -227,6 +234,7 @@ router.put('/cameras/:id', async (req, res) => {
       'has_fixed_lens', 'fixed_lens_focal_length', 'fixed_lens_max_aperture', 'fixed_lens_min_aperture',
       'has_built_in_flash', 'flash_gn',
       'production_year_start', 'production_year_end',
+      'meter_type', 'shutter_type', 'shutter_speed_min', 'shutter_speed_max', 'weight_g', 'battery_type',
       'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
     ];
 
@@ -360,9 +368,10 @@ router.post('/lenses', async (req, res) => {
   try {
     const {
       name, brand, model,
-      focal_length_min, focal_length_max, max_aperture, min_aperture,
+      focal_length_min, focal_length_max, max_aperture, min_aperture, max_aperture_tele,
       mount, focus_type, min_focus_distance, filter_size, weight_g,
       elements, groups, blade_count,
+      is_macro, magnification_ratio, image_stabilization,
       production_year_start, production_year_end,
       serial_number, purchase_date, purchase_price, condition, notes, status
     } = req.body;
@@ -372,18 +381,20 @@ router.post('/lenses', async (req, res) => {
     const result = await runAsync(`
       INSERT INTO equip_lenses (
         name, brand, model,
-        focal_length_min, focal_length_max, max_aperture, min_aperture,
+        focal_length_min, focal_length_max, max_aperture, min_aperture, max_aperture_tele,
         mount, focus_type, min_focus_distance, filter_size, weight_g,
         elements, groups, blade_count,
+        is_macro, magnification_ratio, image_stabilization,
         production_year_start, production_year_end,
         serial_number, purchase_date, purchase_price, condition, notes, status,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [
       name, brand || null, model || null,
-      focal_length_min || null, focal_length_max || null, max_aperture || null, min_aperture || null,
+      focal_length_min || null, focal_length_max || null, max_aperture || null, min_aperture || null, max_aperture_tele || null,
       mount || null, focus_type || 'manual', min_focus_distance || null, filter_size || null, weight_g || null,
       elements || null, groups || null, blade_count || null,
+      is_macro ? 1 : 0, magnification_ratio || null, image_stabilization ? 1 : 0,
       production_year_start || null, production_year_end || null,
       serial_number || null, purchase_date || null, purchase_price || null, condition || null, notes || null, status || 'owned'
     ]);
@@ -401,9 +412,10 @@ router.put('/lenses/:id', async (req, res) => {
     const { id } = req.params;
     const fields = [
       'name', 'brand', 'model',
-      'focal_length_min', 'focal_length_max', 'max_aperture', 'min_aperture',
+      'focal_length_min', 'focal_length_max', 'max_aperture', 'min_aperture', 'max_aperture_tele',
       'mount', 'focus_type', 'min_focus_distance', 'filter_size', 'weight_g',
       'elements', 'groups', 'blade_count',
+      'is_macro', 'magnification_ratio', 'image_stabilization',
       'production_year_start', 'production_year_end',
       'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
     ];
@@ -414,7 +426,12 @@ router.put('/lenses/:id', async (req, res) => {
     for (const field of fields) {
       if (req.body[field] !== undefined) {
         updates.push(`${field} = ?`);
-        params.push(req.body[field]);
+        let value = req.body[field];
+        // Handle boolean fields
+        if (field === 'is_macro' || field === 'image_stabilization') {
+          value = value ? 1 : 0;
+        }
+        params.push(value);
       }
     }
 

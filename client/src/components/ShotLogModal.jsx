@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import ModalDialog from './ModalDialog';
 import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCamera, getCompatibleLenses } from '../api';
+import { searchAddress, getCityCoordinates } from '../utils/geocoding';
 
 const FALLBACK_LENSES = [
   '50mm f/1.8',
@@ -37,6 +38,14 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const [fixedLensInfo, setFixedLensInfo] = useState(null); // { text, focal_length, max_aperture }
   const [cameraName, setCameraName] = useState('');
   const [cameraMount, setCameraMount] = useState('');
+  
+  // Geolocation state
+  const [newLatitude, setNewLatitude] = useState(null);
+  const [newLongitude, setNewLongitude] = useState(null);
+  const [geoSearchQuery, setGeoSearchQuery] = useState('');
+  const [geoSearchResults, setGeoSearchResults] = useState([]);
+  const [geoSearching, setGeoSearching] = useState(false);
+  const [showGeoResults, setShowGeoResults] = useState(false);
 
   // Format lens for display
   const formatLensDisplay = (lens) => {
@@ -230,7 +239,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       shutter_speed: shutterVal,
       country: newCountry || last.country || '',
       city: newCity || last.city || '',
-      detail_location: newDetail || last.detail_location || ''
+      detail_location: newDetail || last.detail_location || '',
+      // Include coordinates if available
+      latitude: newLatitude,
+      longitude: newLongitude
     };
 
     const updatedLogs = [...logs, entry].sort((a, b) => a.date.localeCompare(b.date));
@@ -243,6 +255,63 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     setNewCountry(entry.country || '');
     setNewCity(entry.city || '');
     setNewDetail(entry.detail_location || '');
+    // Reset coordinates for next entry
+    setNewLatitude(null);
+    setNewLongitude(null);
+  };
+
+  // Geocoding: search for address and get coordinates
+  const handleGeoSearch = async () => {
+    const query = newDetail.trim();
+    if (!query) return;
+    setGeoSearching(true);
+    setShowGeoResults(true);
+    try {
+      const results = await searchAddress(query, { limit: 5 });
+      setGeoSearchResults(results);
+      if (results.length === 0) {
+        console.log('Geocoding: no results for query:', query);
+      }
+    } catch (err) {
+      console.error('Geocoding search failed:', err);
+      setGeoSearchResults([]);
+    } finally {
+      setGeoSearching(false);
+    }
+  };
+
+  // Select a geocoding result
+  const handleSelectGeoResult = (result) => {
+    setNewLatitude(result.latitude);
+    setNewLongitude(result.longitude);
+    if (result.country) setNewCountry(result.country);
+    if (result.city) setNewCity(result.city);
+    // Build detail from road + house number
+    const detailParts = [result.road, result.houseNumber].filter(Boolean);
+    if (detailParts.length > 0) {
+      setNewDetail(detailParts.join(' '));
+    }
+    setShowGeoResults(false);
+    setGeoSearchQuery('');
+  };
+
+  // Auto-fill coordinates from country/city when no specific address
+  const handleAutoFillCoordinates = async () => {
+    if (newLatitude && newLongitude) return; // Already have coordinates
+    if (!newCountry && !newCity) return; // Nothing to search for
+    
+    setGeoSearching(true);
+    try {
+      const coords = await getCityCoordinates(newCountry, newCity);
+      if (coords) {
+        setNewLatitude(coords.latitude);
+        setNewLongitude(coords.longitude);
+      }
+    } catch (err) {
+      console.error('Auto-fill coordinates failed:', err);
+    } finally {
+      setGeoSearching(false);
+    }
   };
 
   const handleRemoveIndex = (index) => {
@@ -479,22 +548,112 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   ))}
                 </datalist>
               </div>
-              <div className="fg-field" style={{ flex: 1.2, minWidth: 0 }}>
-                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Detail</label>
-                <input
-                  type="text"
-                  className="fg-input"
-                  value={newDetail}
-                  onChange={e => setNewDetail(e.target.value)}
-                  placeholder="e.g. North Gate"
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
-                  onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                />
+              <div className="fg-field" style={{ flex: 1.2, minWidth: 0, position: 'relative' }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>
+                  Detail / Address
+                  {newLatitude && newLongitude && (
+                    <span style={{ marginLeft: 8, color: '#4ade80', fontSize: 11 }}>
+                      📍 {newLatitude.toFixed(5)}, {newLongitude.toFixed(5)}
+                    </span>
+                  )}
+                </label>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <input
+                    type="text"
+                    className="fg-input"
+                    value={newDetail}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setNewDetail(val);
+                      setGeoSearchQuery(val);
+                    }}
+                    placeholder="Search address or type detail"
+                    style={{ background: '#fff', height: 38, border: 'none', fontSize: 13, flex: 1 }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newDetail.length > 3) {
+                          handleGeoSearch();
+                        } else {
+                          handleAdd();
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGeoSearch}
+                    disabled={geoSearching || !newDetail.trim()}
+                    style={{ height: 38, padding: '0 10px', background: '#fff', border: 'none', borderRadius: 6, cursor: geoSearching || !newDetail.trim() ? 'not-allowed' : 'pointer', fontSize: 16, opacity: geoSearching || !newDetail.trim() ? 0.5 : 1 }}
+                    title="Search address for GPS coordinates"
+                  >
+                    {geoSearching ? '⏳' : '🔍'}
+                  </button>
+                </div>
+                {/* Geocoding results dropdown */}
+                {showGeoResults && geoSearchResults.length > 0 && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: '#fff',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    zIndex: 100,
+                    maxHeight: 200,
+                    overflowY: 'auto',
+                    marginTop: 4
+                  }}>
+                    {geoSearchResults.map((r, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => handleSelectGeoResult(r)}
+                        style={{
+                          padding: '10px 12px',
+                          cursor: 'pointer',
+                          borderBottom: idx < geoSearchResults.length - 1 ? '1px solid #e5e7eb' : 'none',
+                          fontSize: 13,
+                          color: '#1f2937'
+                        }}
+                        onMouseEnter={e => e.target.style.background = '#f3f4f6'}
+                        onMouseLeave={e => e.target.style.background = '#fff'}
+                      >
+                        <div style={{ fontWeight: 500 }}>{r.city || r.state}, {r.country}</div>
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{r.displayName}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {showGeoResults && geoSearchResults.length === 0 && !geoSearching && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    background: '#fff',
+                    borderRadius: 8,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    zIndex: 100,
+                    padding: '10px 12px',
+                    marginTop: 4,
+                    fontSize: 13,
+                    color: '#6b7280'
+                  }}>
+                    No results found. Try a different search term.
+                  </div>
+                )}
               </div>
               <button 
                 type="button" 
                 className="fg-btn" 
-                onClick={handleAdd}
+                onClick={() => {
+                  // Auto-fill coordinates if not set
+                  if (!newLatitude && !newLongitude && (newCountry || newCity)) {
+                    handleAutoFillCoordinates();
+                  }
+                  handleAdd();
+                }}
                 disabled={!newCount}
                 style={{ height: 38, padding: '0 20px', fontSize: 13, fontWeight: 600, background: '#fff', color: '#667eea', border: 'none', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', whiteSpace: 'nowrap' }}
               >
@@ -533,7 +692,14 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     <div style={{ fontSize: 13 }}>{entry.shutter_speed ? `s${entry.shutter_speed}` : '-'}</div>
                     <div style={{ fontSize: 13 }}>{entry.lens || '-'}</div>
                     <div style={{ fontSize: 13 }}>{[entry.country, entry.city].filter(Boolean).join(' / ') || '-'}</div>
-                    <div style={{ fontSize: 13 }}>{entry.detail_location || '-'}</div>
+                    <div style={{ fontSize: 13 }}>
+                      {entry.detail_location || '-'}
+                      {entry.latitude && entry.longitude && (
+                        <div style={{ fontSize: 11, color: '#4ade80', marginTop: 2 }}>
+                          📍 {entry.latitude.toFixed(5)}, {entry.longitude.toFixed(5)}
+                        </div>
+                      )}
+                    </div>
                     <button
                       className="fg-btn"
                       style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#ef4444', padding: '6px 10px' }}

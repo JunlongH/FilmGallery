@@ -24,6 +24,7 @@ import ShotLogScreen from './src/screens/ShotLogScreen';
 import StatsScreen from './src/screens/StatsScreen';
 import EquipmentScreen from './src/screens/EquipmentScreen';
 import EquipmentRollsScreen from './src/screens/EquipmentRollsScreen';
+import LocationDiagnosticScreen from './src/screens/LocationDiagnosticScreen';
 import { ApiContext } from './src/context/ApiContext';
 import { configureAxios } from './src/setupAxios';
 import appTheme, { appDarkTheme } from './src/theme';
@@ -157,6 +158,11 @@ export default function App() {
               name="EquipmentRolls" 
               component={EquipmentRollsScreen} 
               options={({ route }) => ({ title: route.params?.name || 'Equipment Rolls' })}
+            />
+            <Stack.Screen 
+              name="LocationDiagnostic" 
+              component={LocationDiagnosticScreen} 
+              options={{ title: '位置诊断' }}
             />
           </Stack.Navigator>
           <StatusBar style={darkMode ? 'light' : 'dark'} />

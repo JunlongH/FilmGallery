@@ -28,17 +28,51 @@ const ShotLogLocationScreen: React.FC = () => {
   const [country, setCountry] = useState('');
   const [city, setCity] = useState('');
   const [detailLocation, setDetailLocation] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
   const [detecting, setDetecting] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleAutoDetect = async () => {
     try {
       setDetecting(true);
+      console.log('[ShotLogLocation] Starting auto-detect...');
       const location = await autoDetectLocation();
-      if (location.country) setCountry(location.country);
-      if (location.city) setCity(location.city);
-      if (location.detail_location) setDetailLocation(location.detail_location);
+      console.log('[ShotLogLocation] Auto-detect result:', JSON.stringify(location));
+      
+      // Always set coordinates if available
+      if (location.latitude !== undefined) {
+        setLatitude(location.latitude.toFixed(6));
+        console.log('[ShotLogLocation] Set latitude:', location.latitude);
+      }
+      if (location.longitude !== undefined) {
+        setLongitude(location.longitude.toFixed(6));
+        console.log('[ShotLogLocation] Set longitude:', location.longitude);
+      }
+      
+      // Set geocoded address fields
+      if (location.country) {
+        setCountry(location.country);
+        console.log('[ShotLogLocation] Set country:', location.country);
+      }
+      if (location.city) {
+        setCity(location.city);
+        console.log('[ShotLogLocation] Set city:', location.city);
+      }
+      if (location.detail_location) {
+        setDetailLocation(location.detail_location);
+        console.log('[ShotLogLocation] Set detail:', location.detail_location);
+      }
+      
+      // If no geocode data, show alert
+      if (!location.country && !location.city && !location.detail_location) {
+        Alert.alert(
+          'Coordinates Found',
+          `Got coordinates but reverse geocoding failed.\n\nPlease check internet connection or enter address manually.`
+        );
+      }
     } catch (error: any) {
+      console.error('[ShotLogLocation] Auto-detect error:', error);
       Alert.alert('Error', error.message || 'Failed to detect location');
     } finally {
       setDetecting(false);
@@ -70,6 +104,8 @@ const ShotLogLocationScreen: React.FC = () => {
         country: country || undefined,
         city: city || undefined,
         detail_location: detailLocation || undefined,
+        latitude: latitude ? parseFloat(latitude) : undefined,
+        longitude: longitude ? parseFloat(longitude) : undefined,
       };
 
       // Add to existing logs
@@ -142,9 +178,36 @@ const ShotLogLocationScreen: React.FC = () => {
           style={styles.input}
           value={detailLocation}
           onChangeText={setDetailLocation}
-          placeholder="Optional"
+          placeholder="Street, building, etc."
           placeholderTextColor="#666"
         />
+      </View>
+
+      <View style={styles.coordRow}>
+        <View style={styles.coordSection}>
+          <Text style={styles.label}>Latitude</Text>
+          <TextInput
+            style={styles.coordInput}
+            value={latitude}
+            onChangeText={setLatitude}
+            placeholder="--"
+            placeholderTextColor="#666"
+            keyboardType="numeric"
+            editable={false}
+          />
+        </View>
+        <View style={styles.coordSection}>
+          <Text style={styles.label}>Longitude</Text>
+          <TextInput
+            style={styles.coordInput}
+            value={longitude}
+            onChangeText={setLongitude}
+            placeholder="--"
+            placeholderTextColor="#666"
+            keyboardType="numeric"
+            editable={false}
+          />
+        </View>
       </View>
 
       <TouchableOpacity
@@ -221,6 +284,25 @@ const styles = StyleSheet.create({
     padding: 12,
     color: '#fff',
     fontSize: 14,
+  },
+  coordRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  coordSection: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  coordInput: {
+    backgroundColor: '#1a1a1a',
+    borderWidth: 1,
+    borderColor: '#333',
+    borderRadius: 8,
+    padding: 10,
+    color: '#888',
+    fontSize: 12,
+    textAlign: 'center',
   },
   saveButton: {
     backgroundColor: '#4CAF50',

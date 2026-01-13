@@ -33,18 +33,26 @@ export default function EquipmentScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
   
-  // Add dialog
+  // Add dialog - common fields
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addBrand, setAddBrand] = useState('');
   const [addModel, setAddModel] = useState('');
   const [addMount, setAddMount] = useState('');
   const [addType, setAddType] = useState('SLR');
+  
+  // Add dialog - lens-specific fields
+  const [addFocalMin, setAddFocalMin] = useState('');
+  const [addFocalMax, setAddFocalMax] = useState('');
+  const [addMaxAperture, setAddMaxAperture] = useState('');
+  const [addMaxApertureTele, setAddMaxApertureTele] = useState('');
+  const [addFilterSize, setAddFilterSize] = useState('');
+  const [addIsMacro, setAddIsMacro] = useState(false);
 
   // Delete dialog
   const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
-    navigation.setOptions({ title: 'Equipment Library' });
+    navigation.setOptions({ title: 'Equipments' });
   }, [navigation]);
 
   const fetchItems = useCallback(async () => {
@@ -85,19 +93,33 @@ export default function EquipmentScreen({ navigation }) {
       let newItem;
       if (tab === 'camera') {
         newItem = await createCamera({ 
+          name: `${addBrand.trim()} ${addModel.trim()}`,
           brand: addBrand.trim(), 
           model: addModel.trim(),
-          camera_type: addType,
+          type: addType,
           mount: addMount.trim() || null
         });
       } else if (tab === 'lens') {
+        const focalMin = parseFloat(addFocalMin) || null;
+        const focalMax = parseFloat(addFocalMax) || focalMin; // Default to min if not specified
+        const maxAp = parseFloat(addMaxAperture) || null;
+        const maxApTele = parseFloat(addMaxApertureTele) || null;
+        
         newItem = await createLens({ 
+          name: `${addBrand.trim()} ${addModel.trim()}`,
           brand: addBrand.trim(), 
           model: addModel.trim(),
-          mount: addMount.trim() || null
+          mount: addMount.trim() || null,
+          focal_length_min: focalMin,
+          focal_length_max: focalMax,
+          max_aperture: maxAp,
+          max_aperture_tele: maxApTele,
+          filter_size: parseFloat(addFilterSize) || null,
+          is_macro: addIsMacro ? 1 : 0
         });
       } else if (tab === 'flash') {
         newItem = await createFlash({ 
+          name: `${addBrand.trim()} ${addModel.trim()}`,
           brand: addBrand.trim(), 
           model: addModel.trim()
         });
@@ -110,9 +132,17 @@ export default function EquipmentScreen({ navigation }) {
       console.error('Failed to create equipment:', err);
     }
     
+    // Reset all fields
     setShowAddDialog(false);
     setAddBrand('');
     setAddModel('');
+    setAddMount('');
+    setAddFocalMin('');
+    setAddFocalMax('');
+    setAddMaxAperture('');
+    setAddMaxApertureTele('');
+    setAddFilterSize('');
+    setAddIsMacro(false);
     setAddMount('');
   };
 
@@ -143,9 +173,9 @@ export default function EquipmentScreen({ navigation }) {
   });
 
   const renderItem = ({ item }) => {
-    // Display title: films use brand+name, equipment uses brand+model
+    // Display title: films use name only (already contains full info), equipment uses brand+model
     const displayTitle = tab === 'film' 
-      ? `${item.brand || ''} ${item.name || ''}`.trim() 
+      ? item.name || '' 
       : `${item.brand || ''} ${item.model || ''}`.trim();
     
     // Build subtitle and tags
@@ -153,17 +183,28 @@ export default function EquipmentScreen({ navigation }) {
     let tags = [];
     
     if (tab === 'camera') {
-      subtitle = item.camera_type || '';
+      subtitle = item.camera_type || item.type || '';
       if (item.mount) tags.push(item.mount);
       if (item.has_fixed_lens) tags.push('Fixed Lens');
+      if (item.meter_type && item.meter_type !== 'none') tags.push(item.meter_type);
+      if (item.production_year_start) tags.push(`${item.production_year_start}`);
     } else if (tab === 'lens') {
+      // Focal length display
       if (item.focal_length_min) {
-        subtitle = item.focal_length_min === item.focal_length_max || !item.focal_length_max
-          ? `${item.focal_length_min}mm`
-          : `${item.focal_length_min}-${item.focal_length_max}mm`;
+        const isZoom = item.focal_length_max && item.focal_length_min !== item.focal_length_max;
+        subtitle = isZoom
+          ? `${item.focal_length_min}-${item.focal_length_max}mm`
+          : `${item.focal_length_min}mm`;
+      }
+      // Aperture display (show variable if applicable)
+      if (item.max_aperture) {
+        const isVariable = item.max_aperture_tele && item.max_aperture !== item.max_aperture_tele;
+        tags.push(isVariable ? `f/${item.max_aperture}-${item.max_aperture_tele}` : `f/${item.max_aperture}`);
       }
       if (item.mount) tags.push(item.mount);
-      if (item.max_aperture) tags.push(`f/${item.max_aperture}`);
+      if (item.is_macro) tags.push('Macro');
+      if (item.image_stabilization) tags.push('IS');
+      if (item.filter_size) tags.push(`⌀${item.filter_size}`);
     } else if (tab === 'flash') {
       if (item.guide_number) subtitle = `GN${item.guide_number}`;
       if (item.ttl_compatible) tags.push('TTL');
@@ -300,45 +341,113 @@ export default function EquipmentScreen({ navigation }) {
 
       {/* Add Dialog */}
       <Portal>
-        <Dialog visible={showAddDialog} onDismiss={() => setShowAddDialog(false)}>
+        <Dialog visible={showAddDialog} onDismiss={() => setShowAddDialog(false)} style={styles.addDialog}>
           <Dialog.Title>Add {tab === 'camera' ? 'Camera' : tab === 'lens' ? 'Lens' : tab === 'flash' ? 'Flash' : 'Film'}</Dialog.Title>
-          <Dialog.Content>
-            <TextInput
-              label="Brand"
-              mode="outlined"
-              value={addBrand}
-              onChangeText={setAddBrand}
-              style={styles.dialogInput}
-            />
-            <TextInput
-              label="Model"
-              mode="outlined"
-              value={addModel}
-              onChangeText={setAddModel}
-              style={styles.dialogInput}
-            />
-            {(tab === 'camera' || tab === 'lens') && (
+          <Dialog.ScrollArea style={styles.dialogScrollArea}>
+            <View style={styles.dialogContent}>
               <TextInput
-                label="Mount (e.g., Nikon F, Canon EF)"
+                label="Brand"
                 mode="outlined"
-                value={addMount}
-                onChangeText={setAddMount}
+                value={addBrand}
+                onChangeText={setAddBrand}
                 style={styles.dialogInput}
               />
-            )}
-            {tab === 'camera' && (
-              <SegmentedButtons
-                value={addType}
-                onValueChange={setAddType}
-                buttons={[
-                  { value: 'SLR', label: 'SLR' },
-                  { value: 'Rangefinder', label: 'RF' },
-                  { value: 'Point-and-Shoot', label: 'P&S' },
-                ]}
-                style={{ marginTop: spacing.sm }}
+              <TextInput
+                label="Model"
+                mode="outlined"
+                value={addModel}
+                onChangeText={setAddModel}
+                style={styles.dialogInput}
               />
-            )}
-          </Dialog.Content>
+              {(tab === 'camera' || tab === 'lens') && (
+                <TextInput
+                  label="Mount (e.g., Nikon F, Canon EF)"
+                  mode="outlined"
+                  value={addMount}
+                  onChangeText={setAddMount}
+                  style={styles.dialogInput}
+                />
+              )}
+              {tab === 'camera' && (
+                <SegmentedButtons
+                  value={addType}
+                  onValueChange={setAddType}
+                  buttons={[
+                    { value: 'SLR', label: 'SLR' },
+                    { value: 'Rangefinder', label: 'RF' },
+                    { value: 'Point-and-Shoot', label: 'P&S' },
+                  ]}
+                  style={{ marginTop: spacing.sm }}
+                />
+              )}
+              {/* Lens-specific fields */}
+              {tab === 'lens' && (
+                <>
+                  <View style={styles.dialogRow}>
+                    <TextInput
+                      label="Focal Min (mm)"
+                      mode="outlined"
+                      value={addFocalMin}
+                      onChangeText={setAddFocalMin}
+                      keyboardType="numeric"
+                      style={[styles.dialogInput, styles.dialogInputHalf]}
+                    />
+                    <TextInput
+                      label="Focal Max (mm)"
+                      mode="outlined"
+                      value={addFocalMax}
+                      onChangeText={setAddFocalMax}
+                      keyboardType="numeric"
+                      placeholder="Same for prime"
+                      style={[styles.dialogInput, styles.dialogInputHalf]}
+                    />
+                  </View>
+                  <View style={styles.dialogRow}>
+                    <TextInput
+                      label="Max Aperture (f/)"
+                      mode="outlined"
+                      value={addMaxAperture}
+                      onChangeText={setAddMaxAperture}
+                      keyboardType="decimal-pad"
+                      placeholder="e.g., 2.8"
+                      style={[styles.dialogInput, styles.dialogInputHalf]}
+                    />
+                    <TextInput
+                      label="@ Tele (f/)"
+                      mode="outlined"
+                      value={addMaxApertureTele}
+                      onChangeText={setAddMaxApertureTele}
+                      keyboardType="decimal-pad"
+                      placeholder="For variable"
+                      style={[styles.dialogInput, styles.dialogInputHalf]}
+                    />
+                  </View>
+                  <View style={styles.dialogRow}>
+                    <TextInput
+                      label="Filter ⌀ (mm)"
+                      mode="outlined"
+                      value={addFilterSize}
+                      onChangeText={setAddFilterSize}
+                      keyboardType="numeric"
+                      placeholder="e.g., 52"
+                      style={[styles.dialogInput, styles.dialogInputHalf]}
+                    />
+                    <TouchableOpacity 
+                      style={[styles.checkboxRow, styles.dialogInputHalf]}
+                      onPress={() => setAddIsMacro(!addIsMacro)}
+                    >
+                      <MaterialCommunityIcons 
+                        name={addIsMacro ? 'checkbox-marked' : 'checkbox-blank-outline'} 
+                        size={24} 
+                        color={theme.colors.primary} 
+                      />
+                      <Text style={styles.checkboxLabel}>Macro</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </Dialog.ScrollArea>
           <Dialog.Actions>
             <Button onPress={() => setShowAddDialog(false)}>Cancel</Button>
             <Button onPress={handleAdd}>Add</Button>
@@ -462,5 +571,32 @@ const styles = StyleSheet.create({
   },
   dialogInput: {
     marginBottom: spacing.sm,
+  },
+  addDialog: {
+    maxHeight: '80%',
+  },
+  dialogScrollArea: {
+    paddingHorizontal: 0,
+  },
+  dialogContent: {
+    paddingHorizontal: 24,
+  },
+  dialogRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  dialogInputHalf: {
+    flex: 1,
+  },
+  checkboxRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+  },
+  checkboxLabel: {
+    fontSize: 14,
+    color: '#374151',
   },
 });

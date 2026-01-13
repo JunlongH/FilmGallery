@@ -60,9 +60,9 @@ export default function InventoryScreen({ navigation }) {
 
   const renderItem = ({ item }) => {
     const film = filmById.get(item.film_id) || null;
-    // Build film name with brand if available
+    // Film name already contains full information (brand + model)
     const filmName = film 
-      ? (film.brand ? `${film.brand} ${film.name}` : film.name) 
+      ? (film.name || film.brand || 'Unknown Film') 
       : `Film #${item.film_id || ''}`;
     // Build subtitle with format and ISO
     const filmMeta = film 

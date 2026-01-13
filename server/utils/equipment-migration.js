@@ -22,18 +22,18 @@ function log(msg) {
 }
 
 /**
- * Camera types enum
+ * Camera types enum - Display-friendly names
  */
 const CAMERA_TYPES = [
-  'slr',           // Single Lens Reflex (单反)
-  'rangefinder',   // Rangefinder (旁轴)
-  'point_and_shoot', // PS机/傻瓜机
-  'tlr',           // Twin Lens Reflex (双反)
-  'medium_format', // Medium Format (中画幅)
-  'large_format',  // Large Format (大画幅)
-  'instant',       // Instant Camera (拍立得)
-  'half_frame',    // Half Frame (半格)
-  'other'
+  'SLR',           // Single Lens Reflex (单反)
+  'Rangefinder',   // Rangefinder (旁轴)
+  'P&S',           // Point & Shoot / PS机/傻瓜机
+  'TLR',           // Twin Lens Reflex (双反)
+  'Medium Format', // Medium Format (中画幅)
+  'Large Format',  // Large Format (大画幅)
+  'Instant',       // Instant Camera (拍立得)
+  'Half Frame',    // Half Frame (半格)
+  'Other'
 ];
 
 /**
@@ -197,6 +197,26 @@ function runEquipmentMigration() {
       )`);
       log('Lenses table ready');
 
+      // ========================================
+      // 2b. ADD NEW LENS SPECIFICATION COLUMNS (2026-01-12)
+      // ========================================
+      await run(`ALTER TABLE equip_lenses ADD COLUMN max_aperture_tele REAL`);
+      await run(`ALTER TABLE equip_lenses ADD COLUMN is_macro INTEGER DEFAULT 0`);
+      await run(`ALTER TABLE equip_lenses ADD COLUMN magnification_ratio TEXT`);
+      await run(`ALTER TABLE equip_lenses ADD COLUMN image_stabilization INTEGER DEFAULT 0`);
+      log('Lens specification columns added');
+
+      // ========================================
+      // 2c. ADD NEW CAMERA SPECIFICATION COLUMNS (2026-01-12)
+      // ========================================
+      await run(`ALTER TABLE equip_cameras ADD COLUMN meter_type TEXT`);
+      await run(`ALTER TABLE equip_cameras ADD COLUMN shutter_type TEXT`);
+      await run(`ALTER TABLE equip_cameras ADD COLUMN shutter_speed_min TEXT`);
+      await run(`ALTER TABLE equip_cameras ADD COLUMN shutter_speed_max TEXT`);
+      await run(`ALTER TABLE equip_cameras ADD COLUMN weight_g REAL`);
+      await run(`ALTER TABLE equip_cameras ADD COLUMN battery_type TEXT`);
+      log('Camera specification columns added');
+
       // Flashes table
       await run(`CREATE TABLE IF NOT EXISTS equip_flashes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -236,6 +256,17 @@ function runEquipmentMigration() {
       await run(`ALTER TABLE photos ADD COLUMN camera_equip_id INTEGER REFERENCES equip_cameras(id)`);
       await run(`ALTER TABLE photos ADD COLUMN lens_equip_id INTEGER REFERENCES equip_lenses(id)`);
       await run(`ALTER TABLE photos ADD COLUMN flash_equip_id INTEGER REFERENCES equip_flashes(id)`);
+
+      // ========================================
+      // 3b. ADD GEOLOCATION COLUMNS TO PHOTOS (2026-01-13)
+      // ========================================
+      await run(`ALTER TABLE photos ADD COLUMN latitude REAL`);
+      await run(`ALTER TABLE photos ADD COLUMN longitude REAL`);
+      await run(`ALTER TABLE photos ADD COLUMN altitude REAL`);
+      await run(`ALTER TABLE photos ADD COLUMN location_name TEXT`);
+      await run(`ALTER TABLE photos ADD COLUMN country TEXT`);
+      await run(`ALTER TABLE photos ADD COLUMN city TEXT`);
+      log('Photo geolocation columns added');
 
       // Add format_id to films table
       await run(`ALTER TABLE films ADD COLUMN format_id INTEGER REFERENCES ref_film_formats(id)`);

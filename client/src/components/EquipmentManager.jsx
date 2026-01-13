@@ -212,7 +212,7 @@ export default function EquipmentManager() {
                   )}
                   <div className="equip-list-info">
                     <div className="equip-list-name">
-                      {activeTab === 'films' && item.brand ? `${item.brand} ` : ''}{item.name}
+                      {item.name}
                     </div>
                     {activeTab === 'films' ? (
                       <div className="equip-list-brand">ISO {item.iso} • {item.format || '135'}</div>
@@ -390,20 +390,76 @@ function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
               {item.flash_gn && <DetailRow label="Flash GN" value={item.flash_gn} />}
             </>
           )}
+          {/* Camera technical specs */}
+          {type === 'cameras' && (
+            <>
+              {item.meter_type && <DetailRow label="Meter" value={item.meter_type} />}
+              {item.shutter_type && <DetailRow label="Shutter" value={item.shutter_type} />}
+              {(item.shutter_speed_min || item.shutter_speed_max) && (
+                <DetailRow 
+                  label="Shutter Range" 
+                  value={`${item.shutter_speed_min || '?'} - ${item.shutter_speed_max || '?'}`} 
+                />
+              )}
+              {item.weight_g && <DetailRow label="Weight" value={`${item.weight_g}g`} />}
+              {item.battery_type && <DetailRow label="Battery" value={item.battery_type} />}
+              {(item.production_year_start || item.production_year_end) && (
+                <DetailRow 
+                  label="Production" 
+                  value={item.production_year_end 
+                    ? `${item.production_year_start || '?'} - ${item.production_year_end}` 
+                    : `${item.production_year_start} - present`
+                  } 
+                />
+              )}
+            </>
+          )}
           
           {/* Lens-specific */}
-          {item.focal_length_min && (
-            <DetailRow 
-              label="Focal Length" 
-              value={item.focal_length_min === item.focal_length_max 
-                ? `${item.focal_length_min}mm` 
-                : `${item.focal_length_min}-${item.focal_length_max}mm`
-              } 
-            />
+          {type === 'lenses' && (
+            <>
+              {item.focal_length_min && (
+                <DetailRow 
+                  label="Focal Length" 
+                  value={item.focal_length_min === item.focal_length_max || !item.focal_length_max
+                    ? `${item.focal_length_min}mm (Prime)` 
+                    : `${item.focal_length_min}-${item.focal_length_max}mm (Zoom)`
+                  } 
+                />
+              )}
+              {item.max_aperture && (
+                <DetailRow 
+                  label="Max Aperture" 
+                  value={item.max_aperture_tele && item.max_aperture !== item.max_aperture_tele
+                    ? `f/${item.max_aperture}-${item.max_aperture_tele} (Variable)`
+                    : `f/${item.max_aperture} (Constant)`
+                  } 
+                />
+              )}
+              {item.min_aperture && <DetailRow label="Min Aperture" value={`f/${item.min_aperture}`} />}
+              {item.blade_count && <DetailRow label="Aperture Blades" value={item.blade_count} />}
+              {item.focus_type && <DetailRow label="Focus" value={item.focus_type} />}
+              {item.min_focus_distance && <DetailRow label="Min Focus" value={`${item.min_focus_distance}m`} />}
+              {item.filter_size && <DetailRow label="Filter Size" value={`⌀${item.filter_size}mm`} />}
+              {(item.elements || item.groups) && (
+                <DetailRow label="Optical Formula" value={`${item.elements || '?'} elements in ${item.groups || '?'} groups`} />
+              )}
+              {item.weight_g && <DetailRow label="Weight" value={`${item.weight_g}g`} />}
+              {item.is_macro === 1 && (
+                <DetailRow label="Macro" value={item.magnification_ratio || 'Yes'} />
+              )}
+              {item.image_stabilization === 1 && <DetailRow label="Stabilization" value="IS/VR/OS" />}
+              {(item.production_year_start || item.production_year_end) && (
+                <DetailRow 
+                  label="Production" 
+                  value={item.production_year_end 
+                    ? `${item.production_year_start || '?'} - ${item.production_year_end}` 
+                    : `${item.production_year_start} - present`
+                  } 
+                />
+              )}
+            </>
           )}
-          {item.max_aperture && <DetailRow label="Max Aperture" value={`f/${item.max_aperture}`} />}
-          {item.min_aperture && <DetailRow label="Min Aperture" value={`f/${item.min_aperture}`} />}
-          {item.focus_type && <DetailRow label="Focus" value={item.focus_type} />}
           
           {/* Flash-specific */}
           {item.guide_number && <DetailRow label="Guide Number" value={item.guide_number} />}
@@ -650,6 +706,95 @@ function FormFields({ type, form, onChange, constants }) {
               />
             </div>
           )}
+
+          {/* Camera Technical Specs Section */}
+          <div className="form-section-header">Technical Specifications</div>
+
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Meter Type</label>
+              <select value={form.meter_type || ''} onChange={e => onChange('meter_type', e.target.value)}>
+                <option value="">Select meter type...</option>
+                <option value="none">None (Unmetered)</option>
+                <option value="match-needle">Match Needle</option>
+                <option value="center-weighted">Center-Weighted</option>
+                <option value="matrix">Matrix/Evaluative</option>
+                <option value="spot">Spot</option>
+              </select>
+            </div>
+            <div className="form-row">
+              <label>Shutter Type</label>
+              <select value={form.shutter_type || ''} onChange={e => onChange('shutter_type', e.target.value)}>
+                <option value="">Select shutter type...</option>
+                <option value="focal-plane">Focal Plane</option>
+                <option value="leaf">Leaf</option>
+                <option value="electronic">Electronic</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Slowest Shutter</label>
+              <input
+                type="text"
+                value={form.shutter_speed_min || ''}
+                onChange={e => onChange('shutter_speed_min', e.target.value)}
+                placeholder="e.g., B, 30, 1"
+              />
+            </div>
+            <div className="form-row">
+              <label>Fastest Shutter</label>
+              <input
+                type="text"
+                value={form.shutter_speed_max || ''}
+                onChange={e => onChange('shutter_speed_max', e.target.value)}
+                placeholder="e.g., 1/1000, 1/4000"
+              />
+            </div>
+          </div>
+
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Weight (g)</label>
+              <input
+                type="number"
+                value={form.weight_g || ''}
+                onChange={e => onChange('weight_g', parseFloat(e.target.value) || null)}
+                placeholder="Body only"
+              />
+            </div>
+            <div className="form-row">
+              <label>Battery Type</label>
+              <input
+                type="text"
+                value={form.battery_type || ''}
+                onChange={e => onChange('battery_type', e.target.value)}
+                placeholder="e.g., LR44, SR44, AA x 4"
+              />
+            </div>
+          </div>
+
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Production Start Year</label>
+              <input
+                type="number"
+                value={form.production_year_start || ''}
+                onChange={e => onChange('production_year_start', parseInt(e.target.value) || null)}
+                placeholder="e.g., 1985"
+              />
+            </div>
+            <div className="form-row">
+              <label>Production End Year</label>
+              <input
+                type="number"
+                value={form.production_year_end || ''}
+                onChange={e => onChange('production_year_end', parseInt(e.target.value) || null)}
+                placeholder="Leave empty if current"
+              />
+            </div>
+          </div>
         </>
       )}
 
@@ -671,6 +816,7 @@ function FormFields({ type, form, onChange, constants }) {
                 type="number"
                 value={form.focal_length_max || ''}
                 onChange={e => onChange('focal_length_max', parseFloat(e.target.value) || null)}
+                placeholder="Same as min for prime"
               />
             </div>
           </div>
@@ -683,8 +829,22 @@ function FormFields({ type, form, onChange, constants }) {
                 step="0.1"
                 value={form.max_aperture || ''}
                 onChange={e => onChange('max_aperture', parseFloat(e.target.value) || null)}
+                placeholder="e.g., 2.8"
               />
             </div>
+            <div className="form-row">
+              <label>Max Aperture @ Tele (f/)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={form.max_aperture_tele || ''}
+                onChange={e => onChange('max_aperture_tele', parseFloat(e.target.value) || null)}
+                placeholder="For variable zooms"
+              />
+            </div>
+          </div>
+
+          <div className="form-row-inline">
             <div className="form-row">
               <label>Min Aperture (f/)</label>
               <input
@@ -692,6 +852,16 @@ function FormFields({ type, form, onChange, constants }) {
                 step="0.1"
                 value={form.min_aperture || ''}
                 onChange={e => onChange('min_aperture', parseFloat(e.target.value) || null)}
+                placeholder="e.g., 22"
+              />
+            </div>
+            <div className="form-row">
+              <label>Aperture Blades</label>
+              <input
+                type="number"
+                value={form.blade_count || ''}
+                onChange={e => onChange('blade_count', parseInt(e.target.value) || null)}
+                placeholder="e.g., 8"
               />
             </div>
           </div>
@@ -709,6 +879,113 @@ function FormFields({ type, form, onChange, constants }) {
             <select value={form.focus_type || ''} onChange={e => onChange('focus_type', e.target.value)}>
               {focusTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
+          </div>
+
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Min Focus Distance (m)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={form.min_focus_distance || ''}
+                onChange={e => onChange('min_focus_distance', parseFloat(e.target.value) || null)}
+                placeholder="e.g., 0.45"
+              />
+            </div>
+            <div className="form-row">
+              <label>Filter Size (mm)</label>
+              <input
+                type="number"
+                value={form.filter_size || ''}
+                onChange={e => onChange('filter_size', parseFloat(e.target.value) || null)}
+                placeholder="e.g., 52"
+              />
+            </div>
+          </div>
+
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Elements</label>
+              <input
+                type="number"
+                value={form.elements || ''}
+                onChange={e => onChange('elements', parseInt(e.target.value) || null)}
+              />
+            </div>
+            <div className="form-row">
+              <label>Groups</label>
+              <input
+                type="number"
+                value={form.groups || ''}
+                onChange={e => onChange('groups', parseInt(e.target.value) || null)}
+              />
+            </div>
+            <div className="form-row">
+              <label>Weight (g)</label>
+              <input
+                type="number"
+                value={form.weight_g || ''}
+                onChange={e => onChange('weight_g', parseFloat(e.target.value) || null)}
+              />
+            </div>
+          </div>
+
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Production Start Year</label>
+              <input
+                type="number"
+                value={form.production_year_start || ''}
+                onChange={e => onChange('production_year_start', parseInt(e.target.value) || null)}
+                placeholder="e.g., 1985"
+              />
+            </div>
+            <div className="form-row">
+              <label>Production End Year</label>
+              <input
+                type="number"
+                value={form.production_year_end || ''}
+                onChange={e => onChange('production_year_end', parseInt(e.target.value) || null)}
+                placeholder="Leave empty if current"
+              />
+            </div>
+          </div>
+
+          <div className="form-row checkbox-row">
+            <label>
+              <input
+                type="checkbox"
+                checked={form.is_macro === 1 || form.is_macro === true}
+                onChange={e => onChange('is_macro', e.target.checked ? 1 : 0)}
+              />
+              Macro Lens
+            </label>
+          </div>
+
+          {(form.is_macro === 1 || form.is_macro === true) && (
+            <div className="form-row">
+              <label>Magnification Ratio</label>
+              <select value={form.magnification_ratio || ''} onChange={e => onChange('magnification_ratio', e.target.value)}>
+                <option value="">Select ratio...</option>
+                <option value="1:1">1:1 (Life-size)</option>
+                <option value="1:2">1:2 (Half life-size)</option>
+                <option value="1:3">1:3</option>
+                <option value="1:4">1:4</option>
+                <option value="1:5">1:5</option>
+                <option value="1:10">1:10</option>
+              </select>
+            </div>
+          )}
+
+          <div className="form-row checkbox-row">
+            <label>
+              <input
+                type="checkbox"
+                checked={form.image_stabilization === 1 || form.image_stabilization === true}
+                onChange={e => onChange('image_stabilization', e.target.checked ? 1 : 0)}
+              />
+              Image Stabilization (IS/VR/OS)
+            </label>
           </div>
         </>
       )}

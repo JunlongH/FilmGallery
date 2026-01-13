@@ -5,7 +5,7 @@ import { IconButton, Chip, Text, Snackbar } from 'react-native-paper';
 // Removed direct legacy FileSystem usage (downloadAsync deprecated).
 // Use unified helper built on new File/Directory API.
 import { downloadImageAsync } from '../utils/fileSystem';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import TagEditModal from '../components/TagEditModal';
 import NoteEditModal from '../components/NoteEditModal';
@@ -99,7 +99,7 @@ export default function PhotoViewScreen({ route, navigation }) {
           const targetUri = FileSystem.documentDirectory + fileName;
           
           await FileSystem.writeAsStringAsync(targetUri, base64, {
-            encoding: FileSystem.EncodingType.Base64,
+            encoding: 'base64',
           });
           
           // Request permissions and save to photo library

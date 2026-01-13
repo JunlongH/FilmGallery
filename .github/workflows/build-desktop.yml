@@ -1,0 +1,146 @@
+name: Build Desktop Apps
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.9.0)'
+        required: false
+        default: 'dev'
+
+jobs:
+  build-desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            artifact-name: windows
+          - os: macos-latest
+            platform: mac
+            artifact-name: macos
+          - os: ubuntu-latest
+            platform: linux
+            artifact-name: linux
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install client dependencies
+        run: |
+          cd client
+          npm install
+
+      - name: Build client
+        run: npm run build
+
+      - name: Build Electron app (Client-Only)
+        run: npx electron-builder --${{ matrix.platform }} --config electron-builder-client-only.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.artifact-name }}
+          path: |
+            dist_v9_client/*.exe
+            dist_v9_client/*.dmg
+            dist_v9_client/*.AppImage
+            dist_v9_client/*.zip
+          if-no-files-found: warn
+
+  build-desktop-full:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win
+            artifact-name: windows-full
+          - os: macos-latest
+            platform: mac
+            artifact-name: macos-full
+          - os: ubuntu-latest
+            platform: linux
+            artifact-name: linux-full
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install client dependencies
+        run: |
+          cd client
+          npm install
+
+      - name: Install server dependencies
+        run: |
+          cd server
+          npm install
+
+      - name: Build client
+        run: npm run build
+
+      - name: Build Electron app (Full Version)
+        run: npx electron-builder --${{ matrix.platform }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.artifact-name }}
+          path: |
+            dist_v9/*.exe
+            dist_v9/*.dmg
+            dist_v9/*.AppImage
+            dist_v9/*.zip
+          if-no-files-found: warn
+
+  release:
+    needs: [build-desktop, build-desktop-full]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

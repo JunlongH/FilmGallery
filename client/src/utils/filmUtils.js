@@ -11,12 +11,11 @@
 export function getFilmDisplayName(film) {
   if (!film) return 'Unknown Film';
   
-  const brand = film.brand?.trim() || '';
   const name = film.name?.trim() || '';
+  const brand = film.brand?.trim() || '';
   
-  if (brand && name) {
-    return `${brand} ${name}`;
-  }
+  // Name field already contains full name (e.g., "CineStill CS 800T")
+  // Only fallback to brand if name is empty
   return name || brand || 'Unknown Film';
 }
 

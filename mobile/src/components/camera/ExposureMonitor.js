@@ -389,7 +389,7 @@ export function useExposureMonitor(onExposureUpdate, cameraRef, filmIso = 100, s
         try {
           // Read file as base64
           const base64 = await FileSystem.readAsStringAsync(fileUri, {
-            encoding: FileSystem.EncodingType.Base64,
+            encoding: 'base64',
           });
           
           // Parse EXIF from base64 data

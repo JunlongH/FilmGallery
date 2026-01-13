@@ -69,6 +69,8 @@ export interface ShotLog {
   country?: string;
   city?: string;
   detail_location?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface ServerConfig {

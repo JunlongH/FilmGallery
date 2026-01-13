@@ -3,22 +3,24 @@
  * Powered by react-native-vision-camera
  * Real-time exposure monitoring with Frame Processor support
  * 
- * VERSION: 2025-12-11-v7-FP-FIXED
+ * VERSION: 2026-01-13-v10-LOCATION-DEBUG
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   View, StyleSheet, Modal, TouchableOpacity, Alert, Platform, 
-  FlatList, TouchableWithoutFeedback, useWindowDimensions 
+  FlatList, TouchableWithoutFeedback, useWindowDimensions, ScrollView
 } from 'react-native';
 import { Text, Button, ActivityIndicator, IconButton, Surface } from 'react-native-paper';
 import Slider from '@react-native-community/slider';
 import { 
   Camera, useCameraDevice, useCameraFormat, useCameraPermission 
 } from 'react-native-vision-camera';
-import * as Location from 'expo-location';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+// Native location service (bypasses Expo for HyperOS compatibility)
+import locationService from '../services/locationService.native';
 
 // Import our custom utilities
 import { 
@@ -63,7 +65,7 @@ const PickerModal = ({ visible, onClose, data, onSelect, title }) => {
   );
 };
 
-export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, forcePsMode = false, forcedMaxAperture = null }) {
+export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, forcePsMode = false, forcedMaxAperture = null, preloadedLocation = null }) {
   const { width, height } = useWindowDimensions();
   const cameraHeight = height * 0.55;
   const insets = useSafeAreaInsets();
@@ -242,37 +244,136 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, 
       fetchLocation();
     } else {
       setIsActive(false);
+      // Cleanup location subscription when modal closes
+      if (locationSubscriptionRef.current) {
+        locationSubscriptionRef.current.remove();
+        locationSubscriptionRef.current = null;
+      }
     }
   }, [visible, minZoom, device, hasPermission]);
 
-  // Fetch location with timeout and graceful fallback
+  // Reference to store location subscription for cleanup
+  const locationSubscriptionRef = useRef(null);
+  
+  // Location status for UI feedback
+  const [locationStatus, setLocationStatus] = useState('idle'); // 'idle' | 'loading' | 'optimizing' | 'done' | 'failed'
+  
+  // Diagnostic info for debugging (HyperOS/MIUI issues)
+  const [locationDiagnostics, setLocationDiagnostics] = useState(null);
+  const [showDiagPanel, setShowDiagPanel] = useState(false);
+
+  /**
+   * Fetch location using locationService with full diagnostics
+   * This provides visibility into exactly why location might fail on HyperOS
+   */
   const fetchLocation = async () => {
     setLocLoading(true);
-    let timeoutId;
+    setLocationStatus('loading');
+    setLocationDiagnostics(null);
+    
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        setLocation(null);
+      // Step 0: Use preloaded location if available (fastest path)
+      if (preloadedLocation && preloadedLocation.latitude && preloadedLocation.longitude) {
+        __DEV__ && console.log('[Location] Using PRELOADED location from parent');
+        setLocation(preloadedLocation);
+        setLocationStatus('done');
+        setLocLoading(false);
         return;
       }
+      
+      // Use new simplified locationService v2
+      const result = await locationService.getLocation();
+      
+      __DEV__ && console.log('[Location] Result:', result);
+      
+      // Store diagnostics for display
+      if (result.diagnostics) {
+        setLocationDiagnostics(result.diagnostics);
+      }
+      
+      // Check success
+      if (result.success && result.coords) {
+        // If geocode is available, use it directly
+        if (result.geocode && (result.geocode.country || result.geocode.city)) {
+          __DEV__ && console.log('[Location] Using geocode from service:', result.geocode);
+          setLocation({
+            country: result.geocode.country || '',
+            city: result.geocode.city || '',
+            detail: result.geocode.detail || '',
+            latitude: result.coords.latitude,
+            longitude: result.coords.longitude,
+            altitude: result.coords.altitude
+          });
+        } else {
+          // Fallback: do our own reverse geocoding
+          await updateLocationFromCoords(result.coords);
+        }
+        setLocationStatus('done');
+      } else {
+        // Failed - show guidance
+        setLocation(null);
+        setLocationStatus('failed');
+        
+        if (result.error) {
+          locationService.showGuidance(result.error);
+        }
+      }
+      
+    } catch (e) {
+      console.error('[Location] Unexpected error:', e);
+      setLocation(null);
+      setLocationStatus('failed');
+    } finally {
+      setLocLoading(false);
+    }
+  };
+  
+  // Start background optimization using watch
+  const startBackgroundOptimization = async () => {
+    try {
+      const watchResult = await locationService.startWatch(
+        async (coords, accuracy) => {
+          __DEV__ && console.log(`[Location] Watch update: accuracy=${accuracy?.toFixed(0)}m`);
+          await updateLocationFromCoords(coords);
+          
+          if (accuracy && accuracy < 50) {
+            setLocationStatus('done');
+            locationService.stopWatch();
+          }
+        },
+        { accuracy: 'high', maxDuration: 12000 }
+      );
+      
+      if (!watchResult.success) {
+        __DEV__ && console.log('[Location] Watch failed to start:', watchResult.error);
+        setLocationStatus('done');
+      }
+    } catch (e) {
+      __DEV__ && console.log('[Location] Watch error:', e);
+      setLocationStatus('done');
+    }
+  };
 
-      // Position with timeout protection
-      const locPromise = Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => reject(new Error('定位超时')), 12000);
-      });
-      const loc = await Promise.race([locPromise, timeoutPromise]);
-      clearTimeout(timeoutId);
+  // Stop the location watch subscription
+  const stopLocationWatch = () => {
+    locationService.stopWatch();
+    setLocLoading(false);
+  };
 
+  // Helper to update location state from coordinates
+  const updateLocationFromCoords = async (coords) => {
+    try {
       // Reverse geocode: English for DB, local for detail
-      const reverseEN = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude
-      }, { locale: 'en-US' });
-      const reverseLocal = await Location.reverseGeocodeAsync({
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude
-      });
+      const [reverseEN, reverseLocal] = await Promise.all([
+        Location.reverseGeocodeAsync({
+          latitude: coords.latitude,
+          longitude: coords.longitude
+        }, { locale: 'en-US' }).catch(() => []),
+        Location.reverseGeocodeAsync({
+          latitude: coords.latitude,
+          longitude: coords.longitude
+        }).catch(() => [])
+      ]);
 
       if (reverseEN && reverseEN.length > 0) {
         const addrEN = reverseEN[0];
@@ -280,19 +381,54 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, 
         setLocation({
           country: addrEN.country || '',
           city: addrEN.city || addrEN.subregion || '',
-          detail: `${addrLocal.street || ''} ${addrLocal.name || ''}`.trim()
+          detail: `${addrLocal.street || ''} ${addrLocal.name || ''}`.trim(),
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          altitude: coords.altitude
         });
       } else {
-        setLocation(null);
+        // Even if reverse geocode fails, store coordinates
+        setLocation({
+          country: '',
+          city: '',
+          detail: '',
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          altitude: coords.altitude
+        });
       }
     } catch (e) {
-      console.warn('Location error:', e?.message || e);
-      setLocation(null);
-    } finally {
-      clearTimeout(timeoutId);
-      setLocLoading(false);
+      // If reverse geocoding fails, still save coordinates
+      setLocation({
+        country: '',
+        city: '',
+        detail: '',
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        altitude: coords.altitude
+      });
     }
   };
+
+  // Retry location fetch
+  const retryLocation = () => {
+    setLocation(null);
+    setLocationStatus('idle');
+    setLocationDiagnostics(null);
+    fetchLocation();
+  };
+  
+  // Open system location settings (for HyperOS troubleshooting)
+  const openLocationSettings = () => {
+    locationService.showLocationGuidance('general');
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      locationService.stopWatch();
+    };
+  }, []);
 
   // When switching modes, unlock live flow
   useEffect(() => {
@@ -530,15 +666,121 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, 
               onPress={onClose} 
               style={{ backgroundColor: 'rgba(0,0,0,0.3)' }} 
             />
-            <View style={styles.locationBadge}>
-              {locLoading ? (
-                <ActivityIndicator size="small" color="white" />
+            <TouchableOpacity 
+              style={styles.locationBadge}
+              onPress={() => setShowDiagPanel(!showDiagPanel)}
+              onLongPress={openLocationSettings}
+            >
+              {locLoading && !location ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <ActivityIndicator size="small" color="white" />
+                  <Text style={[styles.locationText, { fontSize: 11 }]}>定位中...</Text>
+                </View>
+              ) : location ? (
+                <View style={{ alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={styles.locationText}>
+                      {location.city || location.country || 'Unknown'}
+                    </Text>
+                    {locationStatus === 'optimizing' && (
+                      <ActivityIndicator size="small" color="#4ade80" style={{ marginLeft: 4 }} />
+                    )}
+                  </View>
+                  {location.latitude && location.longitude && (
+                    <Text style={[styles.locationText, { fontSize: 10, opacity: 0.8, marginTop: 2 }]}>
+                      📍 {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
+                    </Text>
+                  )}
+                </View>
               ) : (
-                <Text style={styles.locationText}>
-                  {location ? location.city : 'Unknown'}
-                </Text>
+                <View style={{ alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.locationText, { color: '#f87171' }]}>
+                      {locationDiagnostics?.errorCode 
+                        ? `Error: ${locationDiagnostics.errorCode}` 
+                        : 'Unknown'}
+                    </Text>
+                    <MaterialCommunityIcons name="refresh" size={16} color="#f87171" onPress={retryLocation} />
+                  </View>
+                  <Text style={[styles.locationText, { fontSize: 9, opacity: 0.7, marginTop: 2 }]}>
+                    点击查看详情 | 长按设置
+                  </Text>
+                </View>
               )}
-            </View>
+            </TouchableOpacity>
+            
+            {/* Diagnostic Panel - shows when location fails and user taps */}
+            {showDiagPanel && locationDiagnostics && (
+              <View style={styles.diagPanel}>
+                <Text style={styles.diagTitle}>📍 定位诊断</Text>
+                <View style={styles.diagRow}>
+                  <Text style={styles.diagLabel}>权限状态:</Text>
+                  <Text style={[styles.diagValue, { color: locationDiagnostics.permissionStatus === 'granted' ? '#4ade80' : '#f87171' }]}>
+                    {locationDiagnostics.permissionStatus || 'unknown'}
+                  </Text>
+                </View>
+                <View style={styles.diagRow}>
+                  <Text style={styles.diagLabel}>定位服务:</Text>
+                  <Text style={[styles.diagValue, { color: locationDiagnostics.servicesEnabled ? '#4ade80' : '#f87171' }]}>
+                    {locationDiagnostics.servicesEnabled ? '已开启' : '已关闭'}
+                  </Text>
+                </View>
+                <View style={styles.diagRow}>
+                  <Text style={styles.diagLabel}>GPS可用:</Text>
+                  <Text style={[styles.diagValue, { color: locationDiagnostics.providerStatus?.gpsAvailable ? '#4ade80' : '#f87171' }]}>
+                    {locationDiagnostics.providerStatus?.gpsAvailable ? '是' : '否'}
+                  </Text>
+                </View>
+                <View style={styles.diagRow}>
+                  <Text style={styles.diagLabel}>网络定位:</Text>
+                  <Text style={[styles.diagValue, { color: locationDiagnostics.providerStatus?.networkAvailable ? '#4ade80' : '#f87171' }]}>
+                    {locationDiagnostics.providerStatus?.networkAvailable ? '是' : '否'}
+                  </Text>
+                </View>
+                <View style={styles.diagRow}>
+                  <Text style={styles.diagLabel}>尝试次数:</Text>
+                  <Text style={styles.diagValue}>
+                    {locationDiagnostics.attemptCount || 0}
+                  </Text>
+                </View>
+                {locationDiagnostics.cachedLocation && (
+                  <View style={styles.diagRow}>
+                    <Text style={styles.diagLabel}>缓存位置:</Text>
+                    <Text style={styles.diagValue}>
+                      {new Date(locationDiagnostics.cachedLocation.timestamp).toLocaleTimeString()}
+                    </Text>
+                  </View>
+                )}
+                {(locationDiagnostics.lastError || locationDiagnostics.lastErrorCode) && (
+                  <View style={styles.diagRow}>
+                    <Text style={styles.diagLabel}>错误信息:</Text>
+                    <Text style={[styles.diagValue, { color: '#f87171', fontSize: 10 }]}>
+                      {locationDiagnostics.lastErrorCode || locationDiagnostics.lastError || 'Unknown'}
+                    </Text>
+                  </View>
+                )}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                  <TouchableOpacity 
+                    style={styles.diagButton} 
+                    onPress={retryLocation}
+                  >
+                    <Text style={styles.diagButtonText}>🔄 重试</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.diagButton} 
+                    onPress={openLocationSettings}
+                  >
+                    <Text style={styles.diagButtonText}>⚙️ 系统设置</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.diagButton, { backgroundColor: '#333' }]} 
+                    onPress={() => setShowDiagPanel(false)}
+                  >
+                    <Text style={styles.diagButtonText}>✕ 关闭</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
 
           {/* Camera controls */}
@@ -888,6 +1130,50 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '600',
     fontSize: 13,
+  },
+  diagPanel: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 90 : 70,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    padding: 12,
+    borderRadius: 12,
+    minWidth: 200,
+    zIndex: 100,
+  },
+  diagTitle: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 14,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  diagRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  diagLabel: {
+    color: '#aaa',
+    fontSize: 11,
+  },
+  diagValue: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '600',
+    maxWidth: 120,
+  },
+  diagButton: {
+    backgroundColor: '#4a5568',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    flex: 1,
+  },
+  diagButtonText: {
+    color: 'white',
+    fontSize: 10,
+    textAlign: 'center',
   },
   cameraControls: {
     position: 'absolute',

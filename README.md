@@ -219,6 +219,92 @@ cd mobile/android
 # android/app/build/outputs/apk/release/app-release.apk
 ```
 
+### iOS App (iPhone)
+
+> ⚠️ iOS 构建**必须在 macOS 系统上进行**，需要 Xcode 和 Apple Developer 账号。
+
+#### 开发调试
+
+```bash
+cd mobile
+
+# 安装依赖
+npm install
+
+# 安装 iOS 原生依赖
+cd ios && pod install && cd ..
+
+# 启动开发服务器
+npm start
+
+# 在模拟器运行
+npm run ios
+
+# 或在真机运行（需要开发者账号）
+npm run ios -- --device
+```
+
+#### 使用 EAS Build 构建（推荐）
+
+```bash
+cd mobile
+
+# 登录 Expo 账号
+npx eas login
+
+# 配置 EAS
+npx eas build:configure
+
+# 构建 iOS 应用（云端构建，无需 Mac）
+npx eas build -p ios --profile production
+
+# 下载 IPA 文件
+# 构建完成后会提供下载链接
+```
+
+#### 本地构建 IPA
+
+```bash
+cd mobile/ios
+
+# 打开 Xcode 项目
+open FilmGallery.xcworkspace
+
+# 在 Xcode 中：
+# 1. 选择 Product → Scheme → FilmGallery
+# 2. 选择目标设备为 "Any iOS Device (arm64)"
+# 3. Product → Archive
+# 4. 在 Organizer 中导出 IPA
+
+# 或使用命令行：
+xcodebuild -workspace FilmGallery.xcworkspace \
+  -scheme FilmGallery \
+  -configuration Release \
+  -archivePath build/FilmGallery.xcarchive \
+  archive
+
+xcodebuild -exportArchive \
+  -archivePath build/FilmGallery.xcarchive \
+  -exportPath build/output \
+  -exportOptionsPlist ExportOptions.plist
+```
+
+#### 发布到 App Store
+
+```bash
+# 使用 EAS Submit
+npx eas submit -p ios
+
+# 或在 Xcode Organizer 中上传
+# 或使用 Transporter 应用上传 IPA
+```
+
+**iOS 构建要求**：
+- macOS 系统
+- Xcode 14+
+- Apple Developer Program 会员（$99/年）
+- 有效的开发证书和 Provisioning Profile
+
 ---
 
 ## ⌚ 手表端安装与使用
@@ -287,12 +373,176 @@ npm run start
 # 或双击 run.bat
 
 # 4. 构建安装包
-# Full Version
+# Full Version (Windows)
 npm run dist
 
-# Client-Only Version
+# Client-Only Version (Windows)
 npm run dist:client-only
 ```
+
+### macOS 构建
+
+> ⚠️ macOS 安装包**必须在 macOS 系统上构建**，无法在 Windows/Linux 交叉编译。
+
+```bash
+# 在 Mac 终端执行
+
+# 1. 克隆仓库并安装依赖
+git clone https://github.com/JunlongH/FilmGalery.git
+cd FilmGalery
+npm install
+cd client && npm install && cd ..
+
+# 2. 构建客户端
+npm run build
+
+# 3. 构建 DMG 安装包 (Client-Only)
+npx electron-builder --mac --config electron-builder-client-only.json
+
+# 4. 输出位置
+# dist_v9_client/FilmGallery-Client-x.x.x.dmg
+```
+
+**Full Version (含服务器)**：
+```bash
+# 安装服务器依赖
+cd server && npm install && cd ..
+
+# 构建完整版
+npx electron-builder --mac
+# 输出: dist_v9/FilmGallery-x.x.x.dmg
+```
+
+### Ubuntu / Linux 构建
+
+```bash
+# 在 Ubuntu/Linux 终端执行
+
+# 1. 安装 Node.js 18+
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# 2. 克隆仓库并安装依赖
+git clone https://github.com/JunlongH/FilmGalery.git
+cd FilmGalery
+npm install
+cd client && npm install && cd ..
+
+# 3. 构建客户端
+npm run build
+
+# 4. 构建 AppImage (Client-Only)
+npx electron-builder --linux --config electron-builder-client-only.json
+
+# 5. 输出位置
+# dist_v9_client/FilmGallery-Client-x.x.x.AppImage
+```
+
+**Full Version (含服务器)**：
+```bash
+cd server && npm install && cd ..
+npx electron-builder --linux
+# 输出: dist_v9/FilmGallery-x.x.x.AppImage
+```
+
+**运行 AppImage**：
+```bash
+chmod +x FilmGallery-Client-x.x.x.AppImage
+./FilmGallery-Client-x.x.x.AppImage
+```
+
+### 使用 GitHub Actions 自动构建（推荐）
+
+创建 `.github/workflows/build.yml` 实现多平台自动构建：
+
+```yaml
+name: Build Desktop Apps
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      
+      - name: Install dependencies
+        run: npm install && cd client && npm install
+      
+      - name: Build client
+        run: npm run build
+      
+      - name: Package
+        run: npx electron-builder --config electron-builder-client-only.json
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}-build
+          path: dist_v9_client/*
+```
+
+**输出文件汇总**：
+
+| 平台 | 命令 | 输出文件 |
+|------|------|----------|
+| Windows | `npx electron-builder --win` | `.exe` (NSIS) |
+| macOS | `npx electron-builder --mac` | `.dmg` |
+| Linux | `npx electron-builder --linux` | `.AppImage` |
+
+### 使用 GitHub Actions 自动构建
+
+项目已配置好 GitHub Actions 工作流，支持自动构建所有平台：
+
+#### 触发构建
+
+**方法 1: 创建版本标签（推荐）**
+```bash
+# 创建标签并推送，自动触发构建
+git tag v1.9.0
+git push origin v1.9.0
+```
+
+**方法 2: 手动触发**
+1. 访问 GitHub 仓库 → Actions 页面
+2. 选择 "Build Desktop Apps" 或 "Build Mobile Apps"
+3. 点击 "Run workflow"
+4. 选择分支并点击 "Run workflow"
+
+#### 下载构建产物
+
+1. 构建完成后，访问 Actions → 选择对应的 workflow run
+2. 在 Artifacts 区域下载：
+   - `desktop-windows` - Windows .exe 安装包
+   - `desktop-macos` - macOS .dmg 安装包
+   - `desktop-linux` - Linux .AppImage
+   - `android-apk` - Android APK
+
+#### 配置要求
+
+需要在 GitHub 仓库设置以下 Secrets：
+
+| Secret 名称 | 说明 | 获取方式 |
+|------------|------|----------|
+| `EXPO_TOKEN` | Expo 访问令牌 | https://expo.dev/accounts/[用户名]/settings/access-tokens |
+| `GITHUB_TOKEN` | 自动提供 | GitHub 自动注入，无需配置 |
+
+**配置步骤**：
+1. GitHub 仓库 → Settings → Secrets and variables → Actions
+2. 点击 "New repository secret"
+3. 添加 `EXPO_TOKEN`
 
 ### 客户端单独开发
 

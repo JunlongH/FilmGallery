@@ -43,8 +43,8 @@ export default function FilmsScreen({ navigation }) {
 
   const renderItem = ({ item }) => {
     const coverUri = item.thumbPath ? `${baseUrl}${item.thumbPath}` : null;
-    // Build display title with brand if available
-    const displayTitle = item.brand ? `${item.brand} ${item.name}` : item.name;
+    // Film name already contains full information (brand + model)
+    const displayTitle = item.name || '';
     // Build right text with format and category
     const rightText = item.format && item.format !== '135' 
       ? `${item.format} • ${item.category}` 
