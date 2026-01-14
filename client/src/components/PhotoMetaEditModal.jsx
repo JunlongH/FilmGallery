@@ -48,7 +48,7 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 8 }}>
           <div className="fg-field">
             <label className="fg-label">Date Taken</label>
-            <input className="fg-input" type="date" value={dateTaken} min={rollMin} max={rollMax} onChange={e=>setDateTaken(e.target.value)} />
+            <input className="fg-input" type="date" lang="en" value={dateTaken} min={rollMin} max={rollMax} onChange={e=>setDateTaken(e.target.value)} />
           </div>
           <div className="fg-field">
             <label className="fg-label">Time Taken</label>

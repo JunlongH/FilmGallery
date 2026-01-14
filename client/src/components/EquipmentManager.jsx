@@ -36,6 +36,7 @@ export default function EquipmentManager() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [constants, setConstants] = useState(null);
+  const [filmConstants, setFilmConstants] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -44,7 +45,7 @@ export default function EquipmentManager() {
   // Load constants
   useEffect(() => {
     getEquipmentConstants().then(setConstants).catch(console.error);
-    getFilmConstants().catch(console.error);
+    getFilmConstants().then(setFilmConstants).catch(console.error);
   }, []);
 
   // Load items based on active tab
@@ -231,7 +232,7 @@ export default function EquipmentManager() {
               <EditForm
                 type={activeTab}
                 item={editItem}
-                constants={constants}
+                constants={{ ...constants, ...filmConstants }}
                 onSave={(data) => handleUpdate(editItem.id, data)}
                 onCancel={() => setEditItem(null)}
               />
@@ -239,6 +240,7 @@ export default function EquipmentManager() {
               <DetailView
                 type={activeTab}
                 item={selectedItem}
+                filmConstants={filmConstants}
                 onEdit={() => setEditItem(selectedItem)}
                 onDelete={() => setConfirmDelete(selectedItem)}
                 onImageUpload={(file) => handleImageUpload(selectedItem.id, file)}
@@ -256,7 +258,7 @@ export default function EquipmentManager() {
       {showAddModal && (
         <AddModal
           type={activeTab}
-          constants={constants}
+          constants={{ ...constants, ...filmConstants }}
           onSave={handleCreate}
           onClose={() => setShowAddModal(false)}
         />
@@ -278,7 +280,7 @@ export default function EquipmentManager() {
 }
 
 // Detail View Component
-function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
+function DetailView({ type, item, filmConstants, onEdit, onDelete, onImageUpload }) {
   const navigate = useNavigate();
   const [relatedRolls, setRelatedRolls] = useState([]);
   const [loadingRolls, setLoadingRolls] = useState(false);
@@ -319,18 +321,13 @@ function DetailView({ type, item, onEdit, onDelete, onImageUpload }) {
     }
   };
 
-  // Category display label
+  // Category display label (uses dynamic constants from server)
   const getCategoryLabel = (cat) => {
-    const labels = {
-      'color-negative': 'Color Negative (C-41)',
-      'color-reversal': 'Color Reversal (E-6)',
-      'bw-negative': 'B&W Negative',
-      'bw-reversal': 'B&W Reversal',
-      'instant': 'Instant',
-      'cine': 'Cinema (ECN-2)',
-      'other': 'Other'
-    };
-    return labels[cat] || cat;
+    if (filmConstants?.categories) {
+      const found = filmConstants.categories.find(c => c.value === cat);
+      if (found) return found.label;
+    }
+    return cat;
   };
 
   return (
@@ -599,6 +596,10 @@ function FormFields({ type, form, onChange, constants }) {
   const focusTypes = constants?.focusTypes || [];
   const conditions = constants?.conditions || [];
   const statuses = constants?.statuses || [];
+  // Film constants
+  const filmCategories = constants?.categories || [];
+  const filmFormats = constants?.formats || [];
+  const processTypes = constants?.processTypes || [];
 
   return (
     <div className="equip-form-fields">
@@ -1052,42 +1053,26 @@ function FormFields({ type, form, onChange, constants }) {
             <label>Category *</label>
             <select value={form.category || ''} onChange={e => onChange('category', e.target.value)} required>
               <option value="">Select category...</option>
-              <option value="color-negative">Color Negative (C-41)</option>
-              <option value="color-reversal">Color Reversal (E-6)</option>
-              <option value="bw-negative">B&W Negative</option>
-              <option value="bw-reversal">B&W Reversal</option>
-              <option value="instant">Instant</option>
-              <option value="cine">Cinema (ECN-2)</option>
-              <option value="other">Other</option>
+              {filmCategories.map(c => (
+                <option key={c.value} value={c.value}>{c.label}</option>
+              ))}
             </select>
           </div>
           <div className="form-row">
             <label>Format</label>
             <select value={form.format || '135'} onChange={e => onChange('format', e.target.value)}>
-              <option value="135">35mm (135)</option>
-              <option value="120">Medium Format (120)</option>
-              <option value="220">Medium Format (220)</option>
-              <option value="110">110</option>
-              <option value="127">127</option>
-              <option value="4x5">4x5 Large Format</option>
-              <option value="8x10">8x10 Large Format</option>
-              <option value="Instant">Instant</option>
-              <option value="APS">APS</option>
-              <option value="Half Frame">Half Frame</option>
-              <option value="Super 8">Super 8</option>
-              <option value="16mm">16mm Cine</option>
-              <option value="35mm Cine">35mm Cinema</option>
-              <option value="Other">Other</option>
+              {filmFormats.map(f => (
+                <option key={f.value} value={f.value}>{f.label}</option>
+              ))}
             </select>
           </div>
           <div className="form-row">
             <label>Process</label>
             <select value={form.process || ''} onChange={e => onChange('process', e.target.value)}>
               <option value="">Auto-detect from category</option>
-              <option value="C-41">C-41</option>
-              <option value="E-6">E-6</option>
-              <option value="BW">Black & White</option>
-              <option value="ECN-2">ECN-2 (Cinema)</option>
+              {processTypes.map(p => (
+                <option key={p.value} value={p.value}>{p.label}</option>
+              ))}
             </select>
           </div>
         </>

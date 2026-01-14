@@ -6,36 +6,36 @@
  */
 
 /**
- * Film categories enum
+ * Film categories with display labels
  */
 const FILM_CATEGORIES = [
-  'color-negative',   // Color Negative (彩色负片) - C-41
-  'color-reversal',   // Color Reversal/Slide (彩色反转片) - E-6
-  'bw-negative',      // Black & White Negative (黑白负片)
-  'bw-reversal',      // Black & White Reversal (黑白反转片)
-  'instant',          // Instant Film (拍立得)
-  'cine',             // Cinema Film (电影胶片) - ECN-2
-  'other'
+  { value: 'color-negative', label: 'Color Negative (C-41)' },
+  { value: 'color-reversal', label: 'Color Reversal (E-6)' },
+  { value: 'bw-negative', label: 'B&W Negative' },
+  { value: 'bw-reversal', label: 'B&W Reversal' },
+  { value: 'instant', label: 'Instant' },
+  { value: 'cine', label: 'Cinema (ECN-2)' },
+  { value: 'other', label: 'Other' }
 ];
 
 /**
- * Film formats (画幅)
+ * Film formats with display labels (画幅)
  */
 const FILM_FORMATS = [
-  '135',              // 35mm standard
-  '120',              // Medium format
-  '220',              // Medium format double length
-  '110',              // Pocket Instamatic
-  '127',              // Vest Pocket
-  '4x5',              // Large format 4x5
-  '8x10',             // Large format 8x10
-  'Instant',          // Polaroid/Instax
-  'APS',              // Advanced Photo System
-  'Half Frame',       // 35mm half frame
-  'Super 8',          // Super 8 cine
-  '16mm',             // 16mm cine
-  '35mm Cine',        // 35mm cinema
-  'Other'
+  { value: '135', label: '35mm (135)' },
+  { value: '120', label: 'Medium Format (120)' },
+  { value: '220', label: 'Medium Format (220)' },
+  { value: '110', label: '110' },
+  { value: '127', label: '127' },
+  { value: '4x5', label: '4x5 Large Format' },
+  { value: '8x10', label: '8x10 Large Format' },
+  { value: 'Instant', label: 'Instant' },
+  { value: 'APS', label: 'APS' },
+  { value: 'Half Frame', label: 'Half Frame' },
+  { value: 'Super 8', label: 'Super 8' },
+  { value: '16mm', label: '16mm Cine' },
+  { value: '35mm Cine', label: '35mm Cinema' },
+  { value: 'Other', label: 'Other' }
 ];
 
 /**
@@ -51,17 +51,17 @@ const KNOWN_BRANDS = [
 ];
 
 /**
- * Development process types
+ * Development process types with display labels
  */
 const PROCESS_TYPES = [
-  'C-41',         // Color negative standard
-  'E-6',          // Color reversal standard
-  'ECN-2',        // Cinema color negative
-  'B&W',          // Black & white standard
-  'Cross',        // Cross processing
-  'Push',         // Push processing
-  'Pull',         // Pull processing
-  'Other'
+  { value: 'C-41', label: 'C-41' },
+  { value: 'E-6', label: 'E-6' },
+  { value: 'ECN-2', label: 'ECN-2 (Cinema)' },
+  { value: 'B&W', label: 'Black & White' },
+  { value: 'Cross', label: 'Cross Processing' },
+  { value: 'Push', label: 'Push Processing' },
+  { value: 'Pull', label: 'Pull Processing' },
+  { value: 'Other', label: 'Other' }
 ];
 
 /**

@@ -130,7 +130,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         <div className="fg-sidepanel-groupGrid cols-2">
           <div className="fg-field">
             <label className="fg-label">Date Taken</label>
-            <input className="fg-input" type="date" value={dateTaken} onChange={e=>setDateTaken(e.target.value)} min={roll?.start_date || ''} max={roll?.end_date || ''} />
+            <input className="fg-input" type="date" lang="en" value={dateTaken} onChange={e=>setDateTaken(e.target.value)} min={roll?.start_date || ''} max={roll?.end_date || ''} />
           </div>
           <div className="fg-field">
             <label className="fg-label">Time Taken</label>
@@ -221,7 +221,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
               className="fg-input" 
               type="text" 
               list="photographer-options"
-              placeholder={roll?.photographer ? `Default: ${roll.photographer}` : 'e.g. Junlong'} 
+              placeholder={roll?.photographer ? `Default: ${roll.photographer}` : 'e.g. Xiaoming'} 
               value={photographer} 
               onChange={e=>setPhotographer(e.target.value)} 
             />
