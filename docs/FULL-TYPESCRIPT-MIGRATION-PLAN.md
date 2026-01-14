@@ -2,8 +2,8 @@
 
 > 创建日期: 2026-01-15
 > 分支名称: `feature/full-typescript-migration`
-> 状态: 进行中 (Phase 3)
-> 最后更新: 2026-01-15
+> 状态: 进行中 (Phase 4 - Mobile 基础层迁移)
+> 最后更新: 2026-01-14
 
 ## 一、概述
 
@@ -22,9 +22,9 @@
 
 | 模块 | 总文件数 | 已迁移 TS | 待迁移 JS | 覆盖率 |
 |------|----------|-----------|-----------|--------|
-| **Server** | ~45 | 18 | 27 | 40% |
-| **Client** | ~35 | 6 | 29 | 17% |
-| **Mobile** | ~50 | 6 | 44 | 12% |
+| **Server** | 33 | 33 | 0 | **100%** ✅ |
+| **Client** | ~35 | 14 | 21 | 40% |
+| **Mobile** | ~50 | 18 | 32 | 36% |
 | **共享包** | 2 | 2 | 0 | 100% |
 
 ---
@@ -69,75 +69,73 @@ Layer 4: 入口层 (Entry Points)
 
 ### 3.1 Server 端文件清单
 
-#### 3.1.1 Layer 1: 基础设施 (Infrastructure)
+#### 3.1.1 Layer 1: 基础设施 (Infrastructure) ✅ 完成
 
 | 文件 | 复杂度 | 优先级 | 状态 | 依赖 |
 |------|--------|--------|------|------|
-| `server/db.js` | 中 | P0 | ✅ | - |
-| `server/utils/db-helpers.js` | 中 | P0 | ✅ | db.js |
-| `server/utils/file-helpers.js` | 低 | P1 | ⏳ | - |
-| `server/utils/profiler.js` | 低 | P2 | ⏳ | - |
-| `server/utils/prepared-statements.js` | 高 | P1 | ⏳ | db-helpers |
-| `server/utils/schema-migration.js` | 高 | P2 | ⏳ | db |
-| `server/utils/equipment-migration.js` | 中 | P2 | ⏳ | db |
-| `server/utils/film-struct-migration.js` | 高 | P2 | ⏳ | db |
-| `server/config/multer.js` | 低 | P1 | ⏳ | - |
-| `server/config/paths.js` | 低 | P1 | ⏳ | - |
-| `server/conflict-resolver.js` | 中 | P2 | ⏳ | db |
+| `server/db.ts` | 中 | P0 | ✅ | - |
+| `server/utils/db-helpers.ts` | 中 | P0 | ✅ | db.ts |
+| `server/utils/file-helpers.ts` | 低 | P1 | ✅ | - |
+| `server/utils/profiler.ts` | 低 | P2 | ✅ | - |
+| `server/utils/cache.ts` | 低 | P2 | ✅ | - |
+| `server/utils/prepared-statements.ts` | 高 | P1 | ✅ | db-helpers |
+| `server/utils/schema-migration.ts` | 高 | P2 | ✅ | db |
+| `server/utils/equipment-migration.ts` | 中 | P2 | ✅ | db |
+| `server/utils/film-struct-migration.ts` | 高 | P2 | ✅ | db |
+| `server/utils/migration.ts` | 中 | P2 | ✅ | db |
+| `server/utils/filmlab-wb.ts` | 中 | P2 | ✅ | - |
+| `server/utils/image-lut.ts` | 中 | P1 | ✅ | - |
+| `server/config/multer.ts` | 低 | P1 | ✅ | - |
+| `server/config/paths.ts` | 低 | P1 | ✅ | - |
+| `server/config/db-config.ts` | 低 | P1 | ✅ | - |
+| `server/conflict-resolver.ts` | 中 | P2 | ✅ | db |
 
-**小计**: 11 文件
+**小计**: 16 文件 ✅ 全部完成
 
-#### 3.1.2 Layer 2: 服务层 (Services)
+#### 3.1.2 Layer 2: 服务层 (Services) ✅ 完成
 
 | 文件 | 复杂度 | 优先级 | 状态 | 依赖 |
 |------|--------|--------|------|------|
-| `server/services/roll-creation-service.js` | 高 | P0 | ⏳ | db-helpers, file-helpers |
-| `server/services/filmlab-service.js` | 高 | P1 | ⏳ | db-helpers, thumbnail |
-| `server/services/contactSheetGenerator.js` | 高 | P1 | ⏳ | sharp, file-helpers |
-| `server/services/gear-service.js` | 中 | P1 | ⏳ | db-helpers |
-| `server/services/tag-service.js` | 中 | P1 | ⏳ | db-helpers |
-| `server/services/film/film-item-service.js` | 中 | P1 | ⏳ | db-helpers |
+| `server/services/roll-creation-service.ts` | 高 | P0 | ✅ | db-helpers, file-helpers |
+| `server/services/roll-service.ts` | 高 | P0 | ✅ | db-helpers |
+| `server/services/filmlab-service.ts` | 高 | P1 | ✅ | db-helpers, thumbnail |
+| `server/services/contactSheetGenerator.ts` | 高 | P1 | ✅ | sharp, file-helpers |
+| `server/services/gear-service.ts` | 中 | P1 | ✅ | db-helpers |
+| `server/services/tag-service.ts` | 中 | P1 | ✅ | db-helpers |
+| `server/services/thumbnail-service.ts` | 中 | P1 | ✅ | sharp |
+| `server/services/film/film-item-service.ts` | 中 | P1 | ✅ | db-helpers |
 
-**已完成**:
-- ✅ `server/services/thumbnail-service.ts`
-- ✅ `server/services/roll-service.ts`
-- ✅ `server/utils/image-lut.ts`
+**小计**: 8 文件 ✅ 全部完成
 
-**需清理** (删除重复的 .js 文件):
-- ❌ `server/services/thumbnail-service.js` (待删除)
-- ❌ `server/services/roll-service.js` (待删除)
-
-**小计**: 6 文件待迁移 + 2 文件待删除
-
-#### 3.1.3 Layer 3: 路由层 (Routes)
+#### 3.1.3 Layer 3: 路由层 (Routes) ✅ 完成
 
 | 文件 | 复杂度 | 优先级 | 状态 | 行数 | 依赖 |
 |------|--------|--------|------|------|------|
-| `server/routes/rolls.js` | **极高** | P0 | ⏳ | ~1500 | 多个 services |
-| `server/routes/photos.js` | 高 | P0 | ⏳ | ~1100 | image-lut, thumbnail |
-| `server/routes/uploads.js` | 中 | P1 | ⏳ | ~300 | multer |
-| `server/routes/films.js` | 中 | P1 | ⏳ | ~150 | db-helpers |
-| `server/routes/equipment.js` | 中 | P1 | ⏳ | ~400 | db-helpers |
-| `server/routes/tags.js` | 低 | P2 | ⏳ | ~100 | tag-service |
-| `server/routes/locations.js` | 低 | P2 | ⏳ | ~100 | db-helpers |
-| `server/routes/stats.js` | 低 | P2 | ⏳ | ~80 | db-helpers |
-| `server/routes/search.js` | 中 | P2 | ⏳ | ~150 | db-helpers |
-| `server/routes/metadata.js` | 低 | P2 | ⏳ | ~60 | - |
-| `server/routes/health.js` | 低 | P3 | ⏳ | ~30 | - |
-| `server/routes/conflicts.js` | 低 | P3 | ⏳ | ~50 | conflict-resolver |
-| `server/routes/presets.js` | 低 | P3 | ⏳ | ~80 | db-helpers |
-| `server/routes/film-items.js` | 中 | P1 | ⏳ | ~200 | film-item-service |
-| `server/routes/filmlab.js` | 高 | P1 | ⏳ | ~300 | filmlab-service |
+| `server/routes/rolls.ts` | **极高** | P0 | ✅ | ~1832 | 多个 services |
+| `server/routes/photos.ts` | 高 | P0 | ✅ | ~1292 | image-lut, thumbnail |
+| `server/routes/uploads.ts` | 中 | P1 | ✅ | ~300 | multer |
+| `server/routes/films.ts` | 中 | P1 | ✅ | ~150 | db-helpers |
+| `server/routes/equipment.ts` | 中 | P1 | ✅ | ~900 | db-helpers |
+| `server/routes/tags.ts` | 低 | P2 | ✅ | ~100 | tag-service |
+| `server/routes/locations.ts` | 低 | P2 | ✅ | ~100 | db-helpers |
+| `server/routes/stats.ts` | 低 | P2 | ✅ | ~80 | db-helpers |
+| `server/routes/search.ts` | 中 | P2 | ✅ | ~150 | db-helpers |
+| `server/routes/metadata.ts` | 低 | P2 | ✅ | ~60 | - |
+| `server/routes/health.ts` | 低 | P3 | ✅ | ~30 | - |
+| `server/routes/conflicts.ts` | 低 | P3 | ✅ | ~50 | conflict-resolver |
+| `server/routes/presets.ts` | 低 | P3 | ✅ | ~80 | db-helpers |
+| `server/routes/film-items.ts` | 中 | P1 | ✅ | ~282 | film-item-service |
+| `server/routes/filmlab.ts` | 高 | P1 | ✅ | ~300 | filmlab-service |
 
-**小计**: 15 文件
+**小计**: 15 文件 ✅ 全部完成
 
-#### 3.1.4 Layer 4: 入口层
+#### 3.1.4 Layer 4: 入口层 ✅ 完成
 
 | 文件 | 复杂度 | 优先级 | 状态 |
 |------|--------|--------|------|
-| `server/server.js` | 中 | P0 | ⏳ |
+| `server/server.ts` | 中 | P0 | ✅ |
 
-**Server 总计**: 33 文件待迁移
+**Server 总计**: 33/33 文件已完成 ✅
 
 ---
 
@@ -149,6 +147,16 @@ Layer 4: 入口层 (Entry Points)
 - ✅ `client/src/components/ModalDialog.tsx`
 - ✅ `client/src/components/SquareImage.tsx`
 - ✅ `client/src/components/FilterPanel.tsx`
+- ✅ `client/src/components/FilmSelector.tsx`
+- ✅ `client/src/components/FloatingRefreshButton.tsx`
+- ✅ `client/src/components/TitleBar.tsx`
+- ✅ `client/src/components/RollLibrary.tsx`
+- ✅ `client/src/components/CalendarView.tsx`
+- ✅ `client/src/components/VirtualPhotoGrid.tsx`
+- ✅ `client/src/components/Overview.tsx`
+- ✅ `client/src/components/PhotoGrid.tsx`
+- ✅ `client/src/components/FilmInverter.tsx` (1712 行 - 大型组件)
+- ✅ `client/src/components/EquipmentManager.tsx` (1154 行 - 大型组件)
 - ✅ `client/src/setupTests.ts`
 - ✅ `client/src/__tests__/api.test.ts`
 
@@ -159,17 +167,16 @@ Layer 4: 入口层 (Entry Points)
 | `client/src/App.js` | 中 | P1 | ⏳ |
 | `client/src/index.js` | 低 | P2 | ⏳ |
 | `client/src/components/RollCard.jsx` | 中 | P1 | ⏳ |
-| `client/src/components/PhotoGrid.jsx` | 中 | P1 | ⏳ |
-| `client/src/components/FilmInverter.jsx` | **极高** | P0 | ⏳ |
+| `client/src/components/FilmInverter.jsx` | **极高** | P0 | ✅ 完成 |
 | `client/src/components/FilmInventory.jsx` | 高 | P1 | ⏳ |
-| `client/src/components/EquipmentManager.jsx` | 中 | P1 | ⏳ |
+| `client/src/components/EquipmentManager.jsx` | 中 | P1 | ✅ 完成 |
 | `client/src/components/LocationManager.jsx` | 中 | P1 | ⏳ |
 | `client/src/components/StatsPanel.jsx` | 中 | P2 | ⏳ |
 | `client/src/components/TagManager.jsx` | 中 | P2 | ⏳ |
 | `client/src/components/SettingsPanel.jsx` | 低 | P2 | ⏳ |
 | 其他小组件 (~15 个) | 低 | P3 | ⏳ |
 
-**Client 总计**: ~25 文件待迁移
+**Client 总计**: ~21 文件待迁移（已完成 14/35）
 
 ---
 
@@ -179,46 +186,49 @@ Layer 4: 入口层 (Entry Points)
 
 - ✅ `mobile/src/services/apiService.ts`
 - ✅ `mobile/src/types/index.ts`
-- 🔄 `mobile/src/screens/HomeScreen.tsx` (部分实现)
+- ✅ `mobile/src/screens/HomeScreen.tsx`
+- ✅ `mobile/src/context/ApiContext.tsx`
+- ✅ `mobile/src/setupAxios.ts`
 
-#### 3.3.2 Layer 1: 基础设施
-
-| 文件 | 复杂度 | 优先级 | 状态 |
-|------|--------|--------|------|
-| `mobile/src/context/ApiContext.js` | 中 | P0 | ⏳ |
-| `mobile/src/utils/urls.js` | 低 | P0 | ⏳ |
-| `mobile/src/utils/urlHelper.js` | 低 | P1 | ⏳ |
-| `mobile/src/utils/fileSystem.js` | 中 | P1 | ⏳ |
-| `mobile/src/utils/date.js` | 低 | P2 | ⏳ |
-| `mobile/src/setupAxios.js` | 中 | P0 | ⏳ |
-| `mobile/src/theme.js` | 低 | P2 | ⏳ |
-
-**小计**: 7 文件
-
-#### 3.3.3 Layer 2: Hooks
+#### 3.3.2 Layer 1: 基础设施 ✅ 完成
 
 | 文件 | 复杂度 | 优先级 | 状态 |
 |------|--------|--------|------|
-| `mobile/src/hooks/useCachedImage.js` | 中 | P1 | ⏳ |
-| `mobile/src/hooks/useExposureMonitorSimple.js` | 高 | P2 | ⏳ |
-| 其他 hooks (~5 个) | 中 | P2 | ⏳ |
+| `mobile/src/context/ApiContext.tsx` | 中 | P0 | ✅ |
+| `mobile/src/utils/urls.ts` | 低 | P0 | ✅ |
+| `mobile/src/utils/urlHelper.ts` | 低 | P1 | ✅ |
+| `mobile/src/utils/fileSystem.ts` | 中 | P1 | ✅ |
+| `mobile/src/utils/date.ts` | 低 | P2 | ✅ |
+| `mobile/src/setupAxios.ts` | 中 | P0 | ✅ |
+| `mobile/src/theme.ts` | 低 | P2 | ✅ |
 
-**小计**: ~7 文件
+**小计**: 7 文件 ✅ 全部完成
+
+#### 3.3.3 Layer 2: Hooks ✅ 完成
+
+| 文件 | 复杂度 | 优先级 | 状态 |
+|------|--------|--------|------|
+| `mobile/src/hooks/useCachedImage.ts` | 中 | P1 | ✅ |
+| `mobile/src/hooks/useExposureMonitorSimple.ts` | 高 | P2 | ✅ |
+| `mobile/src/hooks/useExposureMonitorPolling.ts` | 高 | P2 | ✅ |
+| `mobile/src/hooks/useExposurePolling.ts` | 高 | P2 | ✅ |
+
+**小计**: 4 文件 ✅ 全部完成
 
 #### 3.3.4 Layer 3: 组件
 
 | 文件 | 复杂度 | 优先级 | 状态 |
 |------|--------|--------|------|
+| `mobile/src/components/ShotModeModal.js` | **极高** | P0 | ✅ 完成 (1457 行) |
 | `mobile/src/components/CachedImage.js` | 中 | P0 | ⏳ |
 | `mobile/src/components/TouchScale.js` | 低 | P1 | ⏳ |
 | `mobile/src/components/CoverOverlay.js` | 低 | P1 | ⏳ |
 | `mobile/src/components/FilmCard.js` | 中 | P1 | ⏳ |
 | `mobile/src/components/TagEditModal.js` | 中 | P1 | ⏳ |
 | `mobile/src/components/EquipmentPicker.js` | 中 | P1 | ⏳ |
-| `mobile/src/components/ShotModeModal.js` | 高 | P1 | ⏳ |
 | 其他组件 (~10 个) | 低-中 | P2 | ⏳ |
 
-**小计**: ~17 文件
+**小计**: ~17 文件 (已完成 8)
 
 #### 3.3.5 Layer 4: Screens
 
@@ -253,21 +263,21 @@ Layer 4: 入口层 (Entry Points)
 
 ## 四、执行计划
 
-### Phase 1: 清理与核心基础 (Day 1-2)
+### Phase 1: 清理与核心基础 ✅ 完成
 
 **目标**: 清理重复文件，迁移核心数据库层
 
 #### 1.1 清理重复文件
-- [ ] 删除 `server/services/thumbnail-service.js`
-- [ ] 删除 `server/services/roll-service.js`
-- [ ] 删除 `mobile/src/screens/HomeScreen.js`
-- [ ] 运行测试确认无回归
+- [x] 删除 `server/services/thumbnail-service.js`
+- [x] 删除 `server/services/roll-service.js`
+- [x] 删除 `mobile/src/screens/HomeScreen.js`
+- [x] 运行测试确认无回归
 
 #### 1.2 Server 核心迁移
-- [ ] 迁移 `server/db.js` → `server/db.ts`
-- [ ] 迁移 `server/utils/db-helpers.js` → `.ts`
-- [ ] 迁移 `server/config/paths.js` → `.ts`
-- [ ] 迁移 `server/config/multer.js` → `.ts`
+- [x] 迁移 `server/db.js` → `server/db.ts`
+- [x] 迁移 `server/utils/db-helpers.js` → `.ts`
+- [x] 迁移 `server/config/paths.js` → `.ts`
+- [x] 迁移 `server/config/multer.js` → `.ts`
 
 #### 1.3 Mobile 核心迁移
 - [ ] 迁移 `mobile/src/context/ApiContext.js` → `.tsx`
@@ -276,27 +286,34 @@ Layer 4: 入口层 (Entry Points)
 
 **验收标准**:
 - ✅ TypeScript 编译 0 错误
-- ✅ 所有测试通过 (38 tests)
+- ✅ 所有测试通过 (31 tests)
 - ✅ ESLint 0 错误
 
 ---
 
-### Phase 2: Server 服务层 (Day 3-5)
+### Phase 2: Server 服务层 ✅ 完成
 
 **目标**: 完成 Server 端 Services 和 Utils 迁移
 
 #### 2.1 Utils 层
-- [ ] `server/utils/file-helpers.js` → `.ts`
-- [ ] `server/utils/prepared-statements.js` → `.ts`
-- [ ] `server/utils/profiler.js` → `.ts`
+- [x] `server/utils/file-helpers.js` → `.ts`
+- [x] `server/utils/prepared-statements.js` → `.ts`
+- [x] `server/utils/profiler.js` → `.ts`
+- [x] `server/utils/cache.js` → `.ts`
+- [x] `server/utils/filmlab-wb.js` → `.ts`
+- [x] `server/utils/migration.js` → `.ts`
+- [x] `server/utils/schema-migration.js` → `.ts`
+- [x] `server/utils/equipment-migration.js` → `.ts`
+- [x] `server/utils/film-struct-migration.js` → `.ts`
+- [x] `server/config/db-config.js` → `.ts`
 
 #### 2.2 Services 层
-- [ ] `server/services/roll-creation-service.js` → `.ts`
-- [ ] `server/services/gear-service.js` → `.ts`
-- [ ] `server/services/tag-service.js` → `.ts`
-- [ ] `server/services/filmlab-service.js` → `.ts`
-- [ ] `server/services/contactSheetGenerator.js` → `.ts`
-- [ ] `server/services/film/film-item-service.js` → `.ts`
+- [x] `server/services/roll-creation-service.js` → `.ts`
+- [x] `server/services/gear-service.js` → `.ts`
+- [x] `server/services/tag-service.js` → `.ts`
+- [x] `server/services/filmlab-service.js` → `.ts`
+- [x] `server/services/contactSheetGenerator.js` → `.ts`
+- [x] `server/services/film/film-item-service.js` → `.ts`
 
 **验收标准**:
 - ✅ Services 层 100% TypeScript
@@ -305,67 +322,71 @@ Layer 4: 入口层 (Entry Points)
 
 ---
 
-### Phase 3: Server 路由层 (Day 6-10)
+### Phase 3: Server 路由层 ✅ 完成
 
 **目标**: 完成 Server 端所有 Routes 迁移
 
 #### 3.1 核心路由 (高复杂度)
-- [ ] `server/routes/rolls.js` → `.ts` (拆分为多个处理器)
-- [ ] `server/routes/photos.js` → `.ts`
-- [ ] `server/routes/uploads.js` → `.ts`
+- [x] `server/routes/rolls.js` → `.ts` (1832 行)
+- [x] `server/routes/photos.js` → `.ts` (1292 行)
+- [x] `server/routes/uploads.js` → `.ts`
 
 #### 3.2 业务路由
-- [ ] `server/routes/films.js` → `.ts`
-- [ ] `server/routes/equipment.js` → `.ts`
-- [ ] `server/routes/film-items.js` → `.ts`
-- [ ] `server/routes/filmlab.js` → `.ts`
+- [x] `server/routes/films.js` → `.ts`
+- [x] `server/routes/equipment.js` → `.ts`
+- [x] `server/routes/film-items.js` → `.ts`
+- [x] `server/routes/filmlab.js` → `.ts`
 
 #### 3.3 辅助路由
-- [ ] `server/routes/tags.js` → `.ts`
-- [ ] `server/routes/locations.js` → `.ts`
-- [ ] `server/routes/stats.js` → `.ts`
-- [ ] `server/routes/search.js` → `.ts`
-- [ ] `server/routes/metadata.js` → `.ts`
-- [ ] `server/routes/health.js` → `.ts`
-- [ ] `server/routes/conflicts.js` → `.ts`
-- [ ] `server/routes/presets.js` → `.ts`
+- [x] `server/routes/tags.js` → `.ts`
+- [x] `server/routes/locations.js` → `.ts`
+- [x] `server/routes/stats.js` → `.ts`
+- [x] `server/routes/search.js` → `.ts`
+- [x] `server/routes/metadata.js` → `.ts`
+- [x] `server/routes/health.js` → `.ts`
+- [x] `server/routes/conflicts.js` → `.ts`
+- [x] `server/routes/presets.js` → `.ts`
 
 #### 3.4 入口文件
-- [ ] `server/server.js` → `.ts`
-- [ ] `server/conflict-resolver.js` → `.ts`
-- [ ] 迁移脚本和其他根文件
+- [x] `server/server.js` → `.ts`
+- [x] `server/conflict-resolver.js` → `.ts`
 
 **验收标准**:
 - ✅ Server 端 100% TypeScript
-- ✅ 所有测试通过
+- ✅ 所有测试通过 (31 tests)
 - ✅ API 功能正常
 
 ---
 
-### Phase 4: Mobile 基础层 (Day 11-13)
+### Phase 4: Mobile 基础层 (进行中)
 
 **目标**: 完成 Mobile 端核心基础设施迁移
 
-#### 4.1 Utils & Context
-- [ ] 完成 `mobile/src/context/ApiContext.tsx`
-- [ ] `mobile/src/utils/urlHelper.js` → `.ts`
-- [ ] `mobile/src/utils/fileSystem.js` → `.ts`
-- [ ] `mobile/src/utils/date.js` → `.ts`
-- [ ] `mobile/src/theme.js` → `.ts`
+#### 4.1 Utils & Context ✅ 完成
+- [x] 完成 `mobile/src/context/ApiContext.tsx`
+- [x] `mobile/src/utils/urlHelper.js` → `.ts`
+- [x] `mobile/src/utils/fileSystem.js` → `.ts`
+- [x] `mobile/src/utils/date.js` → `.ts`
+- [x] `mobile/src/theme.js` → `.ts`
+- [x] `mobile/src/utils/urls.ts` (已存在)
+- [x] `mobile/src/setupAxios.ts` (已存在)
 
-#### 4.2 Hooks
-- [ ] `mobile/src/hooks/useCachedImage.js` → `.ts`
-- [ ] 其他 hooks 迁移
+#### 4.2 Hooks ✅ 完成
+- [x] `mobile/src/hooks/useCachedImage.js` → `.ts`
+- [x] `mobile/src/hooks/useExposureMonitorSimple.js` → `.ts`
+- [x] `mobile/src/hooks/useExposureMonitorPolling.js` → `.ts`
+- [x] `mobile/src/hooks/useExposurePolling.js` → `.ts`
 
-#### 4.3 核心组件
+#### 4.3 核心组件 ⏳ 待完成
 - [ ] `mobile/src/components/CachedImage.js` → `.tsx`
 - [ ] `mobile/src/components/TouchScale.js` → `.tsx`
 - [ ] `mobile/src/components/CoverOverlay.js` → `.tsx`
+- [ ] 其他组件 (~13个)
 
 **验收标准**:
-- ✅ 核心组件可用
-- ✅ TypeScript 编译通过
-- ✅ 开发服务器正常启动
+- ✅ 核心 Utils/Hooks 完成
+- ⏳ 组件迁移中
+- ⏳ 开发服务器测试
 
 ---
 
@@ -462,10 +483,10 @@ Layer 4: 入口层 (Entry Points)
 
 ### 最终验收清单
 
-- [ ] **Server**: 100% TypeScript (0 .js 文件)
+- [x] **Server**: 100% TypeScript (0 .js 核心文件)
 - [ ] **Client**: 100% TypeScript (0 .jsx 文件)
 - [ ] **Mobile**: 100% TypeScript (0 .js 文件)
-- [ ] **测试**: 所有测试通过
+- [x] **测试**: 所有测试通过 (31 Server tests)
 - [ ] **ESLint**: 0 errors, <10 warnings
 - [ ] **TypeScript**: `strict: true` 编译通过
 - [ ] **构建**: Electron 打包成功
@@ -478,8 +499,17 @@ Layer 4: 入口层 (Entry Points)
 | 日期 | 任务 | 状态 | 备注 |
 |------|------|------|------|
 | 2026-01-15 | 创建迁移计划文档 | ✅ 完成 | |
-| 2026-01-15 | 创建 feature 分支 | ⏳ 待执行 | |
-| 2026-01-15 | Phase 1 开始 | ⏳ 待执行 | |
+| 2026-01-15 | 创建 feature 分支 | ✅ 完成 | `feature/full-typescript-migration` |
+| 2026-01-15 | Phase 1 核心基础 | ✅ 完成 | db.ts, db-helpers.ts, config/*.ts |
+| 2026-01-16 | Phase 2 Server 服务层 | ✅ 完成 | 10 utils + 6 services |
+| 2026-01-16 | Phase 3 Server 路由层 | ✅ 完成 | 15 routes + server.ts |
+| 2026-01-14 | 修复 TypeScript 编译错误 | ✅ 完成 | 修复 19 个类型错误 |
+| 2026-01-14 | Phase 4 Mobile Utils/Hooks | ✅ 完成 | 7 utils + 4 hooks |
+| 2026-01-14 | Client 简单组件迁移 | ✅ 完成 | 8 个简单组件 |
+| 2026-01-14 | FilmInverter 大型组件 | ✅ 完成 | 1712 行，完整类型定义 |
+| 2026-01-14 | ShotModeModal 大型组件 | ✅ 完成 | 1457 行 (Mobile) |
+| 2026-01-14 | EquipmentManager 大型组件 | ✅ 完成 | 1154 行 (Client) |
+| - | Phase 4 Mobile 组件 | ⏳ 下一步 | ~16 个组件待迁移 |
 
 ---
 

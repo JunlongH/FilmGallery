@@ -13,12 +13,25 @@ import { v4 as uuidv4 } from 'uuid';
 import { uploadsDir, localTmpDir, filmDir } from './paths';
 import { Request } from 'express';
 
+// Multer File type - define inline to avoid @types/multer dependency
+interface MulterFile {
+  fieldname: string;
+  originalname: string;
+  encoding: string;
+  mimetype: string;
+  size: number;
+  destination: string;
+  filename: string;
+  path: string;
+  buffer: Buffer;
+}
+
 /**
  * Generate unique filename with timestamp and UUID
  */
 const generateFilename = (
   _req: Request,
-  file: Express.Multer.File,
+  file: MulterFile,
   cb: (error: Error | null, filename: string) => void
 ): void => {
   const unique = `${Date.now()}-${uuidv4()}${path.extname(file.originalname) || ''}`;
@@ -29,7 +42,7 @@ const generateFilename = (
  * Default storage - uploads directory
  */
 const storageDefault: StorageEngine = multer.diskStorage({
-  destination: (_req: Request, _file: Express.Multer.File, cb) => cb(null, uploadsDir),
+  destination: (_req: Request, _file: MulterFile, cb) => cb(null, uploadsDir),
   filename: generateFilename
 });
 
@@ -40,7 +53,7 @@ const uploadDefault: Multer = multer({ storage: storageDefault });
  * Important: Keeps temp uploads in local OS temp to avoid file-lock contention
  */
 const storageTmp: StorageEngine = multer.diskStorage({
-  destination: (_req: Request, _file: Express.Multer.File, cb) => cb(null, localTmpDir),
+  destination: (_req: Request, _file: MulterFile, cb) => cb(null, localTmpDir),
   filename: generateFilename
 });
 
@@ -54,7 +67,7 @@ const uploadTmp: Multer = multer({
  * Film storage - dedicated film directory
  */
 const storageFilm: StorageEngine = multer.diskStorage({
-  destination: (_req: Request, _file: Express.Multer.File, cb) => cb(null, filmDir),
+  destination: (_req: Request, _file: MulterFile, cb) => cb(null, filmDir),
   filename: generateFilename
 });
 

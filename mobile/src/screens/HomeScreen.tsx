@@ -85,7 +85,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   }, [rolls, selectedYear]);
 
   const renderRoll = ({ item: roll }: { item: Roll }) => {
-    const coverUrl = getRollCoverUrl(baseUrl, roll.id);
+    const coverUrl = getRollCoverUrl(baseUrl, roll);
     const dateStr = roll.start_date || roll.created_at;
     const displayDate = dateStr ? format(new Date(dateStr), 'yyyy-MM-dd') : 'No date';
 
@@ -100,7 +100,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               <CachedImage 
                 uri={coverUrl} 
                 style={styles.image}
-                resizeMode="cover"
               />
               <CoverOverlay 
                 title={roll.title || `Roll #${roll.id}`}

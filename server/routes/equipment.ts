@@ -187,6 +187,7 @@ interface MulterFile {
 
 interface RequestWithFile extends Request {
   file?: MulterFile;
+  params: { id: string };
 }
 
 // Run result

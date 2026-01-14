@@ -1,0 +1,368 @@
+/**
+ * FilmGallery Server - TypeScript Migration
+ * 
+ * Main entry point for the Express server.
+ */
+
+import express, { Request, Response, NextFunction } from 'express';
+import bodyParser from 'body-parser';
+import compression from 'compression';
+import cors from 'cors';
+import path from 'path';
+import sharp from 'sharp';
+import fs from 'fs';
+
+// Disable sharp cache to prevent file locking on Windows
+sharp.cache(false);
+
+import { uploadsDir, tmpUploadDir, localTmpDir, rollsDir } from './config/paths';
+import { getDbPath } from './config/db-config';
+import { runMigration } from './utils/migration';
+import { runSchemaMigration } from './utils/schema-migration';
+import { runEquipmentMigration } from './utils/equipment-migration';
+import { runFilmStructMigration } from './utils/film-struct-migration';
+import { cacheSeconds } from './utils/cache';
+import { requestProfiler, getProfilerStats, scheduleProfilerLog } from './utils/profiler';
+
+const PreparedStmt = require('./utils/prepared-statements');
+
+console.log('[STORAGE CONFIG]', {
+  DATA_ROOT: process.env.DATA_ROOT,
+  UPLOADS_ROOT: process.env.UPLOADS_ROOT,
+  USER_DATA: process.env.USER_DATA,
+  resolvedDbPath: getDbPath(),
+  uploadsDir,
+  tmpUploadDir,
+  rollsDir
+});
+
+// Global error handlers to prevent crash and log the cause
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('UNHANDLED REJECTION:', reason);
+});
+
+const app = express();
+// lightweight request profiler for API
+app.use(requestProfiler());
+app.use(bodyParser.json({ limit: '10mb' }));
+// gzip/deflate for API JSON responses (not applied to static uploads)
+app.use(compression({ threshold: 1024 }));
+// CORS: reflect origin (including 'null' from file://) and allow private network
+app.use(cors({ origin: true, credentials: false, preflightContinue: true }));
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  next();
+});
+app.options('*', (req: Request, res: Response) => {
+  res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  res.sendStatus(204);
+});
+
+// --- storage directories ---
+const staticOptions = {
+  maxAge: '1y',
+  immutable: true,
+  etag: true,
+  lastModified: true
+};
+
+// Middleware to handle case-insensitive file serving on Windows/Linux mismatch
+const caseInsensitiveStatic = (root: string, options: Record<string, unknown> = {}) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    let decodedPath: string;
+    try {
+      decodedPath = decodeURIComponent(req.path);
+    } catch {
+      decodedPath = req.path;
+    }
+    
+    const filePath = path.join(root, decodedPath);
+    
+    // 1. Try exact match first
+    if (fs.existsSync(filePath)) {
+      // Check if it's a directory to avoid EISDIR
+      try {
+        const stats = fs.statSync(filePath);
+        if (stats.isDirectory()) return next();
+      } catch { return next(); }
+
+      res.sendFile(filePath, options, (err) => {
+        if (err) {
+          // If headers sent, we can't do anything. Otherwise pass to next.
+          if (res.headersSent) return;
+          console.error('[STATIC] Error serving exact file:', filePath, (err as Error).message);
+          next();
+        }
+      });
+      return;
+    }
+
+    // 2. Try case-insensitive match
+    const dir = path.dirname(filePath);
+    const base = path.basename(filePath);
+    
+    if (fs.existsSync(dir)) {
+      try {
+        const files = fs.readdirSync(dir);
+        const match = files.find(f => f.toLowerCase() === base.toLowerCase());
+        if (match) {
+          const matchedPath = path.join(dir, match);
+          res.sendFile(matchedPath, options, (err) => {
+            if (err) {
+              if (res.headersSent) return;
+              console.error('[STATIC] Error serving matched file:', matchedPath, (err as Error).message);
+              next();
+            }
+          });
+          return;
+        }
+      } catch (e) {
+        console.error('[STATIC] Readdir error:', dir, (e as Error).message);
+      }
+    }
+    next();
+  };
+};
+
+// Serve local temp uploads for previews (no long cache). Mount BEFORE /uploads.
+app.use('/uploads/tmp', express.static(localTmpDir));
+app.use('/uploads', caseInsensitiveStatic(uploadsDir, staticOptions));
+app.use('/uploads', express.static(uploadsDir, staticOptions));
+app.use('/uploads/rolls', caseInsensitiveStatic(rollsDir, staticOptions));
+app.use('/uploads/rolls', express.static(rollsDir, staticOptions));
+
+// --- Routes (mount after schema is ensured just before listen) ---
+const mountRoutes = (): void => {
+  // short-lived response caching for relatively static endpoints
+  app.use('/api/films', cacheSeconds(120), require('./routes/films'));
+  app.use('/api/film-items', require('./routes/film-items')); // No server cache - let React Query handle it
+  app.use('/api/tags', cacheSeconds(120), require('./routes/tags'));
+  app.use('/api/locations', cacheSeconds(300), require('./routes/locations'));
+  app.use('/api/stats', cacheSeconds(60), require('./routes/stats'));
+  app.use('/api/equipment', cacheSeconds(120), require('./routes/equipment')); // Equipment management
+  // rolls/photos change more often; keep very short cache to help bursts
+  app.use('/api/rolls', cacheSeconds(10), require('./routes/rolls'));
+  app.use('/api/photos', cacheSeconds(10), require('./routes/photos'));
+  // functional endpoints: no caching
+  app.use('/api/uploads', require('./routes/uploads'));
+  app.use('/api/metadata', require('./routes/metadata'));
+  app.use('/api/search', require('./routes/search'));
+  app.use('/api/presets', require('./routes/presets'));
+  app.use('/api/filmlab', require('./routes/filmlab'));
+  app.use('/api/conflicts', require('./routes/conflicts'));
+  app.use('/api/health', require('./routes/health'));
+  app.get('/api/_profiler', (req: Request, res: Response) => res.json(getProfilerStats()));
+  app.get('/api/_prepared-statements', (req: Request, res: Response) => res.json(PreparedStmt.getStats()));
+};
+
+// Ensure database schema exists before accepting requests (first-run install)
+const schemaSQL = `
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS films (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  iso INTEGER,
+  format TEXT,
+  type TEXT,
+  description TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS rolls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  film_id INTEGER,
+  camera_id INTEGER,
+  date_loaded DATE,
+  date_finished DATE,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(film_id) REFERENCES films(id)
+);
+
+CREATE TABLE IF NOT EXISTS photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  roll_id INTEGER,
+  filename TEXT NOT NULL,
+  path TEXT,
+  aperture REAL,
+  shutter_speed TEXT,
+  iso INTEGER,
+  focal_length REAL,
+  rating INTEGER DEFAULT 0,
+  notes TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(roll_id) REFERENCES rolls(id)
+);
+
+CREATE TABLE IF NOT EXISTS tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS photo_tags (
+  photo_id INTEGER,
+  tag_id INTEGER,
+  PRIMARY KEY (photo_id, tag_id),
+  FOREIGN KEY(photo_id) REFERENCES photos(id),
+  FOREIGN KEY(tag_id) REFERENCES tags(id)
+);
+
+CREATE TABLE IF NOT EXISTS presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  params TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+(async () => {
+  try {
+    // 1. Run Migration BEFORE loading DB
+    console.log('[SERVER] Starting migration check...');
+    await runMigration();
+    console.log('[SERVER] Migration check complete.');
+
+    // 2. Run Schema Migration (Systematic Update)
+    console.log('[SERVER] Starting schema migration...');
+    await runSchemaMigration();
+    console.log('[SERVER] Schema migration complete.');
+
+    // 2b. Run Equipment Migration (Cameras, Lenses, Flashes, Film Formats)
+    console.log('[SERVER] Starting equipment migration...');
+    await runEquipmentMigration();
+    console.log('[SERVER] Equipment migration complete.');
+
+    // 2c. Run Film Structure Migration (Brand, Format, Process)
+    console.log('[SERVER] Starting film structure migration...');
+    await runFilmStructMigration();
+    console.log('[SERVER] Film structure migration complete.');
+
+    // 3. Load DB now that file is ready
+    const db = require('./db');
+
+    // 4. Ensure Schema (Legacy check, kept for safety but mostly handled by schema-migration)
+    await new Promise<void>((resolve, reject) => {
+      db.exec(schemaSQL, (err: Error | null) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+    console.log('DB schema ensured');
+
+    // 5. Recompute roll sequence on startup
+    console.log('[SERVER] Recomputing roll sequence...');
+    const { recomputeRollSequence } = require('./services/roll-service');
+    await recomputeRollSequence();
+    console.log('[SERVER] Roll sequence recomputed.');
+
+    mountRoutes();
+    
+    // Add graceful shutdown endpoint
+    app.post('/api/shutdown', (req: Request, res: Response) => {
+      console.log('[SERVER] Shutdown requested');
+      res.json({ ok: true, message: 'Shutting down...' });
+      // Close DB and exit after sending response
+      setTimeout(() => {
+        console.log('[SERVER] Closing database connection...');
+        // Ensure WAL is checkpointed (or no-op in write-through) before exit
+        PreparedStmt.finalizeAllWithCheckpoint().catch((err: Error) => {
+          console.error('[SERVER] finalizeAllWithCheckpoint error:', err && err.message ? err.message : err);
+        });
+        if (db && typeof db.close === 'function') {
+          db.close((err: Error | null) => {
+            if (err) console.error('[SERVER] Error closing DB:', err);
+            else console.log('[SERVER] Database closed.');
+            process.exit(0);
+          });
+        } else {
+          process.exit(0);
+        }
+      }, 100);
+    });
+    
+    const PORT = process.env.PORT || 4000;
+    // Listen on all interfaces (0.0.0.0) to allow mobile access
+    const server = app.listen(Number(PORT), '0.0.0.0', () => {
+      console.log(`Server running on http://0.0.0.0:${PORT}`);
+      console.log('[PREPARED STATEMENTS] Ready for lazy initialization');
+      scheduleProfilerLog();
+    });
+    
+    // Graceful shutdown on signals
+    const gracefulShutdown = async (signal: string): Promise<void> => {
+      console.log(`\n[SERVER] Received ${signal}. Shutting down gracefully...`);
+      
+      // Force exit timeout
+      const forceExitTimer = setTimeout(() => {
+        console.error('[SERVER] ⚠️  Forced exit after 10 second timeout');
+        process.exit(1);
+      }, 10000);
+      
+      try {
+        // Step 1: Stop accepting new connections
+        await new Promise<void>((resolve) => {
+          server.close(() => {
+            console.log('[SERVER] ✅ HTTP server closed.');
+            resolve();
+          });
+        });
+        
+        // Step 2: Finalize prepared statements and checkpoint WAL
+        await PreparedStmt.finalizeAllWithCheckpoint();
+        
+        // Step 3: Close database connection
+        if (db && typeof db.close === 'function') {
+          await new Promise<void>((resolve, reject) => {
+            db.close((err: Error | null) => {
+              if (err) {
+                console.error('[SERVER] ❌ Error closing DB:', err);
+                reject(err);
+              } else {
+                console.log('[SERVER] ✅ Database closed.');
+                resolve();
+              }
+            });
+          });
+        }
+        
+        // Step 4: Verify WAL files are cleaned up
+        const dbPath = getDbPath();
+        const walPath = dbPath + '-wal';
+        const shmPath = dbPath + '-shm';
+        
+        setTimeout(() => {
+          const filesRemaining: string[] = [];
+          if (fs.existsSync(walPath)) filesRemaining.push('WAL');
+          if (fs.existsSync(shmPath)) filesRemaining.push('SHM');
+          
+          if (filesRemaining.length > 0) {
+            console.warn(`[SERVER] ⚠️  ${filesRemaining.join(', ')} files still exist (will be cleaned on next startup)`);
+          } else {
+            console.log('[SERVER] ✅ All database files cleaned up');
+          }
+          
+          clearTimeout(forceExitTimer);
+          console.log('[SERVER] 🎉 Graceful shutdown complete');
+          process.exit(0);
+        }, 500);
+        
+      } catch (err) {
+        console.error('[SERVER] ❌ Error during shutdown:', err);
+        clearTimeout(forceExitTimer);
+        process.exit(1);
+      }
+    };
+    
+    process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    
+  } catch (e) {
+    console.error('Failed to ensure DB schema', e);
+    process.exit(1);
+  }
+})();

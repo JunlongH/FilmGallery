@@ -1,30 +1,23 @@
-import React, { CSSProperties } from 'react';
+import React from 'react';
 
-export interface SquareImageProps {
-  /** Image URL source */
-  src?: string | null;
-  /** Alt text for accessibility */
+// TypeScript interface
+interface SquareImageProps {
+  src?: string;
   alt?: string;
-  /** Optional wrapper CSS classes */
   className?: string;
-  /** Optional wrapper inline styles (merged with defaults) */
-  style?: CSSProperties;
-  /** Border radius in pixels */
+  style?: React.CSSProperties;
   radius?: number;
-  /** CSS aspect ratio (e.g., '1 / 1', '16 / 9') */
   aspect?: string;
 }
 
-/**
- * Reusable square, center-cropped image component that fills its container
- */
-const SquareImage: React.FC<SquareImageProps> = ({
-  src,
-  alt,
-  className,
-  style,
-  radius = 4,
-  aspect = '1 / 1'
+// Reusable square, center-cropped image that fills its container
+const SquareImage: React.FC<SquareImageProps> = ({ 
+  src, 
+  alt, 
+  className, 
+  style, 
+  radius = 4, 
+  aspect = '1 / 1' 
 }) => {
   return (
     <div

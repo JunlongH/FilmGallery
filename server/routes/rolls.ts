@@ -32,7 +32,7 @@ import { uploadsDir, localTmpDir, rollsDir } from '../config/paths';
 import { moveFileSync, moveFileAsync, copyFileAsyncWithRetry } from '../utils/file-helpers';
 import { runAsync, allAsync, getAsync } from '../utils/db-helpers';
 import { attachTagsToPhotos } from '../services/tag-service';
-import { linkFilmItemToRoll } from '../services/film/film-item-service';
+import { linkFilmItemToRoll, FilmItemStatus } from '../services/film/film-item-service';
 import PreparedStmt from '../utils/prepared-statements';
 import { generateContactSheet, STYLES } from '../services/contactSheetGenerator';
 
@@ -1258,7 +1258,7 @@ router.post('/', (req: Request, res: Response) => {
 
         // If a film_item_id is provided, link it to this roll.
         if (film_item_id) {
-          let targetStatus = 'shot';
+          let targetStatus: FilmItemStatus = 'shot';
           try {
             const filmItem = await getAsync('SELECT status FROM film_items WHERE id = ?', [film_item_id]) as { status: string } | undefined;
             if (filmItem && filmItem.status === 'sent_to_lab') {

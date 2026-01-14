@@ -17,19 +17,15 @@ import {
   updateFilmItem,
   softDeleteFilmItem,
   hardDeleteFilmItem,
+  FilmItem as ServiceFilmItem,
+  PurchaseBatch as ServicePurchaseBatch,
+  ListFilmItemsFilters,
+  FilmItemStatus,
 } from '../services/film/film-item-service';
 
 const router: Router = express.Router();
 
-// Type definitions
-interface FilmItemFilters {
-  status?: string[];
-  film_id?: string | number;
-  includeDeleted?: boolean;
-  limit?: number;
-  offset?: number;
-}
-
+// Type definitions - extended for route-level enrichment
 interface FilmRow {
   name: string | null;
   brand: string | null;
@@ -38,17 +34,12 @@ interface FilmRow {
   category: string | null;
 }
 
-interface FilmItem {
-  id: number;
-  film_id: number | null;
-  status: string;
-  shot_logs?: string | ShotLogEntry[];
+interface EnrichedFilmItem extends ServiceFilmItem {
   film_name?: string;
   film_brand?: string;
   film_format?: string;
   film_category?: string;
   iso?: number;
-  [key: string]: unknown;
 }
 
 interface ShotLogEntry {
@@ -63,10 +54,6 @@ interface ShotLogEntry {
   detail_location?: string;
   latitude?: number | string;
   longitude?: number | string;
-}
-
-interface PurchaseBatch {
-  [key: string]: unknown;
 }
 
 /**
@@ -88,22 +75,23 @@ async function fetchFilmData(filmId: number): Promise<FilmRow | null> {
 /**
  * Enrich film item with film data
  */
-async function enrichFilmItem(item: FilmItem): Promise<FilmItem> {
+async function enrichFilmItem(item: ServiceFilmItem): Promise<EnrichedFilmItem> {
+  const enriched: EnrichedFilmItem = { ...item };
   if (item.film_id) {
     try {
       const filmRow = await fetchFilmData(item.film_id);
       if (filmRow) {
-        item.film_name = filmRow.name || undefined;
-        item.film_brand = filmRow.brand || undefined;
-        item.film_format = filmRow.format || undefined;
-        item.film_category = filmRow.category || undefined;
-        item.iso = filmRow.iso || undefined;
+        enriched.film_name = filmRow.name || undefined;
+        enriched.film_brand = filmRow.brand || undefined;
+        enriched.film_format = filmRow.format || undefined;
+        enriched.film_category = filmRow.category || undefined;
+        enriched.iso = filmRow.iso || undefined;
       }
     } catch (e) {
       console.warn(`[film-items] failed to fetch film data for film_id ${item.film_id}:`, (e as Error).message);
     }
   }
-  return item;
+  return enriched;
 }
 
 /**
@@ -123,7 +111,7 @@ function escapeCsv(val: unknown): string {
  */
 router.post('/purchase-batch', async (req: Request, res: Response) => {
   try {
-    const batch: PurchaseBatch = req.body || {};
+    const batch = req.body as ServicePurchaseBatch;
     const created = await createFilmItemsFromPurchase(batch);
     res.json({ ok: true, items: created });
   } catch (err) {
@@ -139,24 +127,28 @@ router.post('/purchase-batch', async (req: Request, res: Response) => {
 router.get('/', async (req: Request, res: Response) => {
   const startTime = Date.now();
   try {
-    const filters: FilmItemFilters = {
-      status: req.query.status ? (req.query.status as string).split(',') : undefined,
-      film_id: req.query.film_id as string | undefined,
+    // Parse status as FilmItemStatus array
+    const statusParam = req.query.status as string | undefined;
+    const statusArr = statusParam ? statusParam.split(',') as FilmItemStatus[] : undefined;
+    
+    const filters: ListFilmItemsFilters = {
+      status: statusArr,
+      film_id: req.query.film_id ? Number(req.query.film_id) : undefined,
       includeDeleted: req.query.includeDeleted === 'true',
       limit: req.query.limit ? Number(req.query.limit) : undefined,
       offset: req.query.offset ? Number(req.query.offset) : undefined,
     };
     
-    let items = await listFilmItems(filters);
+    const items = await listFilmItems(filters);
     
     // Enrich each item with film data
-    items = await Promise.all(items.map(enrichFilmItem));
+    const enrichedItems = await Promise.all(items.map(enrichFilmItem));
 
     const duration = Date.now() - startTime;
     if (duration > 100) {
       console.warn(`[PERF] GET /api/film-items took ${duration}ms - consider optimization`);
     }
-    res.json({ ok: true, items });
+    res.json({ ok: true, items: enrichedItems });
   } catch (err) {
     console.error('[film-items] list error', err);
     res.status(500).json({ ok: false, error: 'Failed to list film items' });

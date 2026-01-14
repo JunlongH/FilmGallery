@@ -1,34 +1,26 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
 
-export interface ModalDialogProps {
-  /** Whether the modal is open */
+interface ModalDialogProps {
   isOpen: boolean;
-  /** Type of modal - alert (single button) or confirm (two buttons) */
   type?: 'alert' | 'confirm';
-  /** Modal title */
   title?: string;
-  /** Modal message content */
-  message: React.ReactNode;
-  /** Callback when confirm button is clicked */
-  onConfirm: () => void;
-  /** Callback when cancel button is clicked (for confirm type) */
+  message?: string | React.ReactNode;
+  onConfirm?: () => void;
   onCancel?: () => void;
-  /** Text for confirm button */
   confirmText?: string;
-  /** Text for cancel button */
   cancelText?: string;
 }
 
-const ModalDialog: React.FC<ModalDialogProps> = ({
-  isOpen,
-  type = 'alert',
-  title,
-  message,
-  onConfirm,
-  onCancel,
-  confirmText = 'OK',
-  cancelText = 'Cancel'
+const ModalDialog: React.FC<ModalDialogProps> = ({ 
+  isOpen, 
+  type = 'alert', 
+  title, 
+  message, 
+  onConfirm, 
+  onCancel, 
+  confirmText = 'OK', 
+  cancelText = 'Cancel' 
 }) => {
   if (!isOpen) return null;
 
