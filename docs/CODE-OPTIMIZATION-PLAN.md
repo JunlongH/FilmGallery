@@ -53,11 +53,11 @@
 
 | 文件 | 当前问题 | 改动量 | 状态 |
 |------|----------|--------|------|
-| `server/routes/films.js` | 全 callback | 高 | ⬜ |
-| `server/routes/tags.js` | 全 callback | 中 | ⬜ |
-| `server/routes/stats.js` | 全 callback | 低 | ⬜ |
-| `server/routes/search.js` | 全 callback | 低 | ⬜ |
-| `server/routes/metadata.js` | 全 callback | 低 | ⬜ |
+| `server/routes/films.js` | 全 callback | 高 | ✅ |
+| `server/routes/tags.js` | 全 callback | 中 | ✅ (已是 async) |
+| `server/routes/stats.js` | 全 callback | 低 | ✅ |
+| `server/routes/search.js` | 全 callback | 低 | ✅ |
+| `server/routes/metadata.js` | 全 callback | 低 | ✅ (已是 async) |
 | `server/routes/photos.js` | 混合（25+ inline Promise） | 高 | ⬜ |
 | `server/routes/rolls.js` | 混合（20+ inline Promise） | 高 | ⬜ |
 | `server/routes/uploads.js` | 混合 | 中 | ⬜ |
