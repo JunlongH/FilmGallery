@@ -16,7 +16,7 @@
     "client:build": "cd client && npm run build",
     "build": "npm run client:build && electron-builder",
     "dist": "npm run build",
-    "postinstall": "if [ -z \"$CI\" ]; then npm run init-db || true; fi",
+    "postinstall": "node -e \"if (!process.env.CI) { require('child_process').execSync('npm run init-db', {stdio: 'inherit'}).toString() }\" || exit 0",
     "start": "node server.js"
   },
   "author": "JunlongHuang",
