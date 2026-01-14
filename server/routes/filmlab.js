@@ -103,7 +103,7 @@ router.post('/preview', async (req, res) => {
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 
     // Build pipeline: rotate/resize/crop only. All color ops (invert, WB, tone, curves) applied in JS for parity with client.
-    let img = await buildPipeline(abs, params || {}, { maxWidth: maxWidth || 1600, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
+    const img = await buildPipeline(abs, params || {}, { maxWidth: maxWidth || 1600, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
 
     // Pull raw buffer
     const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
@@ -236,7 +236,7 @@ router.post('/render', async (req, res) => {
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 
     // Full resolution pipeline: geometry only; color ops in JS
-    let img = await buildPipeline(abs, params || {}, { maxWidth: 4000, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
+    const img = await buildPipeline(abs, params || {}, { maxWidth: 4000, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
 
     const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
     const width = info.width;
@@ -364,7 +364,7 @@ router.post('/export', async (req, res) => {
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 
     // Build pipeline with Inversion + WB applied in Sharp, Tone/Curves deferred to JS
-    let img = await buildPipeline(abs, params || {}, { maxWidth: 4000, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
+    const img = await buildPipeline(abs, params || {}, { maxWidth: 4000, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
 
     const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
     const width = info.width;

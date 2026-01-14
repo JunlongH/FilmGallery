@@ -50,5 +50,5 @@ contextBridge.exposeInMainWorld('__electron', {
       return { ok:false, error: e && e.message };
     }
   },
-  showInFolder: (filePath) => { try { if (filePath) shell.showItemInFolder(filePath); } catch(_){} }
+  showInFolder: (filePath) => { try { if (filePath) shell.showItemInFolder(filePath); } catch(_){ /* ignore shell errors */ } }
 });

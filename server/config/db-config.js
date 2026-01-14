@@ -34,7 +34,7 @@ function getDbPath() {
   try {
     const dir = path.dirname(dbPath);
     if (dir && !fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  } catch (_) {}
+  } catch (_) { /* ignore - directory may already exist */ }
 
   return dbPath;
 }

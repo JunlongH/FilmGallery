@@ -25,7 +25,7 @@ const sharpWithTimeout = (sharpOp, timeoutMs = SHARP_TIMEOUT) => {
 };
 
 const { uploadTmp, uploadDefault } = require('../config/multer');
-const { uploadsDir, tmpUploadDir, localTmpDir, rollsDir } = require('../config/paths');
+const { uploadsDir, localTmpDir, rollsDir } = require('../config/paths');
 const { moveFileSync, moveFileAsync, copyFileAsyncWithRetry } = require('../utils/file-helpers');
 const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
 const { attachTagsToPhotos } = require('../services/tag-service');
@@ -338,7 +338,7 @@ router.post('/', (req, res) => {
           const baseName = `${rollId}_${frameNumber}`;
           
           // Generated display files are always JPG
-          let finalName = `${baseName}.jpg`;
+          const finalName = `${baseName}.jpg`;
           let negativeRelPath = null;
           let fullRelPath = null;
           let thumbRelPath = null;
@@ -546,7 +546,7 @@ router.post('/', (req, res) => {
 
         // Cleanup staged temp artifacts after publish
         for (const t of stagedTempArtifacts) {
-          try { if (fs.existsSync(t)) await fs.promises.unlink(t); } catch (_) {}
+          try { if (fs.existsSync(t)) await fs.promises.unlink(t); } catch (_) { /* ignore cleanup error */ }
         }
         // Insert DB records (atomic: any failure -> rollback)
         for (const p of stagedPhotos) {
@@ -648,7 +648,7 @@ router.post('/', (req, res) => {
           console.error('Failed operation:', err.operation);
         }
         
-        try { await runAsync('ROLLBACK'); } catch (_) {}
+        try { await runAsync('ROLLBACK'); } catch (_) { /* ignore rollback error */ }
 
         // Cleanup created roll folder/files (best-effort)
         if (rollFolderPath) {
@@ -656,7 +656,7 @@ router.post('/', (req, res) => {
         } else {
           // Fallback: delete any created paths we tracked
           for (const p of createdPaths) {
-            try { await rmWithRetry(p); } catch (_) {}
+            try { await rmWithRetry(p); } catch (_) { /* ignore cleanup error */ }
           }
         }
 
@@ -1099,7 +1099,7 @@ router.delete('/:id', async (req, res) => {
       await runAsync('COMMIT');
       return result?.changes || 0;
     } catch (err) {
-      try { await runAsync('ROLLBACK'); } catch (_) {}
+      try { await runAsync('ROLLBACK'); } catch (_) { /* ignore rollback error */ }
       throw err;
     }
   };

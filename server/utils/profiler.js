@@ -22,7 +22,7 @@ function requestProfiler() {
         const end = process.hrtime.bigint();
         const ms = Number(end - start) / 1e6;
         record(keyFor(req), ms);
-      } catch (_) {}
+      } catch (_) { /* ignore profiling errors */ }
     });
     next();
   };

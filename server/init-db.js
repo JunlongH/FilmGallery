@@ -124,7 +124,7 @@ db.serialize(() => {
       }
     };
 
-    try { await ensureColumns(); } catch (_) {}
+    try { await ensureColumns(); } catch (_) { /* ignore - columns may already exist */ }
 
     if (fs.existsSync(seedPath)) {
       const sql = fs.readFileSync(seedPath, 'utf8');

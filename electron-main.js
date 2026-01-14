@@ -9,18 +9,18 @@ const isDev = process.env.ELECTRON_DEV === 'true' || !app.isPackaged;
 
 // Ensure Windows uses our packaged icon for taskbar/start shortcuts
 // Must be set before any BrowserWindow is created
-try { app.setAppUserModelId('com.yourorg.filmgallery'); } catch (_) {}
+try { app.setAppUserModelId('com.yourorg.filmgallery'); } catch (_) { /* ignore - non-critical for app function */ }
 let mainWindow = null;
 let tray = null;
 let isQuitting = false;
 let serverProcess = null;
 let appConfig = {};
 let gpuWindow = null;
-let gpuJobs = new Map();
+const gpuJobs = new Map();
 let windowState = null;
 
 function getWindowStatePath() {
-  try { return path.join(app.getPath('userData'), 'window-state.json'); } catch (_) { return path.join(__dirname, 'window-state.json'); }
+  try { return path.join(app.getPath('userData'), 'window-state.json'); } catch (_) { /* fallback if userData unavailable */ return path.join(__dirname, 'window-state.json'); }
 }
 
 function loadWindowState() {
@@ -31,7 +31,7 @@ function loadWindowState() {
       const s = JSON.parse(raw);
       if (s && typeof s === 'object') return s;
     }
-  } catch (_) {}
+  } catch (_) { /* ignore corrupted state file */ }
   return { width: 1200, height: 800, isMaximized: false };
 }
 
@@ -48,7 +48,7 @@ function saveWindowState(win) {
     };
     const p = getWindowStatePath();
     fs.writeFileSync(p, JSON.stringify(data));
-  } catch (_) {}
+  } catch (_) { /* ignore - non-critical to save window state */ }
 }
 
 // Helper to load sharp reliably in both Dev and Prod environments
@@ -93,10 +93,10 @@ function probeBackend(url, timeout = 1200) {
         res.destroy();
         resolve(true);
       });
-      req.on('timeout', () => { try { req.destroy(); } catch (_) {}; resolve(false); });
+      req.on('timeout', () => { try { req.destroy(); } catch (_) { /* ignore */ } resolve(false); });
       req.on('error', () => resolve(false));
       req.setTimeout(timeout);
-    } catch (_) {
+    } catch (_) { /* network error */
       resolve(false);
     }
   });
@@ -205,9 +205,10 @@ async function startServer(forceRestart = false) {
 
 
 
-function stopServer() {
-  return new Promise(async (resolve) => {
-    LOG('[stopServer] Starting shutdown...');
+async function stopServer() {
+  LOG('[stopServer] Starting shutdown...');
+  
+  return new Promise((resolve) => {
     
     // If we have a managed serverProcess, try graceful shutdown first
     if (serverProcess && !serverProcess.killed) {
@@ -227,7 +228,7 @@ function stopServer() {
         const gracefulTimeout = setTimeout(() => {
           LOG('[stopServer] Graceful timeout, force killing...');
           if (serverProcess && !serverProcess.killed) {
-            try { serverProcess.kill('SIGKILL'); } catch (e) {}
+            try { serverProcess.kill('SIGKILL'); } catch (_e) { /* ignore kill errors */ }
           }
           serverProcess = null;
           resolve();
@@ -246,7 +247,7 @@ function stopServer() {
       req.on('error', (e) => {
         LOG('[stopServer] Shutdown endpoint error:', e.message, '- force killing');
         if (serverProcess && !serverProcess.killed) {
-          try { serverProcess.kill('SIGKILL'); } catch (e) {}
+          try { serverProcess.kill('SIGKILL'); } catch (_e) { /* ignore kill errors */ }
         }
         serverProcess = null;
         resolve();
@@ -498,7 +499,7 @@ function createWindow() {
       dialog.showErrorBox('加载前端失败', `loadFile 失败: ${err && err.message}\n请检查 ${indexHtml}`);
     });
     if (windowState && windowState.isMaximized) {
-      try { mainWindow.maximize(); } catch (_) {}
+      try { mainWindow.maximize(); } catch (_) { /* ignore maximize errors */ }
     }
   })();
 }
@@ -537,7 +538,7 @@ async function ensureGpuWindow() {
 ipcMain.handle('filmlab-gpu:process', async (_e, payload) => {
   const jobId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
   await ensureGpuWindow();
-  const ensureDir = (dir) => { try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch(_){} };
+  const ensureDir = (dir) => { try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch(_){ /* ignore mkdir errors */ } };
   const exportDir = path.join(app.getPath('userData'), 'gpu-exports');
   ensureDir(exportDir);
 
@@ -900,7 +901,7 @@ app.on('before-quit', async (e) => {
     
     // Close GPU window if exists
     if (gpuWindow && !gpuWindow.isDestroyed()) {
-      try { gpuWindow.close(); } catch (err) {}
+      try { gpuWindow.close(); } catch (err) { /* ignore close errors */ }
     }
     
     await stopServer();

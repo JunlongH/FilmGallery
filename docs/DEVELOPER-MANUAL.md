@@ -1,7 +1,7 @@
 # FilmGallery 开发手册
 
-**版本：** v1.6.0  
-**最后更新：** 2025-12-03
+**版本：** v1.9.0  
+**最后更新：** 2026-01-14
 
 ## 📚 文档索引
 
@@ -12,6 +12,7 @@
 - [5. 核心功能](./dev-manual/05-core-features.md) - 业务逻辑和关键流程
 - [6. 开发指南](./dev-manual/06-development.md) - 开发环境配置和工作流
 - [7. 部署运维](./dev-manual/07-deployment.md) - 生产环境部署和维护
+- [8. 代码优化计划](./OPTIMIZATION-PLAN-2026-01-14.md) - TypeScript 迁移与重构计划
 
 ## 🎯 快速导航
 
@@ -44,11 +45,13 @@
 - 🎨 **预设管理** - 保存和应用编辑参数
 
 ### 技术特点
-- 跨平台支持（Windows 桌面 + Android 移动）
+- 跨平台支持（Windows 桌面 + Android 移动 + Watch 应用）
 - 离线优先设计，SQLite 本地数据库
 - 主从备份 IP 自动切换
 - OneDrive 同步优化
 - Prepared Statements 性能优化
+- **共享类型系统** (`@filmgallery/types`) - TypeScript 类型定义
+- **Monorepo 结构** - npm workspaces 管理共享包
 
 ## 🚀 快速开始
 

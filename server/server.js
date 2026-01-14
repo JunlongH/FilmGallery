@@ -335,7 +335,7 @@ const seedLocations = async () => {
 				const shmPath = dbPath + '-shm';
 				
 				setTimeout(() => {
-					let filesRemaining = [];
+					const filesRemaining = [];
 					if (fs.existsSync(walPath)) filesRemaining.push('WAL');
 					if (fs.existsSync(shmPath)) filesRemaining.push('SHM');
 					

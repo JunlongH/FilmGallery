@@ -5,7 +5,6 @@ const fs = require('fs');
 const path = require('path');
 const { uploadFilm } = require('../config/multer');
 const { uploadsDir } = require('../config/paths');
-const PreparedStmt = require('../utils/prepared-statements');
 const { FILM_CATEGORIES, FILM_FORMATS, KNOWN_BRANDS } = require('../utils/film-struct-migration');
 
 // Get film constants (for dropdowns)

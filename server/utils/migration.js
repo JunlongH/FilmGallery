@@ -52,7 +52,7 @@ async function runMigration() {
 
   // 2. Check Target State
   let targetPhotos = 0;
-  let targetExists = fs.existsSync(targetDbPath);
+  const targetExists = fs.existsSync(targetDbPath);
   
   if (targetExists) {
     try {

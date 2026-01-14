@@ -49,7 +49,7 @@ async function validatePhotoUpdate(photoId, body) {
     if (e && d > e) throw new Error('date_taken after roll end');
   }
   let latitude = body.latitude, longitude = body.longitude;
-  let location_id = body.location_id;
+  const location_id = body.location_id;
   if (location_id && (latitude === undefined || longitude === undefined)) {
     const loc = await getAsync('SELECT city_lat, city_lng FROM locations WHERE id=?', [location_id]);
     if (loc) { latitude = latitude ?? loc.city_lat; longitude = longitude ?? loc.city_lng; }

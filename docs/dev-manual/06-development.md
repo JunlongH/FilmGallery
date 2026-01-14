@@ -432,3 +432,86 @@ ls -la server/uploads/
 # 检查 Sharp 安装
 npm rebuild sharp
 ```
+
+## 6.10 测试 (2026-01-14 新增)
+
+### 6.10.1 测试框架
+项目使用 Jest 进行单元测试。
+
+```bash
+cd server
+
+# 安装依赖（如果尚未安装）
+npm install
+
+# 运行所有测试
+npm test
+
+# 监视模式（文件变更时自动运行）
+npm run test:watch
+
+# 生成覆盖率报告
+npm run test:coverage
+```
+
+### 6.10.2 测试文件位置
+测试文件位于 `__tests__` 目录中：
+```
+server/
+├── services/
+│   ├── __tests__/
+│   │   ├── roll-creation-service.test.js
+│   │   └── thumbnail-service.test.js
+│   ├── roll-creation-service.js
+│   └── thumbnail-service.js
+├── utils/
+│   ├── __tests__/
+│   │   └── image-lut.test.js
+│   └── image-lut.js
+```
+
+### 6.10.3 编写测试示例
+```javascript
+// services/__tests__/my-service.test.js
+const { myFunction } = require('../my-service');
+
+describe('myFunction', () => {
+  it('should return expected result', () => {
+    const result = myFunction('input');
+    expect(result).toBe('expected');
+  });
+
+  it('should handle edge cases', () => {
+    expect(() => myFunction(null)).toThrow();
+  });
+});
+```
+
+### 6.10.4 TypeScript 类型检查
+```bash
+# 检查 client 端类型
+cd client
+npm run typecheck
+
+# 或从根目录
+npm run typecheck
+```
+
+## 6.11 代码质量 (2026-01-14 新增)
+
+### 6.11.1 ESLint
+```bash
+# 从根目录运行 lint
+npm run lint
+
+# 自动修复问题
+npm run lint:fix
+```
+
+### 6.11.2 TypeScript
+已迁移的 TypeScript 文件：
+- `client/src/api.ts` - API 客户端（完整类型化）
+- `client/src/components/ModalDialog.tsx`
+- `client/src/components/SquareImage.tsx`
+- `client/src/components/FilterPanel.tsx`
+- `packages/@filmgallery/types/src/index.ts` - 共享类型定义

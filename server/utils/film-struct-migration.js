@@ -119,17 +119,19 @@ function detectFormat(name, category) {
   return '135';
 }
 
-function runFilmStructMigration() {
-  return new Promise(async (resolve, reject) => {
-    const dbPath = getDbPath();
-    log(`Starting film structure migration on: ${dbPath}`);
+async function runFilmStructMigration() {
+  const dbPath = getDbPath();
+  log(`Starting film structure migration on: ${dbPath}`);
 
-    const db = new sqlite3.Database(dbPath, (err) => {
+  const db = await new Promise((resolve, reject) => {
+    const database = new sqlite3.Database(dbPath, (err) => {
       if (err) {
         log(`Failed to open DB: ${err.message}`);
         return reject(err);
       }
+      resolve(database);
     });
+  });
 
     const run = (sql, params = []) => new Promise((res) => {
       db.run(sql, params, function(err) {
@@ -284,17 +286,22 @@ function runFilmStructMigration() {
 
       log('Film structure migration completed successfully!');
       
-      db.close((err) => {
-        if (err) log(`Error closing DB: ${err.message}`);
-        resolve();
+      await new Promise((resolve, reject) => {
+        db.close((err) => {
+          if (err) {
+            log(`Error closing DB: ${err.message}`);
+            reject(err);
+          } else {
+            resolve();
+          }
+        });
       });
 
     } catch (err) {
       log(`Migration error: ${err.message}`);
       db.close();
-      reject(err);
+      throw err;
     }
-  });
 }
 
 // Export for use in server startup

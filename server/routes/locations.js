@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { allAsync, runAsync, getAsync } = require('../utils/db-helpers');
+const { allAsync, getAsync } = require('../utils/db-helpers');
 const PreparedStmt = require('../utils/prepared-statements');
 
 // GET /api/locations/countries

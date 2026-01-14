@@ -92,18 +92,41 @@ FilmGalery/
 ├── server/              # 后端服务器
 │   ├── routes/          # API 路由
 │   ├── services/        # 业务逻辑
+│   │   ├── roll-service.js          # Roll 排序服务
+│   │   ├── roll-creation-service.js # Roll 创建服务 (原子事务)
+│   │   ├── thumbnail-service.js     # 缩略图生成服务
+│   │   ├── tag-service.js           # 标签管理服务
+│   │   ├── gear-service.js          # 装备管理服务
+│   │   └── film/                    # Film 相关服务
 │   ├── utils/           # 工具模块
+│   │   ├── db-helpers.js    # 数据库异步操作封装
+│   │   ├── image-lut.js     # 图像 LUT 处理函数
+│   │   ├── file-helpers.js  # 文件操作辅助函数
+│   │   └── prepared-statements.js # 预编译语句管理
 │   ├── migrations/      # 数据库迁移
 │   ├── config/          # 配置文件
 │   ├── uploads/         # 上传文件存储
 │   ├── db.js            # 数据库连接
 │   └── server.js        # 服务器入口
 │
+├── watch-app/           # Watch 应用 (React Native TypeScript)
+│   ├── src/
+│   │   ├── screens/     # 页面组件
+│   │   ├── services/    # API 服务
+│   │   └── types/       # TypeScript 类型定义
+│   └── tsconfig.json    # TypeScript 配置
+│
+├── packages/            # 共享包 (Monorepo)
+│   └── @filmgallery/
+│       └── types/       # 共享 TypeScript 类型定义
+│           ├── src/index.ts
+│           └── package.json
+│
 ├── electron-main.js     # Electron 主进程
 ├── electron-preload.js  # Electron 预加载脚本
 ├── electron-gpu/        # GPU 加速模块
 ├── docs/                # 项目文档
-└── package.json         # 根项目配置
+└── package.json         # 根项目配置 (含 workspaces)
 ```
 
 ## 1.4 核心设计模式
@@ -184,6 +207,41 @@ setInterval(() => {
 - 图片存储在本地文件系统
 - OneDrive 自动同步（可选）
 
+### 1.6.2 共享类型系统 (2026-01-14 新增)
+
+使用 `@filmgallery/types` 包在各端共享 TypeScript 类型定义：
+
+```typescript
+// packages/@filmgallery/types/src/index.ts
+export interface Photo {
+  id: number;
+  filename: string;
+  full_rel_path: string;
+  // ...
+}
+
+export interface Roll {
+  id: number;
+  title: string;
+  filmId?: number | null;
+  // ...
+}
+```
+
+**使用方法：**
+```typescript
+import { Photo, Roll, FilmItem } from '@filmgallery/types';
+```
+
+### 1.6.3 工具模块化
+
+服务器端工具函数已模块化：
+
+- `server/utils/db-helpers.js` - 数据库异步操作（带重试机制）
+- `server/utils/image-lut.js` - 图像 LUT 生成（用于 FilmLab）
+- `server/utils/file-helpers.js` - 文件操作工具
+- `server/utils/prepared-statements.js` - 预编译 SQL 语句
+
 ### 1.6.2 性能优化
 - Prepared Statements 减少 SQL 解析开销
 - React Query 智能缓存和后台刷新
@@ -193,7 +251,56 @@ setInterval(() => {
 ### 1.6.3 跨平台
 - Electron 打包为 Windows 桌面应用
 - React Native 编译为 Android APK
-- 共享相同的后端 API
+
+## 1.7 开发工具配置 (2026-01-14 新增)
+
+### 1.7.1 ESLint 配置
+根目录 `.eslintrc.js` 提供统一的代码风格检查：
+
+```bash
+# 运行 lint 检查
+npm run lint
+
+# 自动修复
+npm run lint:fix
+```
+
+### 1.7.2 TypeScript 配置
+- **Client**: `client/tsconfig.json` - 支持 JSX/TSX 渐进式迁移
+- **Types Package**: `packages/@filmgallery/types/tsconfig.json` - 共享类型定义
+
+```bash
+# 类型检查
+npm run typecheck
+
+# 构建类型包
+npm run build:types
+```
+
+### 1.7.3 已迁移的 TypeScript 文件
+
+**Client 端：**
+- `client/src/api.ts` - 完整类型化 API 客户端 (1100+ 行)
+- `client/src/components/ModalDialog.tsx` - 模态对话框
+- `client/src/components/SquareImage.tsx` - 方形图片组件
+- `client/src/components/FilterPanel.tsx` - 过滤器面板
+- `client/src/__tests__/api.test.ts` - API 客户端单元测试
+- `client/src/setupTests.ts` - Jest 测试配置
+
+**Server 端：**
+- `server/utils/image-lut.ts` - 图像 LUT 处理函数
+- `server/services/thumbnail-service.ts` - 缩略图生成服务
+- `server/services/roll-service.ts` - Roll 序列维护服务
+- `server/services/gear-service.d.ts` - Gear 服务类型声明文件
+- `server/services/tag-service.d.ts` - Tag 服务类型声明文件
+- `server/utils/db-helpers.d.ts` - 数据库工具类型声明文件
+- `server/tsconfig.json` - Server TypeScript 配置
+
+**Mobile 端：**
+- `mobile/src/types/index.ts` - 移动端类型定义（导出共享类型）
+- `mobile/src/services/apiService.ts` - 类型化 API 服务层（Rolls/Films/Photos/Tags/Equipment/Locations）
+- `mobile/src/screens/HomeScreen.tsx` - 主屏幕迁移示例（部分实现）
+- `mobile/tsconfig.json` - Mobile TypeScript 配置
 
 ### 1.6.4 可扩展性
 - 模块化路由设计，易于添加新 API

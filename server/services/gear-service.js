@@ -22,7 +22,7 @@ async function addOrUpdateGear(rollId, type, newValue) {
     // Proactively remove any existing placeholder entries for this type
     try {
       await runAsync('DELETE FROM roll_gear WHERE roll_id = ? AND type = ? AND (value = "" OR value = "-" OR value = "--" OR value = "—")', [rollId, type]);
-    } catch(e) {}
+    } catch(e) { /* ignore - placeholders may not exist */ }
     return { added: false, removed: [] };
   }
 

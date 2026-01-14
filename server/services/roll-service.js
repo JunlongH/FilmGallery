@@ -55,7 +55,7 @@ async function recomputeRollSequence() {
     await runAsync('COMMIT');
     console.log(`[MIGRATION] Recomputed display_seq for ${rows.length} rolls`);
   } catch (e) {
-    try { await runAsync('ROLLBACK'); } catch(_) {}
+    try { await runAsync('ROLLBACK'); } catch(_) { /* ignore rollback error */ }
     throw e;
   }
 

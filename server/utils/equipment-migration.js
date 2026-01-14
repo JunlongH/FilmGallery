@@ -63,17 +63,19 @@ const LENS_MOUNTS = [
   'Mamiya RB/RZ', 'Pentax 645', 'Pentax 67', 'Fixed'
 ];
 
-function runEquipmentMigration() {
-  return new Promise(async (resolve, reject) => {
-    const dbPath = getDbPath();
-    log(`Starting equipment migration on: ${dbPath}`);
+async function runEquipmentMigration() {
+  const dbPath = getDbPath();
+  log(`Starting equipment migration on: ${dbPath}`);
 
-    const db = new sqlite3.Database(dbPath, (err) => {
+  const db = await new Promise((resolve, reject) => {
+    const database = new sqlite3.Database(dbPath, (err) => {
       if (err) {
         log(`Failed to open DB: ${err.message}`);
         return reject(err);
       }
+      resolve(database);
     });
+  });
 
     const run = (sql, params = []) => new Promise((res) => {
       db.run(sql, params, function(err) {
@@ -301,7 +303,7 @@ function runEquipmentMigration() {
         // Try to extract focal length and aperture from common patterns
         // e.g., "Pentax M 50mm f/1.7", "Zeiss 50/1.4", "Canon 50mm F1.8"
         const focalMatch = str.match(/(\d+)(?:\s*-\s*(\d+))?\s*mm/i);
-        const apertureMatch = str.match(/[fF][\s\/]?(\d+\.?\d*)/);
+        const apertureMatch = str.match(/[fF][\s/]?(\d+\.?\d*)/);
         
         const parts = str.split(/\s+/);
         const brand = parts[0];
@@ -538,14 +540,12 @@ function runEquipmentMigration() {
       log(`  - Film Formats: ${formatCount.count}`);
 
       db.close();
-      resolve();
 
     } catch (err) {
       log(`Migration error: ${err.message}`);
       db.close();
-      reject(err);
+      throw err;
     }
-  });
 }
 
 module.exports = { runEquipmentMigration, CAMERA_TYPES, FILM_FORMATS, LENS_MOUNTS };

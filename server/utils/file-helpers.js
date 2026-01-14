@@ -11,14 +11,14 @@ function moveFileSync(src, dest) {
     if (err.code === 'EXDEV') {
       // Cross-device: copy and unlink
       fs.copyFileSync(src, dest);
-      try { fs.unlinkSync(src); } catch (e) {}
+      try { fs.unlinkSync(src); } catch (e) { /* ignore - source cleanup is best effort */ }
     } else if (err.code === 'EPERM' || err.code === 'EBUSY') {
       // Locked or permission issue.
       // Do NOT unlink dest explicitly, as it causes data loss if subsequent write fails.
       // Try copyFileSync which overwrites and might handle locks differently or at least fail safely.
       try {
         fs.copyFileSync(src, dest);
-        try { fs.unlinkSync(src); } catch (e) {}
+        try { fs.unlinkSync(src); } catch (e) { /* ignore - source cleanup is best effort */ }
       } catch (copyErr) {
         // If copy fails, throw the error. Dest is preserved (if it existed).
         console.error('moveFileSync failed (locked?):', copyErr);

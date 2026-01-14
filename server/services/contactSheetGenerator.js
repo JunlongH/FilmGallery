@@ -100,7 +100,7 @@ function generateDXCode(rollInfo, frameIndex = 0) {
   };
   // Find closest ISO
   const isoValues = Object.keys(isoMap).map(Number).sort((a, b) => a - b);
-  let closestIso = isoValues.reduce((prev, curr) => 
+  const closestIso = isoValues.reduce((prev, curr) => 
     Math.abs(curr - iso) < Math.abs(prev - iso) ? curr : prev
   );
   const isoCode = isoMap[closestIso] || 4; // Default to 400
@@ -505,8 +505,8 @@ async function generateContactSheet({
   
   // First pass: calculate frame width using base values
   const baseAvailableWidth = maxTotalWidth - 2 * FILM_BASE.edgeMargin - (columns - 1) * FILM_BASE.frameGap;
-  let frameWidth = Math.min(Math.floor(baseAvailableWidth / columns), maxPhotoWidth);
-  let frameHeight = Math.round(frameWidth / FRAME_ASPECT_RATIO);
+  const frameWidth = Math.min(Math.floor(baseAvailableWidth / columns), maxPhotoWidth);
+  const frameHeight = Math.round(frameWidth / FRAME_ASPECT_RATIO);
   
   // Get scaled FILM dimensions based on actual frameWidth
   const FILM = getScaledFilm(frameWidth, styleName);

@@ -12,70 +12,7 @@ const { uploadsDir } = require('../config/paths');
 const { uploadDefault } = require('../config/multer');
 const { moveFileSync } = require('../utils/file-helpers');
 const PreparedStmt = require('../utils/prepared-statements');
-
-// Helpers for tone and curves (mirror preview implementation)
-function buildToneLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 }) {
-  const lut = new Uint8Array(256);
-  const expFactor = Math.pow(2, (Number(exposure) || 0) / 50);
-  const ctr = Number(contrast) || 0;
-  const contrastFactor = (259 * (ctr + 255)) / (255 * (259 - ctr));
-  const blackPoint = -(Number(blacks) || 0) * 0.002;
-  const whitePoint = 1 - (Number(whites) || 0) * 0.002;
-  const sFactor = (Number(shadows) || 0) * 0.005;
-  const hFactor = (Number(highlights) || 0) * 0.005;
-  for (let i = 0; i < 256; i++) {
-    let val = i / 255;
-    val *= expFactor;
-    val = (val - 0.5) * contrastFactor + 0.5;
-    if (whitePoint !== blackPoint) val = (val - blackPoint) / (whitePoint - blackPoint);
-    if (sFactor !== 0) val += sFactor * Math.pow(1 - val, 2) * val * 4;
-    if (hFactor !== 0) val += hFactor * Math.pow(val, 2) * (1 - val) * 4;
-    lut[i] = Math.min(255, Math.max(0, Math.round(val * 255)));
-  }
-  return lut;
-}
-
-function createSpline(xs, ys) {
-  const n = xs.length;
-  const dys = [], dxs = [], ms = [];
-  for (let i = 0; i < n - 1; i++) { dxs.push(xs[i + 1] - xs[i]); dys.push(ys[i + 1] - ys[i]); ms.push(dys[i] / dxs[i]); }
-  const c1s = [ms[0]];
-  for (let i = 0; i < n - 2; i++) {
-    const m = ms[i], mNext = ms[i + 1];
-    if (m * mNext <= 0) c1s.push(0);
-    else {
-      const dx = dxs[i], dxNext = dxs[i + 1];
-      const common = dx + dxNext;
-      c1s.push((3 * common) / ((common + dxNext) / m + (common + dx) / mNext));
-    }
-  }
-  c1s.push(ms[ms.length - 1]);
-  const c2s = [], c3s = [];
-  for (let i = 0; i < n - 1; i++) {
-    const c1 = c1s[i], m = ms[i], invDx = 1 / dxs[i];
-    const common = c1 + c1s[i + 1] - 2 * m;
-    c2s.push((m - c1 - common) * invDx);
-    c3s.push(common * invDx * invDx);
-  }
-  return (x) => {
-    let i = 0; while (i < n - 2 && x > xs[i + 1]) i++;
-    const diff = x - xs[i];
-    return ys[i] + c1s[i] * diff + c2s[i] * diff * diff + c3s[i] * diff * diff * diff;
-  };
-}
-
-function buildCurveLUT(points) {
-  const lut = new Uint8Array(256);
-  const sorted = Array.isArray(points) ? [...points].sort((a, b) => a.x - b.x) : [{ x: 0, y: 0 }, { x: 255, y: 255 }];
-  if (sorted.length < 2) { for (let i = 0; i < 256; i++) lut[i] = i; return lut; }
-  const xs = sorted.map(p => p.x); const ys = sorted.map(p => p.y); const spline = createSpline(xs, ys);
-  for (let i = 0; i < 256; i++) {
-    if (i <= sorted[0].x) lut[i] = sorted[0].y;
-    else if (i >= sorted[sorted.length - 1].x) lut[i] = sorted[sorted.length - 1].y;
-    else lut[i] = Math.min(255, Math.max(0, Math.round(spline(i))));
-  }
-  return lut;
-}
+const { buildToneLUT, buildCurveLUT } = require('../utils/image-lut');
 
 // Get all photos with optional filtering
 router.get('/', async (req, res) => {
@@ -417,7 +354,7 @@ router.put('/:id/update-positive', uploadDefault.single('image'), async (req, re
         console.log(`[UPDATE-POSITIVE] Regenerating thumbnail at ${thumbPath}`);
         // Try to unlink thumb first to avoid lock
         if (fs.existsSync(thumbPath)) {
-            try { fs.unlinkSync(thumbPath); } catch(e) {}
+            try { fs.unlinkSync(thumbPath); } catch(e) { /* ignore - file may be locked */ }
         }
         
         // Read file to buffer to avoid Sharp holding a file lock on Windows
@@ -543,7 +480,7 @@ router.post('/:id/ingest-positive', uploadDefault.single('image'), async (req, r
     try {
       if (fs.existsSync(thumbPath)) { 
         console.log('[INGEST-POSITIVE] Removing old thumbnail');
-        try { fs.unlinkSync(thumbPath); } catch(_){} 
+        try { fs.unlinkSync(thumbPath); } catch(_) { /* ignore - file may be locked */ } 
       }
       // Read to buffer to avoid file lock
       const fileBuf = fs.readFileSync(newFullPath);
@@ -612,11 +549,11 @@ router.post('/:id/export-positive', async (req, res) => {
     });
     if (!row) return res.status(404).json({ error: 'Photo not found' });
     // Pick best available source: prefer original; fallback to positive/full; then negative
-    let relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+    const relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
     if (!relSource) {
       return res.status(400).json({ error: 'No usable image source for export (missing original/positive/full/negative paths)' });
     }
-    let sourceAbs = path.join(uploadsDir, relSource);
+    const sourceAbs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(sourceAbs)) {
       return res.status(404).json({ error: 'Source file missing on disk: ' + relSource });
     }
@@ -637,7 +574,7 @@ router.post('/:id/export-positive', async (req, res) => {
     const relDest = path.join('rolls', String(row.roll_id), 'full', exportName).replace(/\\/g, '/').replace(/\\/g, '/');
 
     // Build base pipeline (rotate/resize/crop, invert, WB)
-    let imgBase = await buildPipeline(sourceAbs, {
+    const imgBase = await buildPipeline(sourceAbs, {
       inverted, inversionMode, exposure, contrast, temp, tint,
       red: redGain, green: greenGain, blue: blueGain, rotation, orientation
     }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true });
@@ -825,7 +762,7 @@ router.post('/:id/render-positive', async (req, res) => {
       });
     });
     if (!row) return res.status(404).json({ error: 'Photo not found' });
-    let relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+    const relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
     if (!relSource) return res.status(400).json({ error: 'No usable source for render-positive' });
     const sourceAbs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(sourceAbs)) return res.status(404).json({ error: 'Source file missing on disk' });
@@ -890,7 +827,7 @@ router.post('/:id/render-positive', async (req, res) => {
       return res.send(buf);
     }
     // JPEG path with JS tone & curves
-    let imgBase = await buildPipeline(sourceAbs, {
+    const imgBase = await buildPipeline(sourceAbs, {
       inverted, inversionMode, exposure, contrast, temp, tint,
       red: redGain, green: greenGain, blue: blueGain, rotation, orientation
     }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true });
@@ -981,7 +918,7 @@ router.delete('/:id', (req, res) => {
       // Filter out nulls and duplicates
       const uniquePaths = [...new Set(pathsToDelete.filter(p => p))];
 
-      let pending = uniquePaths.length;
+      const pending = uniquePaths.length;
       if (pending === 0) {
         // Fallback for legacy filename if no paths found
         if (row.filename && !row.full_rel_path) {
@@ -1092,7 +1029,7 @@ router.post('/:id/download-with-exif', async (req, res) => {
     console.log('[DOWNLOAD-WITH-EXIF] Tags:', tags);
     
     // Determine source image path (prefer positive, fallback to full)
-    let sourcePath = photo.positive_rel_path || photo.full_rel_path;
+    const sourcePath = photo.positive_rel_path || photo.full_rel_path;
     if (!sourcePath) {
       return res.status(400).json({ error: 'No image available for download' });
     }
@@ -1204,7 +1141,7 @@ router.post('/:id/download-with-exif', async (req, res) => {
     } catch (exifErr) {
       console.error('[DOWNLOAD-WITH-EXIF] exiftool write failed:', exifErr);
       // Clean up and return original file if EXIF write fails
-      try { fs.unlinkSync(tempPath); } catch(_) {}
+      try { fs.unlinkSync(tempPath); } catch(_) { /* ignore cleanup error */ }
       const filename = photo.filename ? path.basename(photo.filename) : `photo_${id}.jpg`;
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
       return res.sendFile(sourceAbs);

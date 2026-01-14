@@ -10,17 +10,19 @@ function log(msg) {
   console.log(`[SCHEMA] ${msg}`);
 }
 
-function runSchemaMigration() {
-  return new Promise(async (resolve, reject) => {
-    const dbPath = getDbPath();
-    log(`Starting schema migration on: ${dbPath}`);
-    
-    const db = new sqlite3.Database(dbPath, (err) => {
+async function runSchemaMigration() {
+  const dbPath = getDbPath();
+  log(`Starting schema migration on: ${dbPath}`);
+  
+  const db = await new Promise((resolve, reject) => {
+    const database = new sqlite3.Database(dbPath, (err) => {
       if (err) {
         log(`Failed to open DB: ${err.message}`);
         return reject(err);
       }
+      resolve(database);
     });
+  });
 
     const run = (sql, params = []) => new Promise((res, rej) => {
       db.run(sql, params, function(err) {
@@ -308,14 +310,12 @@ function runSchemaMigration() {
 
       log('Schema migration completed.');
       db.close();
-      resolve();
 
     } catch (err) {
       log(`Migration error: ${err.message}`);
       db.close();
-      reject(err);
+      throw err;
     }
-  });
 }
 
 module.exports = { runSchemaMigration };

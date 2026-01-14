@@ -6,7 +6,14 @@
   "main": "electron-main.js",
   "author": "Your Name",
   "license": "MIT",
+  "workspaces": [
+    "packages/@filmgallery/*"
+  ],
   "scripts": {
+    "build:types": "cd packages/@filmgallery/types && npm run build",
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx --ignore-pattern node_modules --ignore-pattern build --ignore-pattern dist",
+    "lint:fix": "eslint . --ext .js,.jsx,.ts,.tsx --fix --ignore-pattern node_modules --ignore-pattern build --ignore-pattern dist",
+    "typecheck": "cd client && npx tsc --noEmit",
     "postinstall": "cd client && npm install && cd ../server && npm install",
     "dev:client": "cd client && cross-env PORT=3000 REACT_APP_API_BASE=http://127.0.0.1:4000 npm start",
     "dev:server": "cd server && npm start",
@@ -21,10 +28,13 @@
     "start": "electron ."
   },
   "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0.3",
     "electron": "26.6.10",
     "electron-builder": "^24.6.0",
+    "eslint": "^8.57.0",
     "wait-on": "^7.0.1"
   },
   "build": {

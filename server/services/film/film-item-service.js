@@ -79,7 +79,7 @@ async function createFilmItemsFromPurchase(batch) {
     await runAsync('COMMIT');
     return createdItems;
   } catch (e) {
-    try { await runAsync('ROLLBACK'); } catch {}
+    try { await runAsync('ROLLBACK'); } catch { /* ignore rollback error */ }
     throw e;
   }
 }

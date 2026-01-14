@@ -158,6 +158,7 @@ db.serialize(() => {
 // This ensures OneDrive can sync the latest data regularly
 const WAL_CHECKPOINT_INTERVAL = 5 * 60 * 1000; // 5 minutes
 let checkpointInterval = null;
+let checkpointStartTimer = null;
 
 function startWalCheckpoint() {
   if (writeThrough) return; // not needed in write-through mode
@@ -173,10 +174,19 @@ function startWalCheckpoint() {
     });
   }, WAL_CHECKPOINT_INTERVAL);
   
+  // Don't keep process alive just for checkpoints
+  if (checkpointInterval.unref) {
+    checkpointInterval.unref();
+  }
+  
   console.log('[DB] ✅ WAL checkpoint scheduler started (every 5 minutes)');
 }
 
 function stopWalCheckpoint() {
+  if (checkpointStartTimer) {
+    clearTimeout(checkpointStartTimer);
+    checkpointStartTimer = null;
+  }
   if (checkpointInterval) {
     clearInterval(checkpointInterval);
     checkpointInterval = null;
@@ -185,9 +195,14 @@ function stopWalCheckpoint() {
 }
 
 // Start checkpoint scheduler after tables are created (only in WAL mode)
-setTimeout(() => {
+// Use unref() so this timer doesn't prevent process exit for scripts like init-db.js
+checkpointStartTimer = setTimeout(() => {
   startWalCheckpoint();
 }, 5000); // Start after 5 seconds
+
+if (checkpointStartTimer.unref) {
+  checkpointStartTimer.unref();
+}
 
 // Export additional functions for cleanup
 db.walCheckpoint = () => {
