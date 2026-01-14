@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import ModalDialog from './ModalDialog';
 import { updateFilmItem } from '../api';
 
 export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) {
@@ -51,6 +50,7 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
     } else {
       setFormData(emptyForm);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item]);
 
   const handleChange = (e) => {

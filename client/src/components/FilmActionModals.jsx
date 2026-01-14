@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import ModalDialog from './ModalDialog';
 import { updateFilmItem, getMetadataOptions } from '../api';
 import EquipmentSelector from './EquipmentSelector';
 
@@ -7,7 +6,7 @@ export function LoadFilmModal({ item, isOpen, onClose, onLoaded }) {
   const [camera, setCamera] = useState('');
   const [cameraEquipId, setCameraEquipId] = useState(null);
   const [loadedDate, setLoadedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [options, setOptions] = useState({ cameras: [] });
+  const [, setOptions] = useState({ cameras: [] });
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {

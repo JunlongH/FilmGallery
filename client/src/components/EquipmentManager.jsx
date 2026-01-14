@@ -9,13 +9,13 @@
  * - PS机固定镜头/闪光灯设置
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   getCameras, createCamera, updateCamera, deleteCamera, uploadCameraImage,
   getLenses, createLens, updateLens, deleteLens, uploadLensImage,
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
-  getFilmFormats, createFilmFormat,
+
   getFilms, createFilm, updateFilm, deleteFilm, getFilmConstants,
   getEquipmentConstants, buildUploadUrl, getRolls
 } from '../api';
@@ -36,7 +36,6 @@ export default function EquipmentManager() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [constants, setConstants] = useState(null);
-  const [filmConstants, setFilmConstants] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -45,7 +44,7 @@ export default function EquipmentManager() {
   // Load constants
   useEffect(() => {
     getEquipmentConstants().then(setConstants).catch(console.error);
-    getFilmConstants().then(setFilmConstants).catch(console.error);
+    getFilmConstants().catch(console.error);
   }, []);
 
   // Load items based on active tab
@@ -139,11 +138,10 @@ export default function EquipmentManager() {
   // Handle image upload
   const handleImageUpload = async (id, file) => {
     try {
-      let result;
       switch (activeTab) {
-        case 'cameras': result = await uploadCameraImage(id, file); break;
-        case 'lenses': result = await uploadLensImage(id, file); break;
-        case 'flashes': result = await uploadFlashImage(id, file); break;
+        case 'cameras': await uploadCameraImage(id, file); break;
+        case 'lenses': await uploadLensImage(id, file); break;
+        case 'flashes': await uploadFlashImage(id, file); break;
         default: return;
       }
       // Reload items to get updated image path

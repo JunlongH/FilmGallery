@@ -410,11 +410,12 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, 
     }
   };
 
-  // Retry location fetch
+  // Retry location fetch (clears cache to get fresh location)
   const retryLocation = () => {
     setLocation(null);
     setLocationStatus('idle');
     setLocationDiagnostics(null);
+    locationService.clearCache();  // Clear cache to force fresh location fetch
     fetchLocation();
   };
   
@@ -682,8 +683,16 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, 
                     <Text style={styles.locationText}>
                       {location.city || location.country || 'Unknown'}
                     </Text>
-                    {locationStatus === 'optimizing' && (
+                    {locationStatus === 'optimizing' ? (
                       <ActivityIndicator size="small" color="#4ade80" style={{ marginLeft: 4 }} />
+                    ) : (
+                      <MaterialCommunityIcons 
+                        name="refresh" 
+                        size={14} 
+                        color="rgba(255,255,255,0.7)" 
+                        style={{ marginLeft: 4 }}
+                        onPress={retryLocation} 
+                      />
                     )}
                   </View>
                   {location.latitude && location.longitude && (

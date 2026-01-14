@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { 
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, 
-  LineChart, CartesianGrid, PieChart, Pie, Cell, Legend,
+  CartesianGrid, PieChart, Pie, Cell, Legend,
   AreaChart, Area
 } from 'recharts';
 import WordCloud from './WordCloud';
@@ -72,7 +72,7 @@ export default function Statistics({ mode = 'stats' }) {
   // Ensure locations is always an array
   const locationsArray = Array.isArray(locations) ? locations : [];
 
-  const { data: temporal } = useQuery({
+  useQuery({
     queryKey: ['stats-temporal'],
     queryFn: () => fetch(`${API}/api/stats/temporal`).then(r => r.json())
   });
@@ -118,8 +118,6 @@ export default function Statistics({ mode = 'stats' }) {
     '#ef4444', // Red
     '#3b82f6'  // Blue
   ];
-  
-  const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   
   const themesShare = (themes || []).slice(0, 8).map(t => ({ name: t.name, value: t.photo_count }));
   const locationWords = (locationsArray.slice(0, 30) || []).map((l) => ({ text: l.city_name, weight: l.photo_count }));

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import ModalDialog from './ModalDialog';
-import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCamera, getCompatibleLenses } from '../api';
+import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCompatibleLenses } from '../api';
 import { searchAddress, getCityCoordinates } from '../utils/geocoding';
 
 const FALLBACK_LENSES = [
@@ -42,7 +41,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   // Geolocation state
   const [newLatitude, setNewLatitude] = useState(null);
   const [newLongitude, setNewLongitude] = useState(null);
-  const [geoSearchQuery, setGeoSearchQuery] = useState('');
   const [geoSearchResults, setGeoSearchResults] = useState([]);
   const [geoSearching, setGeoSearching] = useState(false);
   const [showGeoResults, setShowGeoResults] = useState(false);
@@ -211,6 +209,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     // derive country code for quick city lookup
     const matched = countries.find(c => (c.country_name || '').toLowerCase() === (last.country || '').toLowerCase());
     if (matched) setCountryCode(matched.country_code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logs.length]);
 
   useEffect(() => {
@@ -292,7 +291,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       setNewDetail(detailParts.join(' '));
     }
     setShowGeoResults(false);
-    setGeoSearchQuery('');
   };
 
   // Auto-fill coordinates from country/city when no specific address
@@ -318,10 +316,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     const updated = [...logs];
     updated.splice(index, 1);
     setLogs(updated);
-  };
-
-  const handleRemoveDate = (date) => {
-    setLogs(prev => prev.filter(l => l.date !== date));
   };
 
   const handleSave = async () => {
@@ -361,9 +355,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const totalShots = logs.reduce((acc, cur) => acc + cur.count, 0);
   const uniqueDays = new Set(logs.map(l => l.date)).size;
   const selectedDayLogs = logs.map((entry, idx) => ({ ...entry, idx })).filter(l => l.date === selectedDate);
-  const dayEntries = logs
-    .map((entry, idx) => ({ ...entry, idx }))
-    .filter(entry => selectedDate && entry.date === selectedDate);
 
   if (!isOpen) return null;
 
@@ -562,11 +553,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     type="text"
                     className="fg-input"
                     value={newDetail}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setNewDetail(val);
-                      setGeoSearchQuery(val);
-                    }}
+                    onChange={e => setNewDetail(e.target.value)}
                     placeholder="Search address or type detail"
                     style={{ background: '#fff', height: 38, border: 'none', fontSize: 13, flex: 1 }}
                     onKeyDown={e => {
@@ -771,7 +758,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     const isToday = dateStr === new Date().toISOString().split('T')[0];
                     const colIndex = (firstDay + day - 1) % 7;
                     const dayCount = dayLogs.reduce((sum, l) => sum + l.count, 0);
-                    const lensLabel = dayLogs.map(l => l.lens).filter(Boolean).join(', ');
                     
                     days.push(
                       <div 

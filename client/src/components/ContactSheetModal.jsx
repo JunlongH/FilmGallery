@@ -81,7 +81,6 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
   const [isGenerating, setIsGenerating] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0, message: '', percentage: 0 });
   const [error, setError] = useState(null);
-  const [previewUrl, setPreviewUrl] = useState(null);
   
   const canvasRef = useRef(null);
   const abortControllerRef = useRef(null);
@@ -222,7 +221,6 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           const dxBarWidth = 2;
           const dxBarGap = 1.5;
           const dxBarHeight = 10;
-          const dxTotalWidth = 14 * (dxBarWidth + dxBarGap);  // Total width of barcode
           
           photosInRow.forEach((p, col) => {
             const num = p.frame_number || String(rowIdx * COLUMNS + col + 1).padStart(2, '0');
@@ -308,7 +306,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
     drawPhotos();
 
-  }, [isOpen, photos, selectedStyle, imageSource, rows, roll]);
+  }, [isOpen, photos, selectedStyle, imageSource, rows, roll, getImagePath]);
 
   // Generate contact sheet
   const handleGenerate = async () => {

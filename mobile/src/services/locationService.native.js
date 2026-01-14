@@ -312,6 +312,7 @@ export const getLocation = async () => {
     return {
       success: true,
       coords: cachedLocation.coords,
+      geocode: cachedLocation.geocode,  // Include cached geocode!
       source: 'cache'
     };
   }

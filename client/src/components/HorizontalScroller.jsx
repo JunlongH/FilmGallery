@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 
 function HorizontalScroller({ children, height = 260, padding = 12, gap = 16, background = 'transparent', style, loop = true, showEdges = true }) {
   const containerRef = useRef(null);
@@ -19,7 +19,6 @@ function HorizontalScroller({ children, height = 260, padding = 12, gap = 16, ba
   });
 
   const rafRef = useRef(null);
-  const [segmentWidth, setSegmentWidth] = useState(0);
   const uid = useMemo(() => `hs-${Math.random().toString(36).slice(2)}`, []);
   const childCount = useMemo(() => React.Children.count(children), [children]);
   const shouldLoop = loop && childCount >= 4;
@@ -195,7 +194,6 @@ function HorizontalScroller({ children, height = 260, padding = 12, gap = 16, ba
         const totalWidth = inner.scrollWidth;
         const seg = totalWidth / 3;
         physics.current.segmentWidth = seg;
-        setSegmentWidth(seg);
         
         // Initialize position to middle segment if not already set
         if (physics.current.pos === 0) {

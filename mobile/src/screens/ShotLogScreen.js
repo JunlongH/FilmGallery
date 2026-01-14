@@ -2,7 +2,6 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { View, FlatList, StyleSheet } from 'react-native';
 import { ActivityIndicator, Button, HelperText, IconButton, Text, TextInput, useTheme, FAB } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as Location from 'expo-location';
 import DatePickerField from '../components/DatePickerField';
 import DraggableFab from '../components/DraggableFab';
 import ShotModeModal from '../components/ShotModeModal';
@@ -129,24 +128,24 @@ export default function ShotLogScreen({ route, navigation }) {
               altitude: result.coords.altitude
             });
           } else {
-            // Fallback: do our own reverse geocoding
+            // Fallback: use locationService's reverseGeocode (BigDataCloud, works in China)
             try {
-              const [reverseEN] = await Location.reverseGeocodeAsync({
-                latitude: result.coords.latitude,
-                longitude: result.coords.longitude
-              }, { locale: 'en-US' }).catch(() => []);
+              const geocode = await locationService.reverseGeocode(
+                result.coords.latitude,
+                result.coords.longitude
+              );
               
-              const addr = reverseEN?.[0] || {};
               setPreloadedLocation({
-                country: addr.country || '',
-                city: addr.city || addr.subregion || '',
-                detail: '',
+                country: geocode.country || '',
+                city: geocode.city || '',
+                detail: geocode.detail || '',
                 latitude: result.coords.latitude,
                 longitude: result.coords.longitude,
                 altitude: result.coords.altitude
               });
             } catch (e) {
-              // Reverse geocode failed, still save coords
+              // Reverse geocode failed, still save coords (location will show as coordinates only)
+              __DEV__ && console.log('[ShotLogScreen] Reverse geocode failed, saving coords only');
               setPreloadedLocation({
                 country: '',
                 city: '',

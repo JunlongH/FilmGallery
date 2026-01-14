@@ -1,7 +1,7 @@
 // src/components/NewRollForm.jsx
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { getFilms, getMetadataOptions, createRollUnified, updateRoll, getFilmItems, updateFilmItem } from '../api';
+import { getFilms, getMetadataOptions, createRollUnified, updateRoll, getFilmItems } from '../api';
 import LocationSelect from './LocationSelect.jsx';
 import '../styles/forms.css';
 import FilmSelector from './FilmSelector';

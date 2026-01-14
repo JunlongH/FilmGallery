@@ -56,7 +56,7 @@ export default function FilmLibrary() {
     });
   };
 
-  const { data: filmsData, isLoading: loadingFilms } = useQuery({
+  const { data: filmsData } = useQuery({
     queryKey: ['films'],
     queryFn: getFilms
   });

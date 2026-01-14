@@ -142,8 +142,10 @@ export const reverseGeocode = async (latitude, longitude) => {
   }
 };
 
-export default {
+const geocodingService = {
   searchAddress,
   getCityCoordinates,
   reverseGeocode
 };
+
+export default geocodingService;
