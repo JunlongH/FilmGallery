@@ -1,10 +1,38 @@
-const express = require('express');
-const router = express.Router();
-const db = require('../db');
+/**
+ * Metadata Routes
+ * 
+ * Provides autocomplete options for:
+ * - Cameras
+ * - Lenses (including from shot logs)
+ * - Photographers
+ * - Years
+ */
 
-// GET /api/metadata/options
-// Returns distinct cameras, lenses, and photographers from rolls/photos + lenses found in film_items.shot_logs
-router.get('/options', async (req, res) => {
+import express, { Request, Response, Router } from 'express';
+import db from '../db';
+
+const router: Router = express.Router();
+
+// Type definitions
+interface ValueRow {
+  value: string;
+}
+
+interface ShotLogRow {
+  shot_logs: string;
+}
+
+interface ShotLogEntry {
+  lens?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * GET /api/metadata/options
+ * Returns distinct cameras, lenses, and photographers from rolls/photos
+ * Also includes lenses found in film_items.shot_logs
+ */
+router.get('/options', async (_req: Request, res: Response) => {
   const queries = {
     cameras: `
       SELECT DISTINCT camera as value FROM rolls WHERE camera IS NOT NULL AND camera != "" AND camera NOT IN ('-','--','—')
@@ -32,26 +60,28 @@ router.get('/options', async (req, res) => {
     `
   };
 
-  const runAll = (sql) => new Promise((resolve, reject) => {
-    db.all(sql, (err, rows) => {
+  const runAll = <T>(sql: string): Promise<T[]> => new Promise((resolve, reject) => {
+    db.all(sql, (err: Error | null, rows: T[]) => {
       if (err) return reject(err);
       resolve(rows || []);
     });
   });
 
-  const parseShotLogLenses = (rows) => {
-    const lensSet = new Set();
+  const parseShotLogLenses = (rows: ShotLogRow[]): string[] => {
+    const lensSet = new Set<string>();
     for (const row of rows) {
       if (!row || !row.shot_logs) continue;
       try {
-        const parsed = typeof row.shot_logs === 'string' ? JSON.parse(row.shot_logs) : row.shot_logs;
+        const parsed: ShotLogEntry[] = typeof row.shot_logs === 'string' 
+          ? JSON.parse(row.shot_logs) 
+          : row.shot_logs;
         if (!Array.isArray(parsed)) continue;
         for (const entry of parsed) {
           const lens = (entry && entry.lens ? String(entry.lens).trim() : '');
           if (lens) lensSet.add(lens);
         }
       } catch (err) {
-        console.warn('[metadata] Failed to parse shot_logs lens', err.message);
+        console.warn('[metadata] Failed to parse shot_logs lens', (err as Error).message);
       }
     }
     return Array.from(lensSet);
@@ -59,14 +89,14 @@ router.get('/options', async (req, res) => {
 
   try {
     const [cameraRows, lensRows, photographerRows, yearRows, shotLogRows] = await Promise.all([
-      runAll(queries.cameras),
-      runAll(queries.lenses),
-      runAll(queries.photographers),
-      runAll(queries.years),
-      runAll(`SELECT shot_logs FROM film_items WHERE shot_logs IS NOT NULL AND shot_logs != ''`)
+      runAll<ValueRow>(queries.cameras),
+      runAll<ValueRow>(queries.lenses),
+      runAll<ValueRow>(queries.photographers),
+      runAll<ValueRow>(queries.years),
+      runAll<ShotLogRow>(`SELECT shot_logs FROM film_items WHERE shot_logs IS NOT NULL AND shot_logs != ''`)
     ]);
 
-    const lensSet = new Set(lensRows.map(r => r.value));
+    const lensSet = new Set<string>(lensRows.map(r => r.value));
     parseShotLogLenses(shotLogRows).forEach(l => lensSet.add(l));
     const lenses = Array.from(lensSet).sort((a, b) => a.localeCompare(b));
 
@@ -82,4 +112,7 @@ router.get('/options', async (req, res) => {
   }
 });
 
+export default router;
+
+// CommonJS compatibility
 module.exports = router;
