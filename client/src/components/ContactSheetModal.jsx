@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { buildUploadUrl, API_BASE } from '../api';
 import '../styles/FilmInventory.css';
 
@@ -86,7 +86,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
   const abortControllerRef = useRef(null);
 
   // Helper to get image path based on selected source
-  const getImagePath = (photo) => {
+  const getImagePath = useCallback((photo) => {
     switch (imageSource) {
       case 'positive':
         return photo.positive_thumb_rel_path || photo.thumb_rel_path || photo.positive_rel_path || photo.full_rel_path;
@@ -97,7 +97,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
         // Prefer positive (edited), fallback to thumb, then negative
         return photo.positive_thumb_rel_path || photo.thumb_rel_path || photo.negative_thumb_rel_path || photo.positive_rel_path || photo.full_rel_path || photo.negative_rel_path;
     }
-  };
+  }, [imageSource]);
 
   // Calculate rows based on photo count
   const rows = Math.ceil(photos.length / COLUMNS);
