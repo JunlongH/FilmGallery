@@ -106,13 +106,13 @@ const row = await getAsync('SELECT...', [id]);
 
 | # | 操作 | 状态 |
 |---|------|------|
-| 5.1.1 | 在 `client/src/styles/` 创建 `modal.css`，定义标准类 | ⬜ |
-| 5.1.2 | 统一 `ImageViewer.jsx` Modal 样式 | ⬜ |
-| 5.1.3 | 统一 `PhotoMetaEditModal.jsx` Modal 样式 | ⬜ |
-| 5.1.4 | 统一 `TagEditModal.jsx` Modal 样式 | ⬜ |
-| 5.1.5 | 统一 `FilmActionModals.jsx` Modal 样式 | ⬜ |
-| 5.1.6 | 统一 `ContactSheetModal.jsx` Modal 样式 | ⬜ |
-| 5.1.7 | 统一 `EquipmentManager.jsx` Modal 样式 | ⬜ |
+| 5.1.1 | 在 `client/src/styles/` 创建 `modal.css`，定义标准类 | ✅ (使用现有styles.css) |
+| 5.1.2 | 统一 `ImageViewer.jsx` Modal 样式 | ⏭️ (保留原生设计) |
+| 5.1.3 | 统一 `PhotoMetaEditModal.jsx` Modal 样式 | ✅ |
+| 5.1.4 | 统一 `TagEditModal.jsx` Modal 样式 | ✅ |
+| 5.1.5 | 统一 `FilmActionModals.jsx` Modal 样式 | ⏭️ (已使用fg-modal) |
+| 5.1.6 | 统一 `ContactSheetModal.jsx` Modal 样式 | ⏭️ (已使用fg-modal) |
+| 5.1.7 | 统一 `EquipmentManager.jsx` Modal 样式 | ✅ |
 
 ### 5.2 减少 Inline Styles
 
@@ -139,8 +139,8 @@ const row = await getAsync('SELECT...', [id]);
 
 | # | 操作 | 状态 |
 |---|------|------|
-| 6.2.1 | 参考 `mobile/src/setupAxios.js` 的 failover 机制 | ⬜ |
-| 6.2.2 | 为 `watch-app/src/services/api.ts` 添加网络容错 | ⬜ |
+| 6.2.1 | 参考 `mobile/src/setupAxios.js` 的 failover 机制 | ✅ |
+| 6.2.2 | 为 `watch-app/src/services/api.ts` 添加网络容错 | ✅ |
 
 ---
 
@@ -157,9 +157,9 @@ const row = await getAsync('SELECT...', [id]);
 
 ## 进度追踪
 
-- **阶段 1**：✅ 已完成
-- **阶段 2**：⬜ 未开始
-- **阶段 3**：⬜ 未开始
-- **阶段 4**：⬜ 未开始
-- **阶段 5**：⬜ 未开始
-- **阶段 6**：⬜ 未开始
+- **阶段 1**：✅ 已完成 - 清理垃圾文件和迁移脚本
+- **阶段 2**：✅ 已完成 - 激活共享类型包
+- **阶段 3**：✅ 已完成 - 统一 DB 访问模式
+- **阶段 4**：✅ 已完成 - 提取并统一常量
+- **阶段 5**：✅ 已完成 - Modal 样式统一
+- **阶段 6**：✅ 已完成 - Watch App 网络层增强

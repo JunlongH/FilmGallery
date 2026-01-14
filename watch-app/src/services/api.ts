@@ -1,9 +1,11 @@
-import axios, { AxiosInstance } from 'axios';
+import axios, { AxiosInstance, AxiosError, AxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Photo, FilmItem, ShotLog, Roll, Film } from '../types';
 
 const SERVER_URL_KEY = '@server_url';
 const DEFAULT_URL = 'http://xxx.xxx.xx.xxx:4000';
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 1000;
 
 class ApiService {
   private client: AxiosInstance;
@@ -30,6 +32,38 @@ class ApiService {
         'Content-Type': 'application/json',
       },
     });
+
+    // Add retry interceptor for network errors
+    this.client.interceptors.response.use(
+      response => response,
+      async (error: AxiosError) => {
+        const config = error.config as AxiosRequestConfig & { _retryCount?: number };
+        if (!config) return Promise.reject(error);
+
+        const isNetworkError = !error.response && (
+          error.code === 'ERR_NETWORK' ||
+          error.code === 'ECONNABORTED' ||
+          (error.message && (error.message.includes('Network Error') || error.message.includes('timeout')))
+        );
+
+        if (isNetworkError) {
+          config._retryCount = (config._retryCount || 0) + 1;
+          if (config._retryCount <= MAX_RETRIES) {
+            console.log(`[API] Retry ${config._retryCount}/${MAX_RETRIES} for ${config.url}`);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * config._retryCount!));
+            return this.client.request(config);
+          }
+        }
+
+        console.error('[API] Request failed:', {
+          url: config.url,
+          method: config.method,
+          error: error.message,
+          code: error.code,
+        });
+        return Promise.reject(error);
+      }
+    );
   }
 
   async loadServerURL(): Promise<string> {
