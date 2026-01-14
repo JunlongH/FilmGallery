@@ -44,8 +44,8 @@ export default function TagEditModal({ photo, allTags, onClose, onSave }) {
   };
 
   return (
-    <div className="iv-overlay" onClick={onClose} style={{ background: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
-      <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: '#fff', color: '#333', padding: 20, borderRadius: 8, width: 400, maxWidth: '90%' }}>
+    <div className="fg-modal-overlay" onClick={onClose}>
+      <div className="fg-modal-panel" onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: '90%' }}>
         <h3 style={{ marginTop: 0, marginBottom: 16 }}>Edit Tags</h3>
         
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>

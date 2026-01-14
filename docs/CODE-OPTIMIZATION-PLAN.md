@@ -84,13 +84,15 @@ const row = await getAsync('SELECT...', [id]);
 
 | # | 常量 | 当前位置 | 统一方案 | 状态 |
 |---|------|----------|----------|------|
-| 4.1 | `FILM_CATEGORIES` | `server/utils/film-struct-migration.js` | 提取到 `server/constants/film.js` | ⬜ |
-| 4.2 | `FILM_FORMATS` | `server/utils/film-struct-migration.js` | 同上 | ⬜ |
-| 4.3 | `KNOWN_BRANDS` | `server/utils/film-struct-migration.js` | 同上 | ⬜ |
-| 4.4 | `PROCESS_PRESETS` | `client/.../FilmManager.jsx` + `RollForm.jsx` | 删除硬编码，改从 `/api/films/constants` 获取 | ⬜ |
-| 4.5 | `FILM_ITEM_STATUSES` | `mobile/src/constants/filmItemStatus.js` | 移到共享包，或服务端 API 暴露 | ⬜ |
-| 4.6 | Film Format `<option>` | `client/.../EquipmentManager.jsx` 硬编码 | 改为动态渲染，数据从 API 获取 | ⬜ |
-| 4.7 | `APERTURES` / `SHUTTERS` | watch-app + mobile 多处定义 | 提取到 `shared/photography-constants.js` | ⬜ |
+| 4.1 | `FILM_CATEGORIES` | `server/utils/film-struct-migration.js` | 提取到 `server/constants/film.js` | ✅ |
+| 4.2 | `FILM_FORMATS` | `server/utils/film-struct-migration.js` | 同上 | ✅ |
+| 4.3 | `KNOWN_BRANDS` | `server/utils/film-struct-migration.js` | 同上 | ✅ |
+| 4.4 | `PROCESS_TYPES` | 新增 | 添加到 `server/constants/film.js` | ✅ |
+| 4.5 | `FILM_ITEM_STATUSES` | `mobile/src/constants/filmItemStatus.js` | 添加到 `server/constants/film.js` | ✅ |
+| 4.6 | `APERTURES` / `SHUTTERS` | watch-app + mobile 多处定义 | 提取到 `server/constants/photography.js` | ✅ |
+| 4.7 | API 端点 `/api/films/constants` | `server/routes/films.js` | 更新以暴露所有常量 | ✅ |
+
+> 注：客户端组件暂未更新为动态加载常量，这需要更大范围的重构，可在后续版本完成。
 
 ---
 

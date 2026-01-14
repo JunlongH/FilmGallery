@@ -575,8 +575,8 @@ function AddModal({ type, constants, onSave, onClose }) {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content equip-add-modal" onClick={e => e.stopPropagation()}>
+    <div className="fg-modal-overlay" onClick={onClose}>
+      <div className="fg-modal-panel equip-add-modal" onClick={e => e.stopPropagation()}>
         <h3>Add New {type.slice(0, -1)}</h3>
         
         <form onSubmit={handleSubmit}>

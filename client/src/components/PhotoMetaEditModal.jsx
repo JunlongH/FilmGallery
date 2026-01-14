@@ -40,8 +40,8 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
   const rollMax = roll?.end_date || '';
 
   return (
-    <div className="iv-overlay" onClick={onClose} style={{ background: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', zIndex: 10001 }}>
-      <div className="modal-content fg-card" onClick={e => e.stopPropagation()} style={{ background: 'var(--fg-card-bg)', color: 'var(--fg-text)', padding: 20, borderRadius: 12, width: 700, maxHeight: '90vh', overflowY: 'auto' }}>
+    <div className="fg-modal-overlay" onClick={onClose} style={{ zIndex: 10001 }}>
+      <div className="fg-modal-panel fg-card" onClick={e => e.stopPropagation()} style={{ width: 700, maxHeight: '90vh', overflowY: 'auto' }}>
         <h3 style={{ marginTop: 0 }}>Edit Shooting Info</h3>
         
         {/* Date & Time */}
