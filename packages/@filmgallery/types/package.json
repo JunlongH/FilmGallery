@@ -1,0 +1,21 @@
+{
+  "name": "@filmgallery/types",
+  "version": "1.0.0",
+  "description": "Shared TypeScript type definitions for FilmGallery",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "filmgallery",
+    "types",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/user/filmgallery"
+  }
+}

@@ -38,9 +38,9 @@
 
 | # | 操作 | 详情 | 状态 |
 |---|------|------|------|
-| 2.1 | Watch App 接入共享类型 | 修改 `watch-app/package.json`，添加 `"@filmgallery/types": "file:../packages/@filmgallery/types"` | ⬜ |
-| 2.2 | 删除本地重复类型 | 删除 `watch-app/src/types/index.ts`，改为 `import { Film, Roll, Photo } from '@filmgallery/types'` | ⬜ |
-| 2.3 | 补充缺失类型 | 若共享包缺少 `ShotLog` 等类型，在共享包中补充 | ⬜ |
+| 2.1 | Watch App 接入共享类型 | 修改 `watch-app/package.json`，添加 `"@filmgallery/types": "file:../packages/@filmgallery/types"` | ✅ |
+| 2.2 | 删除本地重复类型 | 删除 `watch-app/src/types/index.ts`，改为 `export type { ... } from '@filmgallery/types'` | ✅ |
+| 2.3 | 补充缺失类型 | 共享包已包含 `ShotLog`, `ServerConfig` 等所需类型 | ✅ |
 | 2.4 | 导出常量（可选） | 在共享包中添加运行时常量导出（如 `FILM_ITEM_STATUSES`），供 JS 项目也能使用 | ⬜ |
 
 ---

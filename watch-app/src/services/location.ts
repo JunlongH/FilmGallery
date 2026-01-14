@@ -91,13 +91,13 @@ export const startLocationWatch = async (): Promise<void> => {
   stopLocationWatch();
 
   watchId = Geolocation.watchPosition(
-    (position) => {
+    (position: { coords: { latitude: number; longitude: number; accuracy: number | null } }) => {
       cachedPosition = {
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy,
+        accuracy: position.coords.accuracy ?? undefined,
       };
-      console.log('[Location] Watch update:', cachedPosition.accuracy?.toFixed(0), 'm');
+      console.log('[Location] Watch update:', cachedPosition?.accuracy?.toFixed(0), 'm');
       
       // If we have good accuracy, stop watching to save battery
       if (position.coords.accuracy && position.coords.accuracy < 50) {
@@ -105,7 +105,7 @@ export const startLocationWatch = async (): Promise<void> => {
         stopLocationWatch();
       }
     },
-    (error) => {
+    (error: { code: number; message: string }) => {
       console.warn('[Location] Watch error:', error);
     },
     {
