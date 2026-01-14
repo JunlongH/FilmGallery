@@ -2,7 +2,8 @@
 
 > 创建日期: 2026-01-15
 > 分支名称: `feature/full-typescript-migration`
-> 状态: 进行中
+> 状态: 进行中 (Phase 3)
+> 最后更新: 2026-01-15
 
 ## 一、概述
 
@@ -21,9 +22,9 @@
 
 | 模块 | 总文件数 | 已迁移 TS | 待迁移 JS | 覆盖率 |
 |------|----------|-----------|-----------|--------|
-| **Server** | ~45 | 4 | 41 | 9% |
+| **Server** | ~45 | 18 | 27 | 40% |
 | **Client** | ~35 | 6 | 29 | 17% |
-| **Mobile** | ~50 | 3 | 47 | 6% |
+| **Mobile** | ~50 | 6 | 44 | 12% |
 | **共享包** | 2 | 2 | 0 | 100% |
 
 ---
@@ -72,8 +73,8 @@ Layer 4: 入口层 (Entry Points)
 
 | 文件 | 复杂度 | 优先级 | 状态 | 依赖 |
 |------|--------|--------|------|------|
-| `server/db.js` | 中 | P0 | ⏳ | - |
-| `server/utils/db-helpers.js` | 中 | P0 | ⏳ | db.js |
+| `server/db.js` | 中 | P0 | ✅ | - |
+| `server/utils/db-helpers.js` | 中 | P0 | ✅ | db.js |
 | `server/utils/file-helpers.js` | 低 | P1 | ⏳ | - |
 | `server/utils/profiler.js` | 低 | P2 | ⏳ | - |
 | `server/utils/prepared-statements.js` | 高 | P1 | ⏳ | db-helpers |
