@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const db = require('../db');
+const { getAsync } = require('../utils/db-helpers');
 const {
   createFilmItemsFromPurchase,
   listFilmItems,
@@ -40,9 +40,7 @@ router.get('/', async (req, res) => {
     items = await Promise.all(items.map(async (item) => {
       if (item.film_id) {
         try {
-          const filmRow = await new Promise((resolve, reject) => {
-            db.get('SELECT name, brand, iso, format, category FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
-          });
+          const filmRow = await getAsync('SELECT name, brand, iso, format, category FROM films WHERE id = ?', [item.film_id]);
           if (filmRow) {
             item.film_name = filmRow.name || undefined;
             item.film_brand = filmRow.brand || undefined;
@@ -78,9 +76,7 @@ router.get('/:id', async (req, res) => {
     // Fetch film details from films table if available
     if (item.film_id) {
       try {
-        const filmRow = await new Promise((resolve, reject) => {
-          db.get('SELECT name, brand, iso, format, category FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
-        });
+        const filmRow = await getAsync('SELECT name, brand, iso, format, category FROM films WHERE id = ?', [item.film_id]);
         if (filmRow) {
           item.film_name = filmRow.name || undefined;
           item.film_brand = filmRow.brand || undefined;
@@ -110,9 +106,7 @@ router.get('/:id/shot-logs/export', async (req, res) => {
     let filmIso = null;
     if (item.film_id) {
       try {
-        const row = await new Promise((resolve, reject) => {
-          db.get('SELECT iso FROM films WHERE id = ?', [item.film_id], (err, r) => err ? reject(err) : resolve(r));
-        });
+        const row = await getAsync('SELECT iso FROM films WHERE id = ?', [item.film_id]);
         filmIso = row && row.iso ? row.iso : null;
       } catch (isoErr) {
         console.warn('[film-items] export iso lookup failed', isoErr.message || isoErr);

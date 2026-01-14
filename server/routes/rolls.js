@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
+const db = require('../db'); // Required for prepared statements in batch insert
 const { recomputeRollSequence } = require('../services/roll-service');
 const { addOrUpdateGear } = require('../services/gear-service');
 const fs = require('fs');
@@ -76,12 +76,7 @@ router.post('/', (req, res) => {
       // If a film_item_id is provided, prefer its film_id for this roll
       if (film_item_id) {
         try {
-          const itemRow = await new Promise((resolve, reject) => {
-            db.get('SELECT film_id FROM film_items WHERE id = ? AND deleted_at IS NULL', [film_item_id], (err, row) => {
-              if (err) return reject(err);
-              resolve(row);
-            });
-          });
+          const itemRow = await getAsync('SELECT film_id FROM film_items WHERE id = ? AND deleted_at IS NULL', [film_item_id]);
           if (itemRow && itemRow.film_id) filmId = itemRow.film_id;
         } catch (e) {
           console.error('[CREATE ROLL] Failed to load film_item for filmId override', e.message);
@@ -91,9 +86,7 @@ router.post('/', (req, res) => {
       // Load film ISO (used as default ISO for photos)
       if (filmId) {
         try {
-          const isoRow = await new Promise((resolve, reject) => {
-            db.get('SELECT iso FROM films WHERE id = ?', [filmId], (err, row) => err ? reject(err) : resolve(row));
-          });
+          const isoRow = await getAsync('SELECT iso FROM films WHERE id = ?', [filmId]);
           filmIso = isoRow && isoRow.iso ? isoRow.iso : null;
         } catch (isoErr) {
           console.warn('[CREATE ROLL] Failed to load film iso', isoErr.message || isoErr);
@@ -111,10 +104,7 @@ router.post('/', (req, res) => {
       
       if (camera_equip_id) {
         try {
-          const camRow = await new Promise((resolve, reject) => {
-            db.get('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', 
-              [camera_equip_id], (err, row) => err ? reject(err) : resolve(row));
-          });
+          const camRow = await getAsync('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', [camera_equip_id]);
           if (camRow && camRow.has_fixed_lens === 1) {
             // Fixed lens camera: nullify explicit lens, set text for backward compat
             finalLensEquipId = null;
@@ -682,7 +672,7 @@ router.post('/', (req, res) => {
 });
 
 // GET /api/rolls
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   const { camera, lens, photographer, location_id, year, month, ym, film, camera_equip_id, lens_equip_id, flash_equip_id, film_id } = req.query;
 
   const toArray = (v) => {
@@ -807,10 +797,12 @@ router.get('/', (req, res) => {
 
   sql += ' ORDER BY rolls.start_date DESC, rolls.id DESC';
 
-  db.all(sql, params, (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const rows = await allAsync(sql, params);
     res.json(rows);
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /api/rolls/:id
@@ -858,59 +850,38 @@ router.get('/:id', async (req, res) => {
       LEFT JOIN equip_flashes flash ON rolls.flash_equip_id = flash.id
       WHERE rolls.id = ?
     `;
-    const row = await new Promise((resolve, reject) => {
-      db.get(sql, [id], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    const row = await getAsync(sql, [id]);
     
     if (!row) return res.status(404).json({ error: 'Not found' });
     
     // Check if locations table exists before querying
-    db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", [], async (checkErr, tableExists) => {
-      const locationsQuery = tableExists ? 
-        `SELECT l.id AS location_id, l.country_code, l.country_name, l.city_name, l.city_lat, l.city_lng
-         FROM roll_locations rl JOIN locations l ON rl.location_id = l.id
-         WHERE rl.roll_id = ? ORDER BY l.country_name, l.city_name` : null;
-      
-      if (!locationsQuery) {
+    const tableExists = await getAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", []);
+    
+    if (tableExists) {
+      const locationsQuery = `
+        SELECT l.id AS location_id, l.country_code, l.country_name, l.city_name, l.city_lat, l.city_lng
+        FROM roll_locations rl JOIN locations l ON rl.location_id = l.id
+        WHERE rl.roll_id = ? ORDER BY l.country_name, l.city_name`;
+      try {
+        row.locations = await allAsync(locationsQuery, [id]) || [];
+      } catch (e) {
+        console.warn('Error fetching locations:', e.message);
         row.locations = [];
-        // attach gear arrays
-        db.all('SELECT type, value FROM roll_gear WHERE roll_id = ?', [id], (e3, gearRows) => {
-          if (e3) return res.status(500).json({ error: e3.message });
-          const gear = { cameras: [], lenses: [], photographers: [] };
-          (gearRows || []).forEach(g => {
-            if (g.type === 'camera') gear.cameras.push(g.value);
-            else if (g.type === 'lens') gear.lenses.push(g.value);
-            else if (g.type === 'photographer') gear.photographers.push(g.value);
-          });
-          row.gear = gear;
-          res.json(row);
-        });
-      } else {
-        db.all(locationsQuery, [id], (e2, locs) => {
-          if (e2) {
-            console.warn('Error fetching locations:', e2.message);
-            row.locations = [];
-          } else {
-            row.locations = locs || [];
-          }
-          // attach gear arrays
-          db.all('SELECT type, value FROM roll_gear WHERE roll_id = ?', [id], (e3, gearRows) => {
-            if (e3) return res.status(500).json({ error: e3.message });
-            const gear = { cameras: [], lenses: [], photographers: [] };
-            (gearRows || []).forEach(g => {
-              if (g.type === 'camera') gear.cameras.push(g.value);
-              else if (g.type === 'lens') gear.lenses.push(g.value);
-              else if (g.type === 'photographer') gear.photographers.push(g.value);
-            });
-            row.gear = gear;
-            res.json(row);
-          });
-        });
       }
+    } else {
+      row.locations = [];
+    }
+    
+    // attach gear arrays
+    const gearRows = await allAsync('SELECT type, value FROM roll_gear WHERE roll_id = ?', [id]);
+    const gear = { cameras: [], lenses: [], photographers: [] };
+    (gearRows || []).forEach(g => {
+      if (g.type === 'camera') gear.cameras.push(g.value);
+      else if (g.type === 'lens') gear.lenses.push(g.value);
+      else if (g.type === 'photographer') gear.photographers.push(g.value);
     });
+    row.gear = gear;
+    res.json(row);
   } catch (err) {
     console.error('[GET] roll error', err.message);
     res.status(500).json({ error: err.message });
@@ -928,9 +899,7 @@ router.get('/:id/locations', async (req, res) => {
     ORDER BY l.country_name, l.city_name
   `;
   try {
-    const rows = await new Promise((resolve, reject) => {
-      db.all(sql, [id], (err, rows) => err ? reject(err) : resolve(rows));
-    });
+    const rows = await allAsync(sql, [id]);
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -938,39 +907,45 @@ router.get('/:id/locations', async (req, res) => {
 });
 
 // GET /api/rolls/:id/preset - return stored preset JSON (parsed)
-router.get('/:id/preset', (req, res) => {
+router.get('/:id/preset', async (req, res) => {
   const id = req.params.id;
-  db.get('SELECT preset_json FROM rolls WHERE id = ?', [id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const row = await getAsync('SELECT preset_json FROM rolls WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Not found' });
     let parsed = null;
     try { parsed = row.preset_json ? JSON.parse(row.preset_json) : null; } catch { parsed = null; }
     res.json({ rollId: id, preset: parsed });
-  });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/rolls/:id/preset - set/overwrite preset_json
 // Body: { name: string, params: { inverted, inversionMode, exposure, ... curves } }
-router.post('/:id/preset', (req, res) => {
+router.post('/:id/preset', async (req, res) => {
   const id = req.params.id;
   const body = req.body || {};
   if (!body || !body.params) return res.status(400).json({ error: 'params required' });
   const payload = { name: body.name || 'Unnamed', params: body.params };
   let json;
   try { json = JSON.stringify(payload); } catch(e) { return res.status(400).json({ error: 'Invalid params JSON' }); }
-  db.run('UPDATE rolls SET preset_json = ? WHERE id = ?', [json, id], function(err){
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ ok: true, updated: this.changes });
-  });
+  try {
+    const result = await runAsync('UPDATE rolls SET preset_json = ? WHERE id = ?', [json, id]);
+    res.json({ ok: true, updated: result?.changes || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // DELETE /api/rolls/:id/preset - clear preset_json
-router.delete('/:id/preset', (req, res) => {
+router.delete('/:id/preset', async (req, res) => {
   const id = req.params.id;
-  db.run('UPDATE rolls SET preset_json = NULL WHERE id = ?', [id], function(err){
-    if (err) return res.status(500).json({ error: err.message });
-    res.json({ ok: true, cleared: this.changes });
-  });
+  try {
+    const result = await runAsync('UPDATE rolls SET preset_json = NULL WHERE id = ?', [id]);
+    res.json({ ok: true, cleared: result?.changes || 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // PUT /api/rolls/:id
@@ -992,10 +967,7 @@ router.put('/:id', async (req, res) => {
   // - Set legacy lens text for backward compatibility
   if (camera_equip_id !== undefined && camera_equip_id !== null) {
     try {
-      const camRow = await new Promise((resolve, reject) => {
-        db.get('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', 
-          [camera_equip_id], (err, row) => err ? reject(err) : resolve(row));
-      });
+      const camRow = await getAsync('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', [camera_equip_id]);
       if (camRow && camRow.has_fixed_lens === 1) {
         // Fixed lens camera: nullify explicit lens, set text for backward compat
         lens_equip_id = null;
@@ -1027,11 +999,7 @@ router.put('/:id', async (req, res) => {
     if (updates.length > 0) {
       const sql = `UPDATE rolls SET ${updates.join(', ')} WHERE id=?`;
       values.push(id);
-      await new Promise((resolve, reject) => {
-        db.run(sql, values, function(err){
-          if (err) reject(err); else resolve(this.changes);
-        });
-      });
+      await runAsync(sql, values);
       
       // Update gear with intelligent deduplication
       if (camera !== undefined) await addOrUpdateGear(id, 'camera', camera).catch(e => console.error('Update camera failed', e));
@@ -1040,7 +1008,7 @@ router.put('/:id', async (req, res) => {
     }
     if (Array.isArray(locations)) {
       for (const locId of locations) {
-        await new Promise((resolve, reject) => db.run('INSERT OR IGNORE INTO roll_locations (roll_id, location_id) VALUES (?, ?)', [id, locId], (e)=> e?reject(e):resolve()));
+        await runAsync('INSERT OR IGNORE INTO roll_locations (roll_id, location_id) VALUES (?, ?)', [id, locId]);
       }
     }
     try { await recomputeRollSequence(); } catch(e){ console.error('recompute sequence failed', e); }
@@ -1290,21 +1258,14 @@ router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) =
     }
 
     // Fetch roll defaults for metadata if not provided explicitly
-    const rollMeta = await new Promise((resolve) => {
-      db.get('SELECT camera, lens, photographer FROM rolls WHERE id = ?', [rollId], (e, row) => {
-        if (e || !row) return resolve({ camera: null, lens: null, photographer: null });
-        resolve(row);
-      });
-    });
+    const rollMeta = await getAsync('SELECT camera, lens, photographer FROM rolls WHERE id = ?', [rollId]) || { camera: null, lens: null, photographer: null };
     const finalCamera = photoCamera || rollMeta.camera || null;
     const finalLens = photoLens || rollMeta.lens || null;
     const finalPhotographer = photoPhotographer || rollMeta.photographer || null;
 
     const sql = `INSERT INTO photos (roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path, caption, taken_at, rating, camera, lens, photographer) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`;
-    db.run(sql, [rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath, caption, taken_at, rating, finalCamera, finalLens, finalPhotographer], function(err) {
-      if (err) return res.status(500).json({ error: err.message });
-      res.status(201).json({ ok: true, id: this.lastID, filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, camera: finalCamera, lens: finalLens, photographer: finalPhotographer });
-    });
+    const result = await runAsync(sql, [rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath, caption, taken_at, rating, finalCamera, finalLens, finalPhotographer]);
+    res.status(201).json({ ok: true, id: result?.lastID, filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, camera: finalCamera, lens: finalLens, photographer: finalPhotographer });
 
   } catch (err) {
       console.error('Upload photo error', err);
@@ -1313,12 +1274,12 @@ router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) =
 });
 
 // set roll cover
-router.post('/:id/cover', (req, res) => {
+router.post('/:id/cover', async (req, res) => {
   const rollId = req.params.id;
   const { photoId, filename } = req.body;
   if (!photoId && !filename) return res.status(400).json({ error: 'photoId or filename required' });
 
-  const setCover = (file) => {
+  const setCover = async (file) => {
     // Normalize the incoming file value into both coverPath and cover_photo.
     let coverPath = null;
     let coverPhoto = null;
@@ -1344,31 +1305,29 @@ router.post('/:id/cover', (req, res) => {
     }
 
     const sql = `UPDATE rolls SET coverPath = ?, cover_photo = ? WHERE id = ?`;
-    db.run(sql, [coverPath, coverPhoto, rollId], function(err){
-      if (err) return res.status(500).json({ error: err.message });
-      db.get('SELECT * FROM rolls WHERE id = ?', [rollId], (e, row) => {
-        if (e) return res.status(500).json({ error: e.message });
-        res.json(row);
-      });
-    });
+    await runAsync(sql, [coverPath, coverPhoto, rollId]);
+    const row = await getAsync('SELECT * FROM rolls WHERE id = ?', [rollId]);
+    res.json(row);
   };
 
-  if (photoId) {
-    db.get('SELECT filename, full_rel_path, positive_rel_path, negative_rel_path FROM photos WHERE id = ? AND roll_id = ?', [photoId, rollId], (err, row) => {
-      if (err) return res.status(500).json({ error: err.message });
+  try {
+    if (photoId) {
+      const row = await getAsync('SELECT filename, full_rel_path, positive_rel_path, negative_rel_path FROM photos WHERE id = ? AND roll_id = ?', [photoId, rollId]);
       if (!row) return res.status(404).json({ error: 'photo not found' });
       
       const photoPath = row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
       
       if (photoPath) {
         const coverPath = `/uploads/${photoPath}`.replace(/\\/g, '/');
-        setCover(coverPath);
+        await setCover(coverPath);
       } else {
-        setCover(row.filename);
+        await setCover(row.filename);
       }
-    });
-  } else {
-    setCover(filename);
+    } else {
+      await setCover(filename);
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

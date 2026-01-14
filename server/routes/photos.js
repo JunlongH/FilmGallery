@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
@@ -98,11 +97,7 @@ router.get('/', async (req, res) => {
   const films = toArray(film);
 
   // Check if locations table exists
-  const locationsTableExists = await new Promise((resolve) => {
-    db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", [], (err, row) => {
-      resolve(!!row);
-    });
-  });
+  const locationsTableExists = await getAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", []);
 
   let sql = locationsTableExists ? `
     SELECT p.*, r.title as roll_title, l.city_name, l.country_name, COALESCE(f.name, r.film_type) AS film_name,
@@ -461,9 +456,7 @@ router.post('/:id/ingest-positive', uploadDefault.single('image'), async (req, r
   }
   
   try {
-    const row = await new Promise((resolve, reject) => {
-      db.get('SELECT roll_id, frame_number, positive_rel_path, full_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [id], (err, r) => err ? reject(err) : resolve(r));
-    });
+    const row = await getAsync('SELECT roll_id, frame_number, positive_rel_path, full_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) {
       console.error('[INGEST-POSITIVE] Photo not found:', id);
       return res.status(404).json({ error: 'Photo not found' });
@@ -605,11 +598,7 @@ router.post('/:id/export-positive', async (req, res) => {
 
   try {
     // Fetch photo row to get original path & roll info
-    const row = await new Promise((resolve, reject) => {
-      db.get('SELECT id, roll_id, frame_number, original_rel_path, positive_rel_path, full_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [id], (err, r) => {
-        if (err) reject(err); else resolve(r);
-      });
-    });
+    const row = await getAsync('SELECT id, roll_id, frame_number, original_rel_path, positive_rel_path, full_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Photo not found' });
     // Pick best available source: prefer original; fallback to positive/full; then negative
     let relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
@@ -819,11 +808,7 @@ router.post('/:id/render-positive', async (req, res) => {
   const rotation = Number.isFinite(p.rotation) ? p.rotation : 0;
   const orientation = Number.isFinite(p.orientation) ? p.orientation : 0;
   try {
-    const row = await new Promise((resolve, reject) => {
-      db.get('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [id], (err, r) => {
-        if (err) reject(err); else resolve(r);
-      });
-    });
+    const row = await getAsync('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Photo not found' });
     let relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
     if (!relSource) return res.status(400).json({ error: 'No usable source for render-positive' });
@@ -947,26 +932,11 @@ router.post('/:id/render-positive', async (req, res) => {
 });
 
 // delete photo (enhanced to remove file from disk if in rolls folder)
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   const id = req.params.id;
-  db.get('SELECT filename, full_rel_path, thumb_rel_path, original_rel_path, negative_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path FROM photos WHERE id = ?', [id], (err, row) => {
-    if (err) return res.status(500).json({ error: err.message });
+  try {
+    const row = await getAsync('SELECT filename, full_rel_path, thumb_rel_path, original_rel_path, negative_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path FROM photos WHERE id = ?', [id]);
     
-    const deleteDbRow = () => {
-      db.run('DELETE FROM photos WHERE id = ?', [id], async function(e){
-        if (e) return res.status(500).json({ error: e.message });
-        
-        // Cleanup orphaned tags
-        try {
-          await runAsync('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)');
-        } catch (cleanupErr) {
-          console.error('Tag cleanup error', cleanupErr);
-        }
-
-        res.json({ deleted: this.changes });
-      });
-    };
-
     if (row) {
       const pathsToDelete = [
         row.thumb_rel_path,
@@ -981,38 +951,42 @@ router.delete('/:id', (req, res) => {
       // Filter out nulls and duplicates
       const uniquePaths = [...new Set(pathsToDelete.filter(p => p))];
 
-      let pending = uniquePaths.length;
-      if (pending === 0) {
-        // Fallback for legacy filename if no paths found
-        if (row.filename && !row.full_rel_path) {
-             const filePath = path.join(__dirname, '../', row.filename.replace(/^\//, ''));
-             fs.unlink(filePath, deleteDbRow);
-        } else {
-             deleteDbRow();
-        }
-        return;
-      }
-
-      let processed = 0;
-      const checkDone = () => {
-        processed++;
-        if (processed >= pending) {
-          deleteDbRow();
-        }
-      };
-
-      uniquePaths.forEach(relPath => {
+      // Delete files from disk
+      for (const relPath of uniquePaths) {
         const filePath = path.join(uploadsDir, relPath);
-        fs.unlink(filePath, (err) => {
-            if (err && err.code !== 'ENOENT') console.warn(`Failed to delete ${filePath}`, err.message);
-            checkDone();
-        });
-      });
-
-    } else {
-      deleteDbRow();
+        try {
+          await fs.promises.unlink(filePath);
+        } catch (e) {
+          if (e.code !== 'ENOENT') console.warn(`Failed to delete ${filePath}`, e.message);
+        }
+      }
+      
+      // Fallback for legacy filename if no paths found
+      if (uniquePaths.length === 0 && row.filename && !row.full_rel_path) {
+        const filePath = path.join(__dirname, '../', row.filename.replace(/^\//, ''));
+        try {
+          await fs.promises.unlink(filePath);
+        } catch (e) {
+          if (e.code !== 'ENOENT') console.warn(`Failed to delete legacy file ${filePath}`, e.message);
+        }
+      }
     }
-  });
+
+    // Delete DB row
+    const result = await runAsync('DELETE FROM photos WHERE id = ?', [id]);
+    
+    // Cleanup orphaned tags
+    try {
+      await runAsync('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)');
+    } catch (cleanupErr) {
+      console.error('Tag cleanup error', cleanupErr);
+    }
+
+    res.json({ deleted: result?.changes || 0 });
+  } catch (err) {
+    console.error('[DELETE] Photo error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/photos/:id/download-with-exif
