@@ -1,10 +1,61 @@
-const sharp = require('sharp');
+/**
+ * FilmLab Service
+ * 
+ * Provides image processing pipeline for film negative processing:
+ * - Inversion (linear/log modes)
+ * - White balance via per-channel gains
+ * - Exposure and contrast adjustments
+ * - Rotation and cropping
+ */
+
+import sharp, { Sharp } from 'sharp';
 sharp.cache(false);
 
-// Build a sharp pipeline from params. Options:
-// { rotation, orientation, cropRect: {x,y,w,h} normalized relative to rotated image, maxWidth, toneAndCurvesInJs }
-// Returns a configured sharp instance (not yet written to file)
-async function buildPipeline(inputPath, params = {}, options = {}) {
+// Interface definitions
+export interface FilmlabParams {
+  inverted?: boolean;
+  inversionMode?: 'linear' | 'log';
+  exposure?: number;
+  contrast?: number;
+  temp?: number;
+  tint?: number;
+  red?: number;
+  green?: number;
+  blue?: number;
+  rotation?: number;
+  orientation?: number;
+}
+
+export interface CropRect {
+  x?: number;
+  y?: number;
+  w?: number;
+  h?: number;
+}
+
+export interface PipelineOptions {
+  maxWidth?: number | null;
+  cropRect?: CropRect | null;
+  toneAndCurvesInJs?: boolean;
+}
+
+/**
+ * Build a sharp pipeline from params.
+ * 
+ * Options:
+ * - rotation: Image rotation in degrees
+ * - orientation: Additional orientation adjustment
+ * - cropRect: {x, y, w, h} normalized relative to rotated image
+ * - maxWidth: Maximum output width (for scaling)
+ * - toneAndCurvesInJs: Defer tone/curve processing to JavaScript
+ * 
+ * @returns A configured sharp instance (not yet written to file)
+ */
+export async function buildPipeline(
+  inputPath: string,
+  params: FilmlabParams = {},
+  options: PipelineOptions = {}
+): Promise<Sharp> {
   const {
     inverted = false,
     inversionMode = 'linear',
@@ -33,11 +84,13 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
   const rotatedW = Math.round(srcW * cos + srcH * sin);
   const rotatedH = Math.round(srcW * sin + srcH * cos);
 
-  const scale = (maxWidth && Number.isFinite(maxWidth) && maxWidth > 0) ? Math.min(1, maxWidth / Math.max(1, rotatedW)) : 1;
+  const scale = (maxWidth && Number.isFinite(maxWidth) && maxWidth > 0) 
+    ? Math.min(1, maxWidth / Math.max(1, rotatedW)) 
+    : 1;
   const targetW = Math.max(1, Math.round(rotatedW * scale));
   const targetH = Math.max(1, Math.round(rotatedH * scale));
 
-  let img = sharp(inputPath, { failOn: 'none' });
+  let img: Sharp = sharp(inputPath, { failOn: 'none' });
 
   if (totalRotation !== 0) img = img.rotate(totalRotation);
 
@@ -57,7 +110,7 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
   // Inversion first (to match client ordering)
   // NOTE: Log inversion requires pixel-level math (255 * (1 - log(x+1)/log(256)))
   // Sharp doesn't support this natively, so when inversionMode='log' and toneAndCurvesInJs=true,
-  // defer inversion AND WB to JS (since WB must come after inversion). 
+  // defer inversion AND WB to JS (since WB must come after inversion).
   const deferInversionToJs = inverted && inversionMode === 'log' && toneAndCurvesInJs;
   if (inverted && !deferInversionToJs) {
     // Linear inversion only - log is deferred to JS
@@ -67,6 +120,7 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
   // White balance via per-channel gains (clamped)
   // Skip if log inversion is deferred (WB must come after inversion, so also defer WB)
   if (!deferInversionToJs) {
+    // Dynamic import to avoid circular dependencies
     const { computeWBGains } = require('../utils/filmlab-wb');
     const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
     img = img.linear([rBal, gBal, bBal], [0, 0, 0]);
@@ -90,4 +144,5 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
   return img;
 }
 
+// CommonJS compatibility
 module.exports = { buildPipeline };
