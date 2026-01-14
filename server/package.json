@@ -16,7 +16,7 @@
     "client:build": "cd client && npm run build",
     "build": "npm run client:build && electron-builder",
     "dist": "npm run build",
-    "postinstall": "npm run init-db || true",
+    "postinstall": "if [ -z \"$CI\" ]; then npm run init-db || true; fi",
     "start": "node server.js"
   },
   "author": "JunlongHuang",
