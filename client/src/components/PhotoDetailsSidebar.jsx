@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import LocationSelect from './LocationSelect.jsx';
+import GeoSearchInput from './GeoSearchInput.jsx';
 import { getMetadataOptions, API_BASE } from '../api';
 import EquipmentSelector from './EquipmentSelector';
 import '../styles/forms.css';
@@ -251,7 +252,23 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         </div>
         <div className="fg-field">
           <label className="fg-label">Detail Location</label>
-          <input className="fg-input" value={detailLocation} onChange={e=>setDetailLocation(e.target.value)} placeholder="e.g. North Gate / street corner" />
+          <GeoSearchInput
+            value={detailLocation}
+            onChange={setDetailLocation}
+            onSelect={(result) => {
+              // 更新经纬度
+              setLocation(l => ({
+                ...l,
+                latitude: result.latitude,
+                longitude: result.longitude
+              }));
+              // 更新 detail location 文本
+              if (result.detail) {
+                setDetailLocation(result.detail);
+              }
+            }}
+            placeholder="Search address or type detail..."
+          />
         </div>
       </section>
 

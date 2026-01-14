@@ -999,11 +999,15 @@ router.post('/:id/download-with-exif', async (req, res) => {
   const os = require('os');
   
   try {
-    // Fetch photo with all metadata including roll, film, and equipment info
+    // Fetch photo with all metadata including roll, film, equipment, and develop info
     const photo = await getAsync(`
       SELECT p.*, r.title as roll_title, r.camera as roll_camera, r.lens as roll_lens, 
              r.photographer as roll_photographer, r.start_date as roll_start_date,
+             r.develop_lab, r.develop_process, r.develop_date, r.develop_note,
+             -- Film info (full details)
              COALESCE(f.name, r.film_type) AS film_name,
+             f.brand AS film_brand, f.iso AS film_iso, f.format AS film_format,
+             f.category AS film_category, f.process AS film_process,
              -- Photo equipment
              pcam.name AS photo_camera_name, pcam.brand AS photo_camera_brand, pcam.model AS photo_camera_model,
              pcam.has_fixed_lens, pcam.fixed_lens_focal_length, pcam.fixed_lens_max_aperture,
@@ -1057,7 +1061,16 @@ router.post('/:id/download-with-exif', async (req, res) => {
       focal_length: photo.focal_length,
       date_taken: photo.date_taken,
       latitude: photo.latitude,
-      longitude: photo.longitude
+      longitude: photo.longitude,
+      // New fields
+      film_brand: photo.film_brand,
+      film_name: photo.film_name,
+      film_iso: photo.film_iso,
+      film_format: photo.film_format,
+      film_process: photo.film_process,
+      develop_lab: photo.develop_lab,
+      develop_process: photo.develop_process,
+      develop_date: photo.develop_date
     });
     
     // Get tags for this photo
@@ -1134,6 +1147,22 @@ router.post('/:id/download-with-exif', async (req, res) => {
     if (photo.shutter_speed) exifData.ExposureTime = photo.shutter_speed;
     if (photo.focal_length) exifData.FocalLength = photo.focal_length;
     
+    // Lens focal length from equipment (if not set on photo)
+    if (!photo.focal_length && !fixedLensFocal) {
+      const focalMin = photo.photo_lens_focal_min || photo.roll_lens_focal_min;
+      const focalMax = photo.photo_lens_focal_max || photo.roll_lens_focal_max;
+      if (focalMin) {
+        // For zoom lenses, use min focal length as default
+        exifData.FocalLength = focalMin;
+      }
+    }
+    
+    // Lens serial number and additional info (XMP)
+    const lensMaxAperture = photo.photo_lens_max_aperture || photo.roll_lens_max_aperture || fixedLensAperture;
+    if (lensMaxAperture) {
+      exifData.MaxApertureValue = lensMaxAperture;
+    }
+    
     // Date/Time (format: YYYY:MM:DD HH:mm:ss)
     if (photo.date_taken) {
       const dateStr = photo.date_taken;
@@ -1149,24 +1178,57 @@ router.post('/:id/download-with-exif', async (req, res) => {
       exifData.GPSLongitude = photo.longitude;
     }
     
+    // Build comprehensive film info string
+    const filmParts = [];
+    if (photo.film_brand) filmParts.push(photo.film_brand);
+    if (photo.film_name) filmParts.push(photo.film_name);
+    const filmFullName = filmParts.length > 0 ? filmParts.join(' ') : null;
+    const filmDetails = [];
+    if (filmFullName) filmDetails.push(filmFullName);
+    if (photo.film_iso) filmDetails.push(`ISO ${photo.film_iso}`);
+    if (photo.film_format) filmDetails.push(photo.film_format);
+    if (photo.film_process) filmDetails.push(photo.film_process);
+    
+    // Build develop info string
+    const developParts = [];
+    if (photo.develop_lab) developParts.push(`Lab: ${photo.develop_lab}`);
+    if (photo.develop_process) developParts.push(`Process: ${photo.develop_process}`);
+    if (photo.develop_date) developParts.push(`Date: ${photo.develop_date}`);
+    const developInfo = developParts.length > 0 ? developParts.join(', ') : null;
+    
     // Description combining caption, roll info, film info, frame number
     const descParts = [];
     if (photo.caption) descParts.push(photo.caption);
     if (photo.roll_title) descParts.push(`Roll: ${photo.roll_title}`);
-    if (photo.film_name) descParts.push(`Film: ${photo.film_name}`);
+    if (filmFullName) descParts.push(`Film: ${filmDetails.join(' ')}`);
     if (photo.frame_number) descParts.push(`Frame: ${photo.frame_number}`);
+    if (developInfo) descParts.push(`Develop: ${developInfo}`);
     if (descParts.length > 0) {
       exifData.ImageDescription = descParts.join(' | ');
     }
     
+    // UserComment for extended film and develop info (better structured)
+    const userCommentParts = [];
+    if (filmDetails.length > 0) userCommentParts.push(`Film: ${filmDetails.join(' ')}`);
+    if (lensName) userCommentParts.push(`Lens: ${lensName}`);
+    if (developInfo) userCommentParts.push(developInfo);
+    if (photo.develop_note) userCommentParts.push(`Note: ${photo.develop_note}`);
+    if (userCommentParts.length > 0) {
+      exifData.UserComment = userCommentParts.join(' | ');
+    }
+    
     // Keywords (tags) - IPTC/XMP compatible
-    if (tags.length > 0) {
-      exifData.Subject = tags;
-      exifData.Keywords = tags;
+    // Add film name and develop lab as keywords too
+    const allKeywords = [...tags];
+    if (filmFullName) allKeywords.push(filmFullName);
+    if (photo.develop_lab) allKeywords.push(photo.develop_lab);
+    if (allKeywords.length > 0) {
+      exifData.Subject = allKeywords;
+      exifData.Keywords = allKeywords;
     }
     
     // Software tag
-    exifData.Software = 'FilmGallery v1.8.0';
+    exifData.Software = 'FilmGallery v1.9.0';
     
     console.log('[DOWNLOAD-WITH-EXIF] EXIF data to write:', JSON.stringify(exifData, null, 2));
     

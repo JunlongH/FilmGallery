@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import '../styles/forms.css';
 import LocationSelect from './LocationSelect.jsx';
+import GeoSearchInput from './GeoSearchInput.jsx';
 
 export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
   const [dateTaken, setDateTaken] = useState(photo.date_taken || '');
@@ -114,7 +115,21 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
         </div>
         <div className="fg-field" style={{ marginTop: 8 }}>
           <label className="fg-label">Detail Location</label>
-          <input className="fg-input" value={detailLocation} onChange={e=>setDetailLocation(e.target.value)} placeholder="e.g., North Gate, street corner" />
+          <GeoSearchInput
+            value={detailLocation}
+            onChange={setDetailLocation}
+            onSelect={(result) => {
+              setLocation(l => ({
+                ...l,
+                latitude: result.latitude,
+                longitude: result.longitude
+              }));
+              if (result.detail) {
+                setDetailLocation(result.detail);
+              }
+            }}
+            placeholder="Search address or type detail..."
+          />
         </div>
         <div className="fg-actions" style={{ marginTop: 12 }}>
           <button type="button" className="fg-btn" onClick={onClose}>Cancel</button>

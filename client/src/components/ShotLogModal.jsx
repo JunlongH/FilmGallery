@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCompatibleLenses } from '../api';
-import { searchAddress, getCityCoordinates } from '../utils/geocoding';
+import { getCityCoordinates } from '../utils/geocoding';
+import GeoSearchInput from './GeoSearchInput.jsx';
 
 const FALLBACK_LENSES = [
   '50mm f/1.8',
@@ -41,9 +42,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   // Geolocation state
   const [newLatitude, setNewLatitude] = useState(null);
   const [newLongitude, setNewLongitude] = useState(null);
-  const [geoSearchResults, setGeoSearchResults] = useState([]);
-  const [geoSearching, setGeoSearching] = useState(false);
-  const [showGeoResults, setShowGeoResults] = useState(false);
 
   // Format lens for display
   const formatLensDisplay = (lens) => {
@@ -259,38 +257,13 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     setNewLongitude(null);
   };
 
-  // Geocoding: search for address and get coordinates
-  const handleGeoSearch = async () => {
-    const query = newDetail.trim();
-    if (!query) return;
-    setGeoSearching(true);
-    setShowGeoResults(true);
-    try {
-      const results = await searchAddress(query, { limit: 5 });
-      setGeoSearchResults(results);
-      if (results.length === 0) {
-        console.log('Geocoding: no results for query:', query);
-      }
-    } catch (err) {
-      console.error('Geocoding search failed:', err);
-      setGeoSearchResults([]);
-    } finally {
-      setGeoSearching(false);
-    }
-  };
-
-  // Select a geocoding result
-  const handleSelectGeoResult = (result) => {
+  // Handle geocoding result selection from GeoSearchInput
+  const handleGeoSelect = (result) => {
     setNewLatitude(result.latitude);
     setNewLongitude(result.longitude);
     if (result.country) setNewCountry(result.country);
     if (result.city) setNewCity(result.city);
-    // Build detail from road + house number
-    const detailParts = [result.road, result.houseNumber].filter(Boolean);
-    if (detailParts.length > 0) {
-      setNewDetail(detailParts.join(' '));
-    }
-    setShowGeoResults(false);
+    if (result.detail) setNewDetail(result.detail);
   };
 
   // Auto-fill coordinates from country/city when no specific address
@@ -298,7 +271,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     if (newLatitude && newLongitude) return; // Already have coordinates
     if (!newCountry && !newCity) return; // Nothing to search for
     
-    setGeoSearching(true);
     try {
       const coords = await getCityCoordinates(newCountry, newCity);
       if (coords) {
@@ -307,8 +279,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       }
     } catch (err) {
       console.error('Auto-fill coordinates failed:', err);
-    } finally {
-      setGeoSearching(false);
     }
   };
 
@@ -548,88 +518,13 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     </span>
                   )}
                 </label>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <input
-                    type="text"
-                    className="fg-input"
-                    value={newDetail}
-                    onChange={e => setNewDetail(e.target.value)}
-                    placeholder="Search address or type detail"
-                    style={{ background: '#fff', height: 38, border: 'none', fontSize: 13, flex: 1 }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        if (newDetail.length > 3) {
-                          handleGeoSearch();
-                        } else {
-                          handleAdd();
-                        }
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleGeoSearch}
-                    disabled={geoSearching || !newDetail.trim()}
-                    style={{ height: 38, padding: '0 10px', background: '#fff', border: 'none', borderRadius: 6, cursor: geoSearching || !newDetail.trim() ? 'not-allowed' : 'pointer', fontSize: 16, opacity: geoSearching || !newDetail.trim() ? 0.5 : 1 }}
-                    title="Search address for GPS coordinates"
-                  >
-                    {geoSearching ? '⏳' : '🔍'}
-                  </button>
-                </div>
-                {/* Geocoding results dropdown */}
-                {showGeoResults && geoSearchResults.length > 0 && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    background: '#fff',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    zIndex: 100,
-                    maxHeight: 200,
-                    overflowY: 'auto',
-                    marginTop: 4
-                  }}>
-                    {geoSearchResults.map((r, idx) => (
-                      <div
-                        key={idx}
-                        onClick={() => handleSelectGeoResult(r)}
-                        style={{
-                          padding: '10px 12px',
-                          cursor: 'pointer',
-                          borderBottom: idx < geoSearchResults.length - 1 ? '1px solid #e5e7eb' : 'none',
-                          fontSize: 13,
-                          color: '#1f2937'
-                        }}
-                        onMouseEnter={e => e.target.style.background = '#f3f4f6'}
-                        onMouseLeave={e => e.target.style.background = '#fff'}
-                      >
-                        <div style={{ fontWeight: 500 }}>{r.city || r.state}, {r.country}</div>
-                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{r.displayName}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {showGeoResults && geoSearchResults.length === 0 && !geoSearching && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    background: '#fff',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    zIndex: 100,
-                    padding: '10px 12px',
-                    marginTop: 4,
-                    fontSize: 13,
-                    color: '#6b7280'
-                  }}>
-                    No results found. Try a different search term.
-                  </div>
-                )}
+                <GeoSearchInput
+                  value={newDetail}
+                  onChange={setNewDetail}
+                  onSelect={handleGeoSelect}
+                  placeholder="Search address or type detail"
+                  style={{ background: 'transparent' }}
+                />
               </div>
               <button 
                 type="button" 
