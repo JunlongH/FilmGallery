@@ -12,6 +12,7 @@ const sqlite3 = require('sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { getDbPath } = require('../config/db-config');
+const { FILM_CATEGORIES, FILM_FORMATS, KNOWN_BRANDS } = require('../constants/film');
 
 function log(msg) {
   const logPath = path.join(path.dirname(getDbPath()), 'film-struct-migration.log');
@@ -19,51 +20,6 @@ function log(msg) {
   fs.appendFileSync(logPath, `[${ts}] ${msg}\n`);
   console.log(`[FILM-STRUCT] ${msg}`);
 }
-
-/**
- * Film categories enum
- */
-const FILM_CATEGORIES = [
-  'color-negative',   // Color Negative (彩色负片) - C-41
-  'color-reversal',   // Color Reversal/Slide (彩色反转片) - E-6
-  'bw-negative',      // Black & White Negative (黑白负片)
-  'bw-reversal',      // Black & White Reversal (黑白反转片)
-  'instant',          // Instant Film (拍立得)
-  'cine',             // Cinema Film (电影胶片) - ECN-2
-  'other'
-];
-
-/**
- * Film formats (画幅)
- */
-const FILM_FORMATS = [
-  '135',              // 35mm standard
-  '120',              // Medium format
-  '220',              // Medium format double length
-  '110',              // Pocket Instamatic
-  '127',              // Vest Pocket
-  '4x5',              // Large format 4x5
-  '8x10',             // Large format 8x10
-  'Instant',          // Polaroid/Instax
-  'APS',              // Advanced Photo System
-  'Half Frame',       // 35mm half frame
-  'Super 8',          // Super 8 cine
-  '16mm',             // 16mm cine
-  '35mm Cine',        // 35mm cinema
-  'Other'
-];
-
-/**
- * Common film brands for auto-detection
- */
-const KNOWN_BRANDS = [
-  'Kodak', 'Fujifilm', 'Fuji', 'Ilford', 'Agfa', 'Lomography', 'Lomo',
-  'CineStill', 'Cinestill', 'Foma', 'Rollei', 'Bergger', 'ORWO',
-  'Polaroid', 'Instax', 'Impossible', 'Kentmere', 'Adox', 'JCH',
-  'Shanghai', 'Lucky', 'Fomapan', 'Svema', 'Tasma', 'Ferrania',
-  'Silberra', 'Washi', 'Dubblefilm', 'Kono', 'Yodica', 'Revolog',
-  'Harman', 'Japan Camera Hunter'
-];
 
 /**
  * Parse film name to extract brand

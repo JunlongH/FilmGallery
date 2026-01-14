@@ -5,14 +5,15 @@ const path = require('path');
 const { uploadFilm } = require('../config/multer');
 const { uploadsDir } = require('../config/paths');
 const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
-const { FILM_CATEGORIES, FILM_FORMATS, KNOWN_BRANDS } = require('../utils/film-struct-migration');
+const { FILM_CATEGORIES, FILM_FORMATS, KNOWN_BRANDS, PROCESS_TYPES } = require('../constants/film');
 
 // Get film constants (for dropdowns)
 router.get('/constants', (req, res) => {
   res.json({
     categories: FILM_CATEGORIES,
     formats: FILM_FORMATS,
-    brands: KNOWN_BRANDS
+    brands: KNOWN_BRANDS,
+    processTypes: PROCESS_TYPES
   });
 });
 
