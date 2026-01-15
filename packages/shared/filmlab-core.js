@@ -5,11 +5,14 @@
  * @description 统一的像素处理核心，确保客户端、服务端、GPU 导出路径使用完全相同的算法
  * 
  * 处理流水线顺序 (已调整)：
- * ① 反转 (Inversion) - 在几何变换之前执行
- * ② 白平衡 (White Balance)
- * ③ 色调映射 (Tone Mapping via LUT)
- * ④ 曲线 (Curves)
- * ⑤ 3D LUT
+ * ① 胶片曲线 (Film Curve - H&D 密度模型)
+ * ② 反转 (Inversion) - 在几何变换之前执行
+ * ③ 白平衡 (White Balance)
+ * ④ 色调映射 (Tone Mapping via LUT)
+ * ⑤ 曲线 (Curves)
+ * ⑥ HSL 调整 (色相/饱和度/明度)
+ * ⑦ 分离色调 (Split Toning)
+ * ⑧ 3D LUT
  * 
  * 注意：几何变换（旋转、裁剪）在调用此模块之前由各自的渲染路径处理
  */
@@ -20,6 +23,8 @@ const { buildCurveLUT } = require('./filmLabCurves');
 const { computeWBGains } = require('./filmLabWhiteBalance');
 const { applyInversion } = require('./filmLabInversion');
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('./filmLabCurve');
+const { applyHSL, DEFAULT_HSL_PARAMS, isDefaultHSL } = require('./filmLabHSL');
+const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone } = require('./filmLabSplitTone');
 
 // ============================================================================
 // 辅助函数
@@ -202,7 +207,17 @@ function processPixel(r, g, b, luts, params = {}) {
   g = luts.lutG[g];
   b = luts.lutB[b];
 
-  // ⑤ 3D LUT 应用 (如果存在)
+  // ⑥ HSL 调整 (如果有非默认参数)
+  if (params.hslParams && !isDefaultHSL(params.hslParams)) {
+    [r, g, b] = applyHSL(r, g, b, params.hslParams);
+  }
+
+  // ⑦ 分离色调 (如果有非默认参数)
+  if (params.splitToning && !isDefaultSplitTone(params.splitToning)) {
+    [r, g, b] = applySplitTone(r, g, b, params.splitToning);
+  }
+
+  // ⑧ 3D LUT 应用 (如果存在)
   if (luts.lut1) {
     [r, g, b] = sampleLUT3D(r, g, b, luts.lut1, luts.lut1Intensity);
   }

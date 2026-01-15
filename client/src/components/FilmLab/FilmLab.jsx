@@ -14,6 +14,8 @@ import {
   PREVIEW_MAX_WIDTH_SERVER,
   PREVIEW_MAX_WIDTH_CLIENT,
   EXPORT_MAX_WIDTH,
+  DEFAULT_HSL_PARAMS,
+  DEFAULT_SPLIT_TONE_PARAMS,
 } from '../../utils/filmlab-shared';
 
 // ============================================================================
@@ -123,6 +125,12 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     blue: [...defaultCurve]
   });
   const [activeChannel, setActiveChannel] = useState('rgb'); // 'rgb', 'red', 'green', 'blue'
+
+  // HSL 调整 (8 色相分区)
+  const [hslParams, setHslParams] = useState({ ...DEFAULT_HSL_PARAMS });
+  
+  // 分离色调 (高光/阴影着色)
+  const [splitToning, setSplitToning] = useState({ ...DEFAULT_SPLIT_TONE_PARAMS });
 
   // Zoom & Pan
   const [zoom, setZoom] = useState(1);
@@ -426,6 +434,9 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       green: [{x:0, y:0}, {x:255, y:255}],
       blue: [{x:0, y:0}, {x:255, y:255}]
     });
+    // 重置 HSL 和分离色调
+    setHslParams({ ...DEFAULT_HSL_PARAMS });
+    setSplitToning({ ...DEFAULT_SPLIT_TONE_PARAMS });
   };
 
   useEffect(() => {
@@ -984,7 +995,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
           exposure, contrast, highlights, shadows, whites, blacks,
           curves, red, green, blue, temp, tint, lut1, lut2
         });
-        const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
+        const inversionParams = { 
+          inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+          hslParams, splitToning
+        };
 
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
@@ -1298,7 +1312,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       exposure, contrast, highlights, shadows, whites, blacks,
       curves, red, green, blue, temp, tint, lut1, lut2
     });
-    const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
+    const inversionParams = { 
+      inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+      hslParams, splitToning
+    };
 
     for (let b = 0; b < size; b++) {
       for (let g = 0; g < size; g++) {
@@ -1387,7 +1404,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       exposure, contrast, highlights, shadows, whites, blacks,
       curves, red, green, blue, temp, tint, lut1, lut2
     });
-    const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
+    const inversionParams = { 
+      inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+      hslParams, splitToning
+    };
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i+3] === 0) continue;
@@ -1710,7 +1730,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       exposure, contrast, highlights, shadows, whites, blacks,
       curves, red, green, blue, temp, tint, lut1, lut2
     });
-    const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
+    const inversionParams = { 
+      inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+      hslParams, splitToning
+    };
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i+3] === 0) continue;
@@ -1998,6 +2021,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         pickedColor={pickedColor}
         histograms={histograms}
         pushToHistory={pushToHistory}
+        hslParams={hslParams} setHslParams={setHslParams}
+        splitToning={splitToning} setSplitToning={setSplitToning}
         lut1={lut1} setLut1={setLut1}
         lut2={lut2} setLut2={setLut2}
         lutExportSize={lutExportSize} setLutExportSize={setLutExportSize}

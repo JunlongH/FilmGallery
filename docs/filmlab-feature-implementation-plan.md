@@ -103,9 +103,10 @@ packages/shared/
 - 余弦平滑过渡算法，避免色带
 - RGB ↔ HSL 颜色空间转换
 - 批量像素处理 `applyHSLToArray()`
+- [x] `HSLPanel.jsx` UI 组件 ✅ (2026-01-15)
+- [x] 集成到 FilmLabControls 和处理流水线 ✅ (2026-01-15)
 
 **待完成**:
-- [ ] 创建 `HSLPanel.jsx` UI 组件
 - [ ] 集成到 WebGL 着色器
 
 ---
@@ -124,9 +125,8 @@ packages/shared/
 - 平衡滑块控制过渡
 - 5 种预设 (暖冷胶片、青橙电影、复古褪色等)
 - 余弦平滑过渡，避免硬边界
-
-**待完成**:
-- [ ] 创建 `SplitToningPanel.jsx` UI 组件
+- [x] `SplitToningPanel.jsx` UI 组件 ✅ (2026-01-15)
+- [x] 集成到 FilmLabControls 和处理流水线 ✅ (2026-01-15)
 
 ---
 
@@ -193,10 +193,10 @@ packages/shared/
 - `POST /api/export/jobs/:jobId/pause` - 暂停任务
 - `POST /api/export/jobs/:jobId/resume` - 恢复任务
 
-**待完成**:
-- [ ] 创建 `ExportQueuePanel.jsx` UI 组件
-- [ ] 在 RollView 添加批量导出按钮
-- [ ] 集成到主路由
+**UI 集成** (2026-01-15):
+- [x] `ExportQueuePanel.jsx` UI 组件 ✅
+- [x] 在 RollDetail 添加批量导出按钮 ✅
+- [x] 集成到 server.js 主路由 ✅
 
 // WebSocket: /ws/export/:jobId
 {
@@ -380,16 +380,17 @@ packages/shared/
 - [x] 创建 `packages/shared/filmLabHSL.js` HSL 模块
 - [x] 创建 `packages/shared/filmLabSplitTone.js` 分离色调模块
 
-### 阶段 2: 批量导出 UI (3 天) 📋 待开始
-- [ ] 创建 `ExportQueuePanel.jsx`
-- [ ] 在 RollView 添加批量选择和导出按钮
-- [ ] 实现进度显示和任务管理
+### 阶段 2: 批量导出 UI (3 天) ✅ 已完成
+- [x] 创建 `ExportQueuePanel.jsx` ✅ (2026-01-15)
+- [x] 在 RollDetail 添加批量选择和导出按钮 ✅ (2026-01-15)
+- [x] 实现进度显示和任务管理 ✅ (2026-01-15)
 
-### 阶段 3: HSL 调整 UI (1 周) 📋 待开始
+### 阶段 3: HSL 调整 UI (1 周) ✅ 已完成
 - [x] 实现 `filmLabHSL.js` 算法 ✅
-- [ ] 创建 `HSLPanel.jsx` UI
-- [ ] 集成到处理流水线
-- [ ] 添加到 WebGL 着色器
+- [x] 创建 `HSLPanel.jsx` UI ✅ (2026-01-15)
+- [x] 创建 `SplitToningPanel.jsx` UI ✅ (2026-01-15)
+- [x] 集成到处理流水线 (CPU 路径) ✅ (2026-01-15)
+- [ ] 添加到 WebGL 着色器 (待完成)
 
 ### 阶段 4: RAW 支持 (1-2 周) 📋 待开始
 - [ ] 评估 dcraw vs libraw 方案

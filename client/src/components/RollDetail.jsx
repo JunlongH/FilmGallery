@@ -1,7 +1,7 @@
 // src/components/RollDetail.jsx
 import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRoll, getPhotos, uploadPhotosToRoll, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions } from '../api';
+import { getRoll, getPhotos, uploadPhotosToRoll, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions, createBatchExport } from '../api';
 import { useParams } from 'react-router-dom';
 import ImageViewer from './ImageViewer';
 import PhotoItem from './PhotoItem';
@@ -11,6 +11,7 @@ import LocationSelect from './LocationSelect.jsx';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
 import ContactSheetModal from './ContactSheetModal.jsx';
 import EquipmentSelector from './EquipmentSelector';
+import ExportQueuePanel from './FilmLab/ExportQueuePanel';
 import '../styles/sidebar.css';
 import '../styles/forms.css';
 import '../styles/roll-detail-card.css';
@@ -32,6 +33,8 @@ export default function RollDetail() {
   const [showBatchSidebar, setShowBatchSidebar] = useState(false);
   const [showRollSidebar, setShowRollSidebar] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
+  const [showExportQueue, setShowExportQueue] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState(null); // for fixed lens detection
 
   const showAlert = (title, message) => {
@@ -165,6 +168,39 @@ export default function RollDetail() {
     }
   }
 
+  // 批量导出处理
+  async function handleBatchExport() {
+    const photoIds = multiSelect && selectedPhotos.length > 0 
+      ? selectedPhotos.map(p => p.id) 
+      : photos.map(p => p.id);
+    
+    if (photoIds.length === 0) {
+      showAlert('No Photos', 'No photos to export.');
+      return;
+    }
+
+    setExportBusy(true);
+    try {
+      const result = await createBatchExport({
+        photoIds,
+        params: {}, // 使用各照片保存的处理参数
+        format: 'jpeg',
+        quality: 95,
+        maxWidth: 4000,
+      });
+      
+      if (result.jobId) {
+        showAlert('Export Started', `Batch export job created: ${photoIds.length} photos. Job ID: ${result.jobId}`);
+        setShowExportQueue(true);
+      }
+    } catch (err) {
+      console.error('Batch export failed', err);
+      showAlert('Export Failed', 'Failed to start batch export: ' + (err.message || err));
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
   async function handleEditClick() {
     // Always fetch fresh films list when entering edit mode
     try {
@@ -266,6 +302,37 @@ export default function RollDetail() {
         onConfirm={dialog.onConfirm}
         onCancel={dialog.onCancel}
       />
+      
+      {/* 导出队列面板 */}
+      {showExportQueue && (
+        <div 
+          role="presentation" 
+          onClick={() => setShowExportQueue(false)} 
+          style={{ 
+            position: 'fixed', 
+            inset: 0, 
+            background: 'rgba(0,0,0,0.5)', 
+            zIndex: 10050,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center'
+          }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              maxWidth: 500, 
+              maxHeight: '80vh', 
+              overflow: 'auto',
+              borderRadius: 8,
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
+            }}
+          >
+            <ExportQueuePanel onClose={() => setShowExportQueue(false)} />
+          </div>
+        </div>
+      )}
+      
       <div className="roll-card">
         <div className="roll-info-column">
           <div className="roll-header-section">
@@ -379,6 +446,22 @@ export default function RollDetail() {
               </button>
               {multiSelect && selectedPhotos.length > 0 && (
                 <button className="primary-btn" style={{ background:'#2563eb' }} onClick={() => setShowBatchSidebar(true)}>Edit Selected ({selectedPhotos.length})</button>
+              )}
+              {photos.length > 0 && (
+                <button 
+                  className="primary-btn" 
+                  style={{ background: exportBusy ? '#555' : '#7c3aed' }} 
+                  onClick={handleBatchExport}
+                  disabled={exportBusy}
+                  title={multiSelect && selectedPhotos.length > 0 ? `Export ${selectedPhotos.length} selected photos` : `Export all ${photos.length} photos`}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  {exportBusy ? 'Exporting...' : (multiSelect && selectedPhotos.length > 0 ? `Export (${selectedPhotos.length})` : 'Batch Export')}
+                </button>
               )}
               {!multiSelect && photos.length > 0 && (
                 <button className="primary-btn" style={{ background:'#059669' }} onClick={() => setShowContactSheet(true)}>

@@ -1,6 +1,8 @@
 import React from 'react';
 import SliderControl from './SliderControl';
 import ToneCurveEditor from './ToneCurveEditor';
+import HSLPanel from './HSLPanel';
+import SplitToningPanel from './SplitToningPanel';
 import { createFilmCurveProfile, updateFilmCurveProfile, deleteFilmCurveProfile } from '../../api';
 
 // Film Curve Profile Selector Component
@@ -280,6 +282,8 @@ export default function FilmLabControls({
   pickedColor,
   histograms,
   pushToHistory,
+  hslParams, setHslParams,
+  splitToning, setSplitToning,
   lut1, setLut1,
   lut2, setLut2,
   lutExportSize, setLutExportSize,
@@ -603,6 +607,20 @@ export default function FilmLabControls({
         setIsPicking={setIsPicking}
         pickedColor={pickedColor}
         histograms={histograms}
+        pushToHistory={pushToHistory}
+      />
+
+      {/* HSL 调整 */}
+      <HSLPanel
+        hslParams={hslParams}
+        setHslParams={setHslParams}
+        pushToHistory={pushToHistory}
+      />
+
+      {/* 分离色调 */}
+      <SplitToningPanel
+        splitToning={splitToning}
+        setSplitToning={setSplitToning}
         pushToHistory={pushToHistory}
       />
 
