@@ -47,5 +47,36 @@ export {
   FILM_CURVE_PROFILES 
 } from './filmLabCurve.js';
 
+// HSL 调整
+export {
+  HSL_CHANNELS,
+  HSL_CHANNEL_ORDER,
+  DEFAULT_HSL_PARAMS,
+  rgbToHsl,
+  hslToRgb,
+  applyHSL,
+  applyHSLToArray,
+  isDefaultHSL,
+  mergeHSLParams,
+  validateHSLParams,
+  calculateChannelWeight,
+  hueDistance,
+} from './filmLabHSL.js';
+
+// 分离色调
+export {
+  DEFAULT_SPLIT_TONE_PARAMS,
+  LUMINANCE_CONFIG,
+  SPLIT_TONE_PRESETS,
+  applySplitTone,
+  applySplitToneToArray,
+  isDefaultSplitTone,
+  calculateLuminance,
+  calculateZoneWeights,
+  smoothstep,
+  mergeSplitToneParams,
+  validateSplitToneParams,
+} from './filmLabSplitTone.js';
+
 // 核心处理模块 (放最后，因为它依赖上面的模块)
 export { processPixel, prepareLUTs, processPixelArray, sampleLUT3D, debugLogParams } from './filmlab-core.js';

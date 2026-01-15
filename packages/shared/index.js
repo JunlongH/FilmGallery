@@ -13,6 +13,9 @@ const curves = require('./filmLabCurves');
 const whiteBalance = require('./filmLabWhiteBalance');
 const inversion = require('./filmLabInversion');
 const filmCurve = require('./filmLabCurve');
+const hsl = require('./filmLabHSL');
+const exportParams = require('./filmLabExport');
+const splitTone = require('./filmLabSplitTone');
 
 // 统一导出
 module.exports = {
@@ -148,4 +151,97 @@ module.exports = {
   // 色温配置
   REFERENCE_WHITE_POINTS: constants.REFERENCE_WHITE_POINTS,
   TEMP_SLIDER_CONFIG: constants.TEMP_SLIDER_CONFIG,
+  
+  // ============================================================================
+  // HSL 调整
+  // ============================================================================
+  
+  /** HSL 通道定义 */
+  HSL_CHANNELS: hsl.HSL_CHANNELS,
+  
+  /** HSL 通道顺序 */
+  HSL_CHANNEL_ORDER: hsl.HSL_CHANNEL_ORDER,
+  
+  /** 默认 HSL 参数 */
+  DEFAULT_HSL_PARAMS: hsl.DEFAULT_HSL_PARAMS,
+  
+  /** RGB 转 HSL */
+  rgbToHsl: hsl.rgbToHsl,
+  
+  /** HSL 转 RGB */
+  hslToRgb: hsl.hslToRgb,
+  
+  /** 应用 HSL 调整到单个像素 */
+  applyHSL: hsl.applyHSL,
+  
+  /** 批量应用 HSL 到像素数组 */
+  applyHSLToArray: hsl.applyHSLToArray,
+  
+  /** 检查 HSL 是否为默认值 */
+  isDefaultHSL: hsl.isDefaultHSL,
+  
+  /** 合并 HSL 参数 */
+  mergeHSLParams: hsl.mergeHSLParams,
+  
+  /** 验证 HSL 参数 */
+  validateHSLParams: hsl.validateHSLParams,
+  
+  // ============================================================================
+  // 导出参数管理
+  // ============================================================================
+  
+  /** 默认处理参数 */
+  DEFAULT_PROCESSING_PARAMS: exportParams.DEFAULT_PROCESSING_PARAMS,
+  
+  /** 参数版本 */
+  PARAMS_VERSION: exportParams.PARAMS_VERSION,
+  
+  /** 构建导出参数 */
+  buildExportParams: exportParams.buildExportParams,
+  
+  /** 验证导出参数 */
+  validateExportParams: exportParams.validateExportParams,
+  
+  /** 迁移旧参数到新版本 */
+  migrateParams: exportParams.migrateParams,
+  
+  /** 序列化导出参数 */
+  serializeParams: exportParams.serializeParams,
+  
+  /** 反序列化导出参数 */
+  deserializeParams: exportParams.deserializeParams,
+  
+  /** 比较参数差异 */
+  diffParams: exportParams.diffParams,
+  
+  // ============================================================================
+  // 分离色调
+  // ============================================================================
+  
+  /** 默认分离色调参数 */
+  DEFAULT_SPLIT_TONE_PARAMS: splitTone.DEFAULT_SPLIT_TONE_PARAMS,
+  
+  /** 分离色调预设 */
+  SPLIT_TONE_PRESETS: splitTone.SPLIT_TONE_PRESETS,
+  
+  /** 亮度阈值配置 */
+  LUMINANCE_CONFIG: splitTone.LUMINANCE_CONFIG,
+  
+  /** 应用分离色调 */
+  applySplitTone: splitTone.applySplitTone,
+  
+  /** 批量应用分离色调 */
+  applySplitToneToArray: splitTone.applySplitToneToArray,
+  
+  /** 检查分离色调是否为默认值 */
+  isDefaultSplitTone: splitTone.isDefaultSplitTone,
+  
+  /** 合并分离色调参数 */
+  mergeSplitToneParams: splitTone.mergeSplitToneParams,
+  
+  /** 验证分离色调参数 */
+  validateSplitToneParams: splitTone.validateSplitToneParams,
+  
+  /** 计算亮度 */
+  calculateLuminance: splitTone.calculateLuminance,
 };
