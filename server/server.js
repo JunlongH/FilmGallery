@@ -145,6 +145,7 @@ const mountRoutes = () => {
   app.use('/api/filmlab', require('./routes/filmlab'));
   app.use('/api/conflicts', require('./routes/conflicts'));
   app.use('/api/health', require('./routes/health'));
+  app.use('/api/export', require('./routes/export')); // Batch export queue
   app.get('/api/_profiler', (req, res) => res.json(getProfilerStats()));
   app.get('/api/_prepared-statements', (req, res) => res.json(PreparedStmt.getStats()));
 };

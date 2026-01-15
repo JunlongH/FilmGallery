@@ -769,3 +769,79 @@ export async function deleteFilmCurveProfile(id) {
   return resp.json();
 }
 
+// ============================================================================
+// 批量导出 API
+// ============================================================================
+
+/**
+ * 创建批量导出任务
+ * @param {Object} options - 导出选项
+ * @param {number} options.rollId - 卷宗 ID
+ * @param {number[]} [options.photoIds] - 照片 ID 列表（不传则导出整卷）
+ * @param {string} [options.format='JPEG'] - 输出格式
+ * @param {number} [options.quality=95] - JPEG 质量
+ * @param {number} [options.maxWidth=4000] - 最大宽度
+ * @param {string} [options.outputDir] - 输出目录
+ * @param {Object} [options.processingParams] - 处理参数
+ * @returns {Promise<Object>} 创建的任务信息
+ */
+export async function createBatchExport(options) {
+  const resp = await fetch(`${API_BASE}/api/export/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  return resp.json();
+}
+
+/**
+ * 获取所有导出任务
+ * @param {Object} [filters] - 过滤条件
+ * @param {string} [filters.status] - 按状态过滤
+ * @returns {Promise<Object>} 任务列表
+ */
+export async function getExportJobs(filters = {}) {
+  const params = new URLSearchParams();
+  if (filters.status) params.append('status', filters.status);
+  return jsonFetch(`/api/export/jobs?${params}`);
+}
+
+/**
+ * 获取单个导出任务详情
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 任务详情
+ */
+export async function getExportJob(jobId) {
+  return jsonFetch(`/api/export/jobs/${jobId}`);
+}
+
+/**
+ * 取消导出任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 结果
+ */
+export async function cancelExportJob(jobId) {
+  const resp = await fetch(`${API_BASE}/api/export/jobs/${jobId}`, { method: 'DELETE' });
+  return resp.json();
+}
+
+/**
+ * 暂停导出任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 结果
+ */
+export async function pauseExportJob(jobId) {
+  const resp = await fetch(`${API_BASE}/api/export/jobs/${jobId}/pause`, { method: 'POST' });
+  return resp.json();
+}
+
+/**
+ * 恢复导出任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 结果
+ */
+export async function resumeExportJob(jobId) {
+  const resp = await fetch(`${API_BASE}/api/export/jobs/${jobId}/resume`, { method: 'POST' });
+  return resp.json();
+}
+
