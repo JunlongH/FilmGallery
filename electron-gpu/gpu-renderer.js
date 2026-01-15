@@ -112,8 +112,36 @@ const FS_GL2 = `#version 300 es
   uniform float u_whites;
   uniform float u_blacks;
 
+  // Film Curve parameters
+  uniform float u_filmCurveEnabled;
+  uniform float u_filmCurveGamma;
+  uniform float u_filmCurveDMin;
+  uniform float u_filmCurveDMax;
+
+  // Film Curve: Apply H&D density model to transmittance
+  float applyFilmCurve(float value) {
+    float gamma = u_filmCurveGamma;
+    float dMin = u_filmCurveDMin;
+    float dMax = u_filmCurveDMax;
+    
+    float normalized = clamp(value, 0.001, 1.0);
+    float density = -log(normalized) / log(10.0);
+    float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
+    float gammaApplied = pow(densityNorm, gamma);
+    float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
+    float outputT = pow(10.0, -adjustedDensity);
+    return clamp(outputT, 0.0, 1.0);
+  }
+
   void main(){
     vec3 c = texture(u_tex, v_uv).rgb;
+    
+    // Film Curve (before inversion) - only when inverting negatives
+    if (u_inverted > 0.5 && u_filmCurveEnabled > 0.5) {
+      c.r = applyFilmCurve(c.r);
+      c.g = applyFilmCurve(c.g);
+      c.b = applyFilmCurve(c.b);
+    }
     
     // Inversion
     if (u_inverted > 0.5) {
@@ -199,8 +227,44 @@ const FS_GL1 = `
   uniform float u_whites;
   uniform float u_blacks;
 
+  // Film Curve parameters
+  uniform float u_filmCurveEnabled;
+  uniform float u_filmCurveGamma;
+  uniform float u_filmCurveDMin;
+  uniform float u_filmCurveDMax;
+
+  // Film Curve: Apply H&D density model to transmittance
+  float applyFilmCurve(float value) {
+    float gamma = u_filmCurveGamma;
+    float dMin = u_filmCurveDMin;
+    float dMax = u_filmCurveDMax;
+    
+    float normalized = clamp(value, 0.001, 1.0);
+    float density = -log(normalized) / log(10.0);
+    float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
+    float gammaApplied = pow(densityNorm, gamma);
+    float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
+    float outputT = pow(10.0, -adjustedDensity);
+    return clamp(outputT, 0.0, 1.0);
+  }
+
   void main(){
     vec3 c = texture2D(u_tex, v_uv).rgb;
+    
+    // Film Curve (before inversion) - only when inverting negatives
+    if (u_inverted > 0.5 && u_filmCurveEnabled > 0.5) {
+      c.r = applyFilmCurve(c.r);
+      c.g = applyFilmCurve(c.g);
+      c.b = applyFilmCurve(c.b);
+    }
+    
+    if (u_inverted > 0.5) {
+      if (u_logMode > 0.5) {
+        c = vec3(1.0) - log(c * 255.0 + vec3(1.0)) / log(256.0);
+      } else {
+        c = vec3(1.0) - c;
+      }
+    }
     
     if (u_inverted > 0.5) {
       if (u_logMode > 0.5) {
@@ -443,6 +507,16 @@ function runJob(job) {
       gl.uniform1f(u_whites, (params?.whites ?? 0));
       const u_blacks = gl.getUniformLocation(prog, 'u_blacks');
       gl.uniform1f(u_blacks, (params?.blacks ?? 0));
+
+      // Film Curve uniforms
+      const u_filmCurveEnabled = gl.getUniformLocation(prog, 'u_filmCurveEnabled');
+      gl.uniform1f(u_filmCurveEnabled, (params?.filmCurveEnabled) ? 1.0 : 0.0);
+      const u_filmCurveGamma = gl.getUniformLocation(prog, 'u_filmCurveGamma');
+      gl.uniform1f(u_filmCurveGamma, (params?.filmCurveGamma ?? 0.6));
+      const u_filmCurveDMin = gl.getUniformLocation(prog, 'u_filmCurveDMin');
+      gl.uniform1f(u_filmCurveDMin, (params?.filmCurveDMin ?? 0.1));
+      const u_filmCurveDMax = gl.getUniformLocation(prog, 'u_filmCurveDMax');
+      gl.uniform1f(u_filmCurveDMax, (params?.filmCurveDMax ?? 3.0));
 
       // Draw
       gl.viewport(0, 0, canvas.width, canvas.height);

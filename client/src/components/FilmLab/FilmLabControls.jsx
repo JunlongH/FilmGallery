@@ -1,11 +1,256 @@
 import React from 'react';
 import SliderControl from './SliderControl';
 import ToneCurveEditor from './ToneCurveEditor';
+import { createFilmCurveProfile, updateFilmCurveProfile, deleteFilmCurveProfile } from '../../api';
+
+// Film Curve Profile Selector Component
+function FilmCurveProfileSelector({ 
+  filmCurveProfile, 
+  setFilmCurveProfile, 
+  filmCurveProfiles, 
+  setFilmCurveProfiles,
+  pushToHistory 
+}) {
+  const [showEditor, setShowEditor] = React.useState(false);
+  const [editingProfile, setEditingProfile] = React.useState(null);
+  const [newName, setNewName] = React.useState('');
+  const [newGamma, setNewGamma] = React.useState(1.0);
+  const [newDMin, setNewDMin] = React.useState(0.1);
+  const [newDMax, setNewDMax] = React.useState(2.4);
+
+  // Group profiles by category
+  const groupedProfiles = React.useMemo(() => {
+    const groups = {};
+    (filmCurveProfiles || []).forEach(p => {
+      const cat = p.category || 'other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(p);
+    });
+    return groups;
+  }, [filmCurveProfiles]);
+
+  const categoryLabels = {
+    color_negative: 'Color Negative',
+    bw_negative: 'B&W Negative',
+    slide: 'Slide',
+    custom: 'Custom',
+    generic: 'Generic',
+    other: 'Other'
+  };
+
+  const currentProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
+
+  const handleCreateProfile = async () => {
+    if (!newName.trim()) return;
+    try {
+      const created = await createFilmCurveProfile({
+        name: newName.trim(),
+        gamma: parseFloat(newGamma) || 1.0,
+        dMin: parseFloat(newDMin) || 0.1,
+        dMax: parseFloat(newDMax) || 2.4,
+        category: 'custom'
+      });
+      if (created && created.key) {
+        setFilmCurveProfiles(prev => [...prev, created]);
+        setFilmCurveProfile(created.key);
+        setShowEditor(false);
+        setNewName('');
+        setNewGamma(1.0);
+        setNewDMin(0.1);
+        setNewDMax(2.4);
+      }
+    } catch (e) {
+      console.error('Failed to create film curve profile', e);
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!editingProfile || editingProfile.isBuiltin) return;
+    try {
+      await updateFilmCurveProfile(editingProfile.id, {
+        name: newName.trim() || editingProfile.name,
+        gamma: parseFloat(newGamma) || editingProfile.gamma,
+        dMin: parseFloat(newDMin) || editingProfile.dMin,
+        dMax: parseFloat(newDMax) || editingProfile.dMax,
+        category: editingProfile.category
+      });
+      setFilmCurveProfiles(prev => prev.map(p => 
+        p.id === editingProfile.id 
+          ? { ...p, name: newName.trim() || p.name, gamma: parseFloat(newGamma), dMin: parseFloat(newDMin), dMax: parseFloat(newDMax) }
+          : p
+      ));
+      setEditingProfile(null);
+      setShowEditor(false);
+    } catch (e) {
+      console.error('Failed to update film curve profile', e);
+    }
+  };
+
+  const handleDeleteProfile = async (profile) => {
+    if (profile.isBuiltin) return;
+    if (!window.confirm(`Delete profile "${profile.name}"?`)) return;
+    try {
+      await deleteFilmCurveProfile(profile.id);
+      setFilmCurveProfiles(prev => prev.filter(p => p.id !== profile.id));
+      if (filmCurveProfile === profile.key) {
+        setFilmCurveProfile('default');
+      }
+    } catch (e) {
+      console.error('Failed to delete film curve profile', e);
+    }
+  };
+
+  const startEditProfile = (profile) => {
+    setEditingProfile(profile);
+    setNewName(profile.name);
+    setNewGamma(profile.gamma);
+    setNewDMin(profile.dMin);
+    setNewDMax(profile.dMax);
+    setShowEditor(true);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+        <select
+          value={filmCurveProfile}
+          onChange={e => { pushToHistory(); setFilmCurveProfile(e.target.value); }}
+          style={{
+            flex: 1,
+            padding: '6px 8px',
+            fontSize: 11,
+            background: '#1a1a1a',
+            border: '1px solid #444',
+            borderRadius: 4,
+            color: '#eee',
+            cursor: 'pointer'
+          }}
+        >
+          {Object.entries(groupedProfiles).map(([cat, profiles]) => (
+            <optgroup key={cat} label={categoryLabels[cat] || cat}>
+              {profiles.map(p => (
+                <option key={p.key} value={p.key}>{p.name}</option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+        <button 
+          onClick={() => { setEditingProfile(null); setShowEditor(!showEditor); setNewName(''); setNewGamma(1.0); setNewDMin(0.1); setNewDMax(2.4); }}
+          style={{ fontSize: 10, padding: '4px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#eee', cursor: 'pointer' }}
+          title="Create new profile"
+        >
+          +
+        </button>
+        {currentProfile && !currentProfile.isBuiltin && (
+          <>
+            <button 
+              onClick={() => startEditProfile(currentProfile)}
+              style={{ fontSize: 10, padding: '4px 8px', background: '#444', border: 'none', borderRadius: 3, color: '#eee', cursor: 'pointer' }}
+              title="Edit profile"
+            >
+              ✎
+            </button>
+            <button 
+              onClick={() => handleDeleteProfile(currentProfile)}
+              style={{ fontSize: 10, padding: '4px 8px', background: '#533', border: 'none', borderRadius: 3, color: '#eee', cursor: 'pointer' }}
+              title="Delete profile"
+            >
+              ×
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Current Profile Info */}
+      {currentProfile && (
+        <div style={{ fontSize: 10, color: '#666', marginBottom: 8, display: 'flex', gap: 12 }}>
+          <span>γ={currentProfile.gamma?.toFixed(2)}</span>
+          <span>Dmin={currentProfile.dMin?.toFixed(2)}</span>
+          <span>Dmax={currentProfile.dMax?.toFixed(2)}</span>
+        </div>
+      )}
+
+      {/* Profile Editor */}
+      {showEditor && (
+        <div style={{ background: '#1a1a1a', padding: 10, borderRadius: 4, marginTop: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', marginBottom: 8 }}>
+            {editingProfile ? 'Edit Profile' : 'New Profile'}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <input
+              type="text"
+              placeholder="Profile Name"
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              style={{ padding: '6px 8px', fontSize: 11, background: '#222', border: '1px solid #444', borderRadius: 3, color: '#eee' }}
+            />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <label style={{ flex: 1, fontSize: 10, color: '#888' }}>
+                Gamma
+                <input
+                  type="number"
+                  step="0.05"
+                  min="0.5"
+                  max="3.0"
+                  value={newGamma}
+                  onChange={e => setNewGamma(e.target.value)}
+                  style={{ width: '100%', marginTop: 2, padding: '4px 6px', fontSize: 11, background: '#222', border: '1px solid #444', borderRadius: 3, color: '#eee' }}
+                />
+              </label>
+              <label style={{ flex: 1, fontSize: 10, color: '#888' }}>
+                Dmin
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.0"
+                  max="0.5"
+                  value={newDMin}
+                  onChange={e => setNewDMin(e.target.value)}
+                  style={{ width: '100%', marginTop: 2, padding: '4px 6px', fontSize: 11, background: '#222', border: '1px solid #444', borderRadius: 3, color: '#eee' }}
+                />
+              </label>
+              <label style={{ flex: 1, fontSize: 10, color: '#888' }}>
+                Dmax
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1.5"
+                  max="4.0"
+                  value={newDMax}
+                  onChange={e => setNewDMax(e.target.value)}
+                  style={{ width: '100%', marginTop: 2, padding: '4px 6px', fontSize: 11, background: '#222', border: '1px solid #444', borderRadius: 3, color: '#eee' }}
+                />
+              </label>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setShowEditor(false); setEditingProfile(null); }}
+                style={{ fontSize: 10, padding: '4px 12px', background: '#333', border: 'none', borderRadius: 3, color: '#aaa', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={editingProfile ? handleUpdateProfile : handleCreateProfile}
+                style={{ fontSize: 10, padding: '4px 12px', background: '#446', border: 'none', borderRadius: 3, color: '#eee', cursor: 'pointer' }}
+              >
+                {editingProfile ? 'Update' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function FilmLabControls({
   inverted, setInverted,
   useGPU, setUseGPU,
   inversionMode, setInversionMode,
+  filmType, setFilmType,
+  filmCurveEnabled, setFilmCurveEnabled,
+  filmCurveProfile, setFilmCurveProfile,
+  filmCurveProfiles, setFilmCurveProfiles,
   isPickingBase, setIsPickingBase,
   handleAutoBase,
   isPickingWB, setIsPickingWB,
@@ -142,8 +387,34 @@ export default function FilmLabControls({
           )}
         </div>
         
+        {/* Film Curve Section - Only available when Invert is enabled (applies to negative scan data) */}
+        {inverted && (
+          <div style={{ borderTop: '1px solid #333', paddingTop: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <input 
+                type="checkbox" 
+                checked={filmCurveEnabled} 
+                onChange={e => { pushToHistory(); setFilmCurveEnabled(e.target.checked); }} 
+                id="chk-film-curve"
+              />
+              <label htmlFor="chk-film-curve" style={{ fontWeight: 500, fontSize: 13, cursor: 'pointer' }}>Film Curve</label>
+              <span style={{ fontSize: 9, color: '#666' }}>(H&D Model)</span>
+            </div>
+            
+            {filmCurveEnabled && (
+              <FilmCurveProfileSelector
+                filmCurveProfile={filmCurveProfile}
+                setFilmCurveProfile={setFilmCurveProfile}
+                filmCurveProfiles={filmCurveProfiles}
+                setFilmCurveProfiles={setFilmCurveProfiles}
+                pushToHistory={pushToHistory}
+              />
+            )}
+          </div>
+        )}
+        
         {/* Base Correction Tools */}
-        <div style={{ marginBottom: 8 }}>
+        <div style={{ marginBottom: 8, borderTop: '1px solid #333', paddingTop: 8 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', marginBottom: 4 }}>FILM BASE</div>
           <div style={{ display: 'flex', gap: 4 }}>
             <button 

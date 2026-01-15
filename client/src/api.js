@@ -535,8 +535,12 @@ export async function filmlabPreview({ photoId, params, maxWidth = 1400 }) {
   console.log('[API] filmlabPreview request:', { photoId, params, maxWidth });
   const resp = await fetch(`${API_BASE}/api/filmlab/preview`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ photoId, params, maxWidth })
+    headers: { 
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache'
+    },
+    body: JSON.stringify({ photoId, params, maxWidth }),
+    cache: 'no-store'
   });
   const ct = resp.headers.get('content-type') || '';
   if (ct.startsWith('image/')) {
@@ -707,5 +711,61 @@ export async function uploadFlashImage(id, file) {
 // Get compatible lenses for a camera (based on mount)
 export async function getCompatibleLenses(cameraId) {
   return jsonFetch(`/api/equipment/compatible-lenses/${cameraId}`);
+}
+
+// ========================================
+// FILM CURVE PROFILES API
+// ========================================
+
+/**
+ * Get all film curve profiles (built-in + custom)
+ * @returns {Promise<Array>} Array of film curve profiles
+ */
+export async function getFilmCurveProfiles() {
+  return jsonFetch('/api/presets/film-curves');
+}
+
+/**
+ * Create a custom film curve profile
+ * @param {Object} profile - Profile data
+ * @param {string} profile.name - Profile display name
+ * @param {number} profile.gamma - Gamma value (0.5-3.0)
+ * @param {number} profile.dMin - Minimum density (0.0-0.5)
+ * @param {number} profile.dMax - Maximum density (1.5-4.0)
+ * @param {string} [profile.category] - Category (e.g., 'custom', 'color_negative')
+ * @returns {Promise<Object>} Created profile
+ */
+export async function createFilmCurveProfile({ name, gamma, dMin, dMax, category = 'custom' }) {
+  const resp = await fetch(`${API_BASE}/api/presets/film-curves`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, gamma, dMin, dMax, category })
+  });
+  return resp.json();
+}
+
+/**
+ * Update an existing custom film curve profile
+ * @param {number} id - Profile ID
+ * @param {Object} data - Updated profile data
+ * @returns {Promise<Object>} Updated profile
+ */
+export async function updateFilmCurveProfile(id, { name, gamma, dMin, dMax, category }) {
+  const resp = await fetch(`${API_BASE}/api/presets/film-curves/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, gamma, dMin, dMax, category })
+  });
+  return resp.json();
+}
+
+/**
+ * Delete a custom film curve profile
+ * @param {number} id - Profile ID
+ * @returns {Promise<Object>} Result
+ */
+export async function deleteFilmCurveProfile(id) {
+  const resp = await fetch(`${API_BASE}/api/presets/film-curves/${id}`, { method: 'DELETE' });
+  return resp.json();
 }
 

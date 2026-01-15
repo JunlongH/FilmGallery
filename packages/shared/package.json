@@ -1,0 +1,13 @@
+{
+  "name": "@filmgallery/shared",
+  "version": "1.0.0",
+  "description": "Shared FilmLab processing utilities for client and server",
+  "main": "index.js",
+  "type": "commonjs",
+  "exports": {
+    ".": "./index.js",
+    "./filmlab-core": "./filmlab-core.js",
+    "./constants": "./filmLabConstants.js"
+  },
+  "private": true
+}

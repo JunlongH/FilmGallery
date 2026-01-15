@@ -2,6 +2,9 @@
 // Provides a basic shader pipeline for inversion (linear/log), white balance (r/g/b gains), exposure and contrast.
 // This is intentionally small and dependency-free. We'll extend it later for curves and 3D LUTs.
 
+// Debug flag - set to true during development for detailed logging
+const DEBUG_WEBGL = false;
+
 function createShader(gl, type, source) {
   const s = gl.createShader(type);
   gl.shaderSource(s, source);
@@ -135,6 +138,12 @@ export function processImageWebGL(canvas, image, params = {}) {
     uniform float u_whites; // -100..100
     uniform float u_blacks; // -100..100
 
+    // Film Curve parameters
+    uniform int u_filmCurveEnabled;
+    uniform float u_filmCurveGamma;
+    uniform float u_filmCurveDMin;
+    uniform float u_filmCurveDMax;
+
     // Curve LUTs (1D textures height=1)
     uniform sampler2D u_curveRGB;
     uniform sampler2D u_curveR;
@@ -149,6 +158,37 @@ export function processImageWebGL(canvas, image, params = {}) {
 
     float sampleCurve(sampler2D t, float v) {
       return texture2D(t, vec2(v, 0.5)).r;
+    }
+
+    // Film Curve: Apply H&D density model to transmittance
+    // Output is adjusted transmittance (NOT inverted), inversion happens separately
+    float applyFilmCurve(float value) {
+      if (u_filmCurveEnabled == 0) return value;
+      
+      float gamma = u_filmCurveGamma;
+      float dMin = u_filmCurveDMin;
+      float dMax = u_filmCurveDMax;
+      
+      // 1. Normalize input (avoid log(0))
+      float normalized = clamp(value, 0.001, 1.0);
+      
+      // 2. Calculate density D = -log10(T)
+      // Using change of base: log10(x) = log(x) / log(10)
+      float density = -log(normalized) / log(10.0);
+      
+      // 3. Normalize density to dMin-dMax range
+      float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
+      
+      // 4. Apply gamma curve to adjust density response
+      float gammaApplied = pow(densityNorm, gamma);
+      
+      // 5. Convert adjusted normalized density back to density value
+      float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
+      
+      // 6. Convert density back to transmittance: T = 10^(-D)
+      float outputT = pow(10.0, -adjustedDensity);
+      
+      return clamp(outputT, 0.0, 1.0);
     }
 
     vec3 sampleLUT3D(vec3 c) {
@@ -256,7 +296,15 @@ export function processImageWebGL(canvas, image, params = {}) {
       vec4 tex = texture2D(u_image, v_uv);
       vec3 col = tex.rgb;
 
-      // Invert if enabled
+      // ① Film Curve (before inversion) - applies H&D density model to negative scan
+      // Only meaningful when inverting negatives
+      if (u_inverted == 1 && u_filmCurveEnabled == 1) {
+        col.r = applyFilmCurve(col.r);
+        col.g = applyFilmCurve(col.g);
+        col.b = applyFilmCurve(col.b);
+      }
+
+      // ② Invert if enabled
       if (u_inverted == 1) {
         vec3 c255 = col * 255.0;
         if (u_inversionMode == 1) {
@@ -361,6 +409,11 @@ export function processImageWebGL(canvas, image, params = {}) {
     locs.u_shadows = gl.getUniformLocation(program, 'u_shadows');
     locs.u_whites = gl.getUniformLocation(program, 'u_whites');
     locs.u_blacks = gl.getUniformLocation(program, 'u_blacks');
+    // Film Curve uniforms
+    locs.u_filmCurveEnabled = gl.getUniformLocation(program, 'u_filmCurveEnabled');
+    locs.u_filmCurveGamma = gl.getUniformLocation(program, 'u_filmCurveGamma');
+    locs.u_filmCurveDMin = gl.getUniformLocation(program, 'u_filmCurveDMin');
+    locs.u_filmCurveDMax = gl.getUniformLocation(program, 'u_filmCurveDMax');
     locs.u_curveRGB = gl.getUniformLocation(program, 'u_curveRGB');
     locs.u_curveR = gl.getUniformLocation(program, 'u_curveR');
     locs.u_curveG = gl.getUniformLocation(program, 'u_curveG');
@@ -381,11 +434,11 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.uniform1i(locs.u_inversionMode, mode);
 
   const gains = params.gains || [1.0, 1.0, 1.0];
-  console.log('[FilmLabWebGL] Setting u_gains:', gains);
+  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting u_gains:', gains);
   gl.uniform3fv(locs.u_gains, new Float32Array(gains));
 
   const exposure = typeof params.exposure === 'number' ? params.exposure / 50.0 : 0.0;
-  console.log('[FilmLabWebGL] Setting u_exposure:', exposure, 'from', params.exposure);
+  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting u_exposure:', exposure, 'from', params.exposure);
   gl.uniform1f(locs.u_exposure, exposure);
 
   const contrast = typeof params.contrast === 'number' ? params.contrast / 100.0 : 0.0;
@@ -395,6 +448,13 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.uniform1f(locs.u_shadows, params.shadows || 0.0);
   gl.uniform1f(locs.u_whites, params.whites || 0.0);
   gl.uniform1f(locs.u_blacks, params.blacks || 0.0);
+
+  // Film Curve parameters
+  const filmCurveEnabled = params.filmCurveEnabled ? 1 : 0;
+  gl.uniform1i(locs.u_filmCurveEnabled, filmCurveEnabled);
+  gl.uniform1f(locs.u_filmCurveGamma, params.filmCurveGamma ?? 0.6);
+  gl.uniform1f(locs.u_filmCurveDMin, params.filmCurveDMin ?? 0.1);
+  gl.uniform1f(locs.u_filmCurveDMax, params.filmCurveDMax ?? 3.0);
 
   // Curves
   const curves = params.curves;
@@ -486,7 +546,7 @@ export function processImageWebGL(canvas, image, params = {}) {
   const centerX = Math.floor(canvas.width / 2);
   const centerY = Math.floor(canvas.height / 2);
   gl.readPixels(centerX, centerY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, debugPixels);
-  console.log('[FilmLabWebGL] Center pixel after rendering:', debugPixels, `at (${centerX}, ${centerY})`);
+  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Center pixel after rendering:', debugPixels, `at (${centerX}, ${centerY})`);
 
   // Cleanup (unbind)
   gl.bindTexture(gl.TEXTURE_2D, null);

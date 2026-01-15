@@ -19,7 +19,7 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
     orientation = 0,
   } = params;
 
-  const { maxWidth = null, cropRect = null, toneAndCurvesInJs = false } = options;
+  const { maxWidth = null, cropRect = null, toneAndCurvesInJs = false, skipColorOps = false } = options;
 
   const base = sharp(inputPath, { failOn: 'none' });
   const meta = await base.metadata();
@@ -53,14 +53,21 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
     img = img.extract({ left, top, width, height });
   }
 
+  // Skip ALL color operations if requested (caller will handle in JS for consistency)
+  if (skipColorOps) {
+    return img;
+  }
+
   // Always apply Inversion + WB in Sharp (more efficient)
   // Inversion first (to match client ordering)
   // NOTE: Log inversion requires pixel-level math (255 * (1 - log(x+1)/log(256)))
   // Sharp doesn't support this natively, so when inversionMode='log' and toneAndCurvesInJs=true,
-  // defer inversion AND WB to JS (since WB must come after inversion). 
-  const deferInversionToJs = inverted && inversionMode === 'log' && toneAndCurvesInJs;
+  // defer inversion AND WB to JS (since WB must come after inversion).
+  // Also defer if Film Curve is enabled (Film Curve must be applied BEFORE inversion)
+  const filmCurveEnabled = !!params.filmCurveEnabled;
+  const deferInversionToJs = inverted && (inversionMode === 'log' || filmCurveEnabled) && toneAndCurvesInJs;
   if (inverted && !deferInversionToJs) {
-    // Linear inversion only - log is deferred to JS
+    // Linear inversion only - log and film curve cases are deferred to JS
     img = img.negate();
   }
 

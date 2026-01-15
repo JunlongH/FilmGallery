@@ -8,84 +8,14 @@ sharp.cache(false);
 const { uploadsDir } = require('../config/paths');
 const { buildPipeline } = require('../services/filmlab-service');
 
-// --- Helpers: tone LUT and curve LUT (mirror client logic) ---
-function buildToneLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 }) {
-  const lut = new Uint8Array(256);
-  const expFactor = Math.pow(2, (Number(exposure) || 0) / 50);
-  const ctr = Number(contrast) || 0;
-  const contrastFactor = (259 * (ctr + 255)) / (255 * (259 - ctr));
-  const blackPoint = -(Number(blacks) || 0) * 0.002;
-  const whitePoint = 1 - (Number(whites) || 0) * 0.002;
-  const sFactor = (Number(shadows) || 0) * 0.005;
-  const hFactor = (Number(highlights) || 0) * 0.005;
-  for (let i = 0; i < 256; i++) {
-    let val = i / 255;
-    // Exposure
-    val *= expFactor;
-    // Contrast around 0.5
-    val = (val - 0.5) * contrastFactor + 0.5;
-    // Blacks & Whites window
-    if (whitePoint !== blackPoint) val = (val - blackPoint) / (whitePoint - blackPoint);
-    // Shadows
-    if (sFactor !== 0) val += sFactor * Math.pow(1 - val, 2) * val * 4;
-    // Highlights
-    if (hFactor !== 0) val += hFactor * Math.pow(val, 2) * (1 - val) * 4;
-    lut[i] = Math.min(255, Math.max(0, Math.round(val * 255)));
-  }
-  return lut;
-}
-
-function createSpline(xs, ys) {
-  const n = xs.length;
-  const dys = [], dxs = [], ms = [];
-  for (let i = 0; i < n - 1; i++) {
-    dxs.push(xs[i + 1] - xs[i]);
-    dys.push(ys[i + 1] - ys[i]);
-    ms.push(dys[i] / dxs[i]);
-  }
-  const c1s = [ms[0]];
-  for (let i = 0; i < n - 2; i++) {
-    const m = ms[i], mNext = ms[i + 1];
-    if (m * mNext <= 0) c1s.push(0);
-    else {
-      const dx = dxs[i], dxNext = dxs[i + 1];
-      const common = dx + dxNext;
-      c1s.push((3 * common) / ((common + dxNext) / m + (common + dx) / mNext));
-    }
-  }
-  c1s.push(ms[ms.length - 1]);
-  const c2s = [], c3s = [];
-  for (let i = 0; i < n - 1; i++) {
-    const c1 = c1s[i], m = ms[i], invDx = 1 / dxs[i];
-    const common = c1 + c1s[i + 1] - 2 * m;
-    c2s.push((m - c1 - common) * invDx);
-    c3s.push(common * invDx * invDx);
-  }
-  return (x) => {
-    let i = 0;
-    while (i < n - 2 && x > xs[i + 1]) i++;
-    const diff = x - xs[i];
-    return ys[i] + c1s[i] * diff + c2s[i] * diff * diff + c3s[i] * diff * diff * diff;
-  };
-}
-
-function buildCurveLUT(points) {
-  const lut = new Uint8Array(256);
-  const sorted = Array.isArray(points) ? [...points].sort((a, b) => a.x - b.x) : [{ x: 0, y: 0 }, { x: 255, y: 255 }];
-  if (sorted.length < 2) {
-    for (let i = 0; i < 256; i++) lut[i] = i;
-    return lut;
-  }
-  const xs = sorted.map(p => p.x);
-  const ys = sorted.map(p => p.y);
-  const spline = createSpline(xs, ys);
-  for (let i = 0; i < 256; i++) {
-    if (i <= sorted[0].x) lut[i] = sorted[0].y;
-    else if (i >= sorted[sorted.length - 1].x) lut[i] = sorted[sorted.length - 1].y;
-    else lut[i] = Math.min(255, Math.max(0, Math.round(spline(i))));
-  }
-  return lut;
-}
+// 使用共享模块确保客户端/服务端一致性
+const {
+  prepareLUTs,
+  processPixel,
+  computeWBGains,
+  EXPORT_MAX_WIDTH,
+  PREVIEW_MAX_WIDTH_SERVER
+} = require('../../packages/shared');
 
 // POST /api/filmlab/preview
 // Body: { photoId, params, maxWidth }
@@ -102,8 +32,13 @@ router.post('/preview', async (req, res) => {
     const abs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 
-    // Build pipeline: rotate/resize/crop only. All color ops (invert, WB, tone, curves) applied in JS for parity with client.
-    let img = await buildPipeline(abs, params || {}, { maxWidth: maxWidth || 1600, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
+    // Build pipeline: rotate/resize/crop only. All color ops applied via shared module for client/server parity.
+    let img = await buildPipeline(abs, params || {}, { 
+      maxWidth: maxWidth || PREVIEW_MAX_WIDTH_SERVER, 
+      cropRect: (params && params.cropRect) || null, 
+      toneAndCurvesInJs: true,
+      skipColorOps: true // Skip all color ops in Sharp, do everything in JS for consistency
+    });
 
     // Pull raw buffer
     const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
@@ -112,105 +47,54 @@ router.post('/preview', async (req, res) => {
     const channels = info.channels; // expect 3
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    // Build LUTs
-    const toneLUT = buildToneLUT({
+    // Use shared module for consistent processing (supports 3D LUTs)
+    const allLUTs = prepareLUTs({
       exposure: params?.exposure || 0,
       contrast: params?.contrast || 0,
       highlights: params?.highlights || 0,
       shadows: params?.shadows || 0,
       whites: params?.whites || 0,
       blacks: params?.blacks || 0,
+      curves: params?.curves,
+      red: params?.red ?? 1.0,
+      green: params?.green ?? 1.0,
+      blue: params?.blue ?? 1.0,
+      temp: params?.temp || 0,
+      tint: params?.tint || 0,
+      lut1: params?.lut1 || null,
+      lut2: params?.lut2 || null
     });
-    const curves = params?.curves || { rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }], red: [{ x: 0, y: 0 }, { x: 255, y: 255 }], green: [{ x: 0, y: 0 }, { x: 255, y: 255 }], blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }] };
-    const lutRGB = buildCurveLUT(curves.rgb || []);
-    const lutR = buildCurveLUT(curves.red || []);
-    const lutG = buildCurveLUT(curves.green || []);
-    const lutB = buildCurveLUT(curves.blue || []);
+    const inversionParams = { 
+      inverted: params?.inverted || false, 
+      inversionMode: params?.inversionMode || 'linear',
+      filmType: params?.filmType || 'default',
+      // Film Curve params (independent of inversion)
+      filmCurveEnabled: params?.filmCurveEnabled || false,
+      filmCurveProfile: params?.filmCurveProfile || 'default',
+      filmCurveGamma: params?.filmCurveGamma,
+      filmCurveDMin: params?.filmCurveDMin,
+      filmCurveDMax: params?.filmCurveDMax
+    };
 
-    // Sample center pixel for debugging
-    const centerX = Math.floor(width / 2);
-    const centerY = Math.floor(height / 2);
-    
-    // Get params for inversion and WB
-    const inverted = params?.inverted || false;
-    const inversionMode = params?.inversionMode || 'linear';
-    const temp = params?.temp || 0;
-    const tint = params?.tint || 0;
-    const red = params?.red ?? 1.0;
-    const green = params?.green ?? 1.0;
-    const blue = params?.blue ?? 1.0;
-    
-    // WB gains (same math as client)
-    const { computeWBGains } = require('../utils/filmlab-wb');
-    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
-    
-    // Log inversion needs to be done in JS (Sharp can't do log math)
-    const needsLogInversion = inverted && inversionMode === 'log';
-    // Linear inversion already done in buildPipeline, but WB was also done there.
-    // Since we're now deferring log inversion, we also need to apply WB here for log mode.
-    const needsWbInJs = needsLogInversion;
-
-    // Process per pixel: When inversionMode='log', apply inversion + WB here
-    // Otherwise, only apply Tone + Curves (Inversion + WB already done in buildPipeline)
+    // Process pixels using shared module
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
-      
-      // Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
-      if (needsLogInversion) {
-        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-      }
-      
-      // Apply WB gains (only if log inversion was deferred, otherwise already done in buildPipeline)
-      if (needsWbInJs) {
-        r *= rBal;
-        g *= gBal;
-        b *= bBal;
-        // Clamp
-        r = Math.max(0, Math.min(255, r));
-        g = Math.max(0, Math.min(255, g));
-        b = Math.max(0, Math.min(255, b));
-      }
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
-      // Sample center pixel before processing
-      if (Math.floor(i / channels / width) === centerY && (i / channels) % width === centerX) {
-        console.log('[Server Preview] Center pixel BEFORE tone/curves:', { r, g, b });
-      }
+      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
 
-      // Tone LUT (需要整数索引)
-      const rIdx = Math.floor(r);
-      const gIdx = Math.floor(g);
-      const bIdx = Math.floor(b);
-      r = toneLUT[rIdx];
-      g = toneLUT[gIdx];
-      b = toneLUT[bIdx];
-      
-      // Sample center pixel after toneLUT
-      if (Math.floor(i / channels / width) === centerY && (i / channels) % width === centerX) {
-        console.log('[Server Preview] Center pixel AFTER toneLUT:', { r, g, b });
-      }
-      
-      // Curves: RGB then channels
-      r = lutRGB[r];
-      g = lutRGB[g];
-      b = lutRGB[b];
-      r = lutR[r];
-      g = lutG[g];
-      b = lutB[b];
-
-      out[j] = r;
-      out[j + 1] = g;
-      out[j + 2] = b;
+      out[j] = rC;
+      out[j + 1] = gC;
+      out[j + 2] = bC;
     }
-
-    console.log('[Server Preview] Final output buffer size:', out.length, 'bytes');
-    console.log('[Server Preview] Output dimensions:', width, 'x', height);
 
     // Encode to JPEG and send
     res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
     const buf = await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 85 }).toBuffer();
     console.log('[Server Preview] JPEG buffer size:', buf.length, 'bytes');
     res.end(buf);
@@ -235,8 +119,13 @@ router.post('/render', async (req, res) => {
     const abs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 
-    // Full resolution pipeline: geometry only; color ops in JS
-    let img = await buildPipeline(abs, params || {}, { maxWidth: 4000, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
+    // Full resolution pipeline: geometry only; color ops via shared module
+    let img = await buildPipeline(abs, params || {}, { 
+      maxWidth: EXPORT_MAX_WIDTH, 
+      cropRect: (params && params.cropRect) || null, 
+      toneAndCurvesInJs: true,
+      skipColorOps: true
+    });
 
     const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
     const width = info.width;
@@ -244,71 +133,46 @@ router.post('/render', async (req, res) => {
     const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    const toneLUT = buildToneLUT({
+    // Use shared module for consistent processing
+    const allLUTs = prepareLUTs({
       exposure: params?.exposure || 0,
       contrast: params?.contrast || 0,
       highlights: params?.highlights || 0,
       shadows: params?.shadows || 0,
       whites: params?.whites || 0,
       blacks: params?.blacks || 0,
+      curves: params?.curves,
+      red: params?.red ?? 1.0,
+      green: params?.green ?? 1.0,
+      blue: params?.blue ?? 1.0,
+      temp: params?.temp || 0,
+      tint: params?.tint || 0,
+      lut1: params?.lut1 || null,
+      lut2: params?.lut2 || null
     });
-    const curves = params?.curves || { rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }], red: [{ x: 0, y: 0 }, { x: 255, y: 255 }], green: [{ x: 0, y: 0 }, { x: 255, y: 255 }], blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }] };
-    const lutRGB = buildCurveLUT(curves.rgb || []);
-    const lutR = buildCurveLUT(curves.red || []);
-    const lutG = buildCurveLUT(curves.green || []);
-    const lutB = buildCurveLUT(curves.blue || []);
-    
-    // Get params for inversion and WB
-    const inverted = params?.inverted || false;
-    const inversionMode = params?.inversionMode || 'linear';
-    const temp = params?.temp || 0;
-    const tint = params?.tint || 0;
-    const red = params?.red ?? 1.0;
-    const green = params?.green ?? 1.0;
-    const blue = params?.blue ?? 1.0;
-    
-    // WB gains (same math as client)
-    const { computeWBGains } = require('../utils/filmlab-wb');
-    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
-    
-    // Log inversion needs to be done in JS (Sharp can't do log math)
-    const needsLogInversion = inverted && inversionMode === 'log';
-    const needsWbInJs = needsLogInversion;
+    const inversionParams = { 
+      inverted: params?.inverted || false, 
+      inversionMode: params?.inversionMode || 'linear',
+      filmType: params?.filmType || 'default',
+      // Film Curve params (independent of inversion)
+      filmCurveEnabled: params?.filmCurveEnabled || false,
+      filmCurveProfile: params?.filmCurveProfile || 'default',
+      filmCurveGamma: params?.filmCurveGamma,
+      filmCurveDMin: params?.filmCurveDMin,
+      filmCurveDMax: params?.filmCurveDMax
+    };
 
-    // Pixel processing loop: When inversionMode='log', apply inversion + WB here
-    // Otherwise, only apply Tone + Curves (Inversion + WB already done in buildPipeline)
+    // Process pixels using shared module
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
-      
-      // Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
-      if (needsLogInversion) {
-        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-      }
-      
-      // Apply WB gains (only if log inversion was deferred)
-      if (needsWbInJs) {
-        r *= rBal;
-        g *= gBal;
-        b *= bBal;
-        r = Math.max(0, Math.min(255, r));
-        g = Math.max(0, Math.min(255, g));
-        b = Math.max(0, Math.min(255, b));
-      }
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
-      // Apply tone mapping
-      r = toneLUT[Math.floor(r)];
-      g = toneLUT[Math.floor(g)];
-      b = toneLUT[Math.floor(b)];
-      
-      // Apply curves
-      r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-      r = lutR[r]; g = lutG[g]; b = lutB[b];
-      
-      out[j] = r; out[j + 1] = g; out[j + 2] = b;
+      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+
+      out[j] = rC;
+      out[j + 1] = gC;
+      out[j + 2] = bC;
     }
 
     // Save to positive file
@@ -363,8 +227,13 @@ router.post('/export', async (req, res) => {
     const abs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 
-    // Build pipeline with Inversion + WB applied in Sharp, Tone/Curves deferred to JS
-    let img = await buildPipeline(abs, params || {}, { maxWidth: 4000, cropRect: (params && params.cropRect) || null, toneAndCurvesInJs: true });
+    // Full resolution pipeline: geometry only; color ops via shared module
+    let img = await buildPipeline(abs, params || {}, { 
+      maxWidth: EXPORT_MAX_WIDTH, 
+      cropRect: (params && params.cropRect) || null, 
+      toneAndCurvesInJs: true,
+      skipColorOps: true
+    });
 
     const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
     const width = info.width;
@@ -372,71 +241,46 @@ router.post('/export', async (req, res) => {
     const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    const toneLUT = buildToneLUT({
+    // Use shared module for consistent processing
+    const allLUTs = prepareLUTs({
       exposure: params?.exposure || 0,
       contrast: params?.contrast || 0,
       highlights: params?.highlights || 0,
       shadows: params?.shadows || 0,
       whites: params?.whites || 0,
       blacks: params?.blacks || 0,
+      curves: params?.curves,
+      red: params?.red ?? 1.0,
+      green: params?.green ?? 1.0,
+      blue: params?.blue ?? 1.0,
+      temp: params?.temp || 0,
+      tint: params?.tint || 0,
+      lut1: params?.lut1 || null,
+      lut2: params?.lut2 || null
     });
-    const curves = params?.curves || { rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }], red: [{ x: 0, y: 0 }, { x: 255, y: 255 }], green: [{ x: 0, y: 0 }, { x: 255, y: 255 }], blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }] };
-    const lutRGB = buildCurveLUT(curves.rgb || []);
-    const lutR = buildCurveLUT(curves.red || []);
-    const lutG = buildCurveLUT(curves.green || []);
-    const lutB = buildCurveLUT(curves.blue || []);
-    
-    // Get params for inversion and WB
-    const inverted = params?.inverted || false;
-    const inversionMode = params?.inversionMode || 'linear';
-    const temp = params?.temp || 0;
-    const tint = params?.tint || 0;
-    const red = params?.red ?? 1.0;
-    const green = params?.green ?? 1.0;
-    const blue = params?.blue ?? 1.0;
-    
-    // WB gains (same math as client)
-    const { computeWBGains } = require('../utils/filmlab-wb');
-    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
-    
-    // Log inversion needs to be done in JS (Sharp can't do log math)
-    const needsLogInversion = inverted && inversionMode === 'log';
-    const needsWbInJs = needsLogInversion;
+    const inversionParams = { 
+      inverted: params?.inverted || false, 
+      inversionMode: params?.inversionMode || 'linear',
+      filmType: params?.filmType || 'default',
+      // Film Curve params (independent of inversion)
+      filmCurveEnabled: params?.filmCurveEnabled || false,
+      filmCurveProfile: params?.filmCurveProfile || 'default',
+      filmCurveGamma: params?.filmCurveGamma,
+      filmCurveDMin: params?.filmCurveDMin,
+      filmCurveDMax: params?.filmCurveDMax
+    };
 
-    // Pixel processing loop: When inversionMode='log', apply inversion + WB here
-    // Otherwise, only apply Tone + Curves (Inversion + WB already done in buildPipeline)
+    // Process pixels using shared module
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
-      
-      // Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
-      if (needsLogInversion) {
-        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-      }
-      
-      // Apply WB gains (only if log inversion was deferred)
-      if (needsWbInJs) {
-        r *= rBal;
-        g *= gBal;
-        b *= bBal;
-        r = Math.max(0, Math.min(255, r));
-        g = Math.max(0, Math.min(255, g));
-        b = Math.max(0, Math.min(255, b));
-      }
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
-      // Apply tone mapping (exposure, contrast, highlights, shadows, whites, blacks)
-      r = toneLUT[Math.floor(r)];
-      g = toneLUT[Math.floor(g)];
-      b = toneLUT[Math.floor(b)];
-      
-      // Apply curves
-      r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-      r = lutR[r]; g = lutG[g]; b = lutB[b];
-      
-      out[j] = r; out[j + 1] = g; out[j + 2] = b;
+      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+
+      out[j] = rC;
+      out[j + 1] = gC;
+      out[j + 2] = bC;
     }
 
     // Persist export to disk and update DB paths consistently

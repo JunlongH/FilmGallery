@@ -1,19 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { setRollPreset, listPresets, createPreset, updatePreset, deletePreset as deletePresetApi, filmlabPreview, renderPositive, exportPositive } from '../../api';
-import { getCurveLUT, parseCubeLUT, sampleLUT, getMaxSafeRect, getPresetRatio, getExifOrientation } from './utils';
+import { setRollPreset, listPresets, createPreset, updatePreset, deletePreset as deletePresetApi, filmlabPreview, renderPositive, exportPositive, getFilmCurveProfiles } from '../../api';
+import { getCurveLUT, parseCubeLUT, getMaxSafeRect, getPresetRatio, getExifOrientation } from './utils';
 import FilmLabControls from './FilmLabControls';
 import FilmLabCanvas from './FilmLabCanvas';
 import { isWebGLAvailable, processImageWebGL } from './FilmLabWebGL';
-import { computeWBGains, solveTempTintFromSample } from './wb';
+
+// 使用共享模块 (从 client/src/utils/filmlab-shared)
+import {
+  processPixel,
+  prepareLUTs,
+  computeWBGains,
+  solveTempTintFromSample,
+  PREVIEW_MAX_WIDTH_SERVER,
+  PREVIEW_MAX_WIDTH_CLIENT,
+  EXPORT_MAX_WIDTH,
+} from '../../utils/filmlab-shared';
 
 // ============================================================================
-// Configuration Constants
+// Configuration Constants (imported from shared module)
 // ============================================================================
 
-// Maximum image widths for different processing paths
-const PREVIEW_MAX_WIDTH_SERVER = 1400;  // Server-side preview rendering
-const PREVIEW_MAX_WIDTH_CLIENT = 1200;  // Client-side real-time rendering (WebGL/CPU)
-const EXPORT_MAX_WIDTH = 4000;          // All export operations (Save/HQ Export/Download)
+// PREVIEW_MAX_WIDTH_SERVER, PREVIEW_MAX_WIDTH_CLIENT, EXPORT_MAX_WIDTH
+// are now imported from packages/shared
 
 // Calculate the maximum inscribed rectangle (no black corners) after rotation
 
@@ -65,6 +73,13 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
   // Parameters
   const [inverted, setInverted] = useState(false); // Default to false as requested
   const [inversionMode, setInversionMode] = useState('linear'); // 'linear' | 'log'
+  const [filmType, setFilmType] = useState('default'); // Film profile (legacy, kept for backwards compat)
+  
+  // Film Curve (independent of inversion)
+  const [filmCurveEnabled, setFilmCurveEnabled] = useState(false);
+  const [filmCurveProfile, setFilmCurveProfile] = useState('default'); // Profile key
+  const [filmCurveProfiles, setFilmCurveProfiles] = useState([]); // All available profiles (built-in + custom)
+  
   const [isPicking, setIsPicking] = useState(false);
   const [isPickingBase, setIsPickingBase] = useState(false);
   const [isPickingWB, setIsPickingWB] = useState(false);
@@ -128,6 +143,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
   const [useGPU, setUseGPU] = useState(isWebGLAvailable());
   const [remoteImg, setRemoteImg] = useState(null);
   const remoteUrlRef = useRef(null);
+  const previewRequestIdRef = useRef(0); // Track request sequence to prevent stale responses
 
   // Compare Mode
   // compareMode: 'off' | 'original' | 'split'
@@ -204,6 +220,27 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       }
     })();
   }, []);
+
+  // Load film curve profiles on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await getFilmCurveProfiles();
+        // API now returns array directly
+        const profiles = Array.isArray(result) ? result : (result?.profiles || []);
+        setFilmCurveProfiles(profiles);
+      } catch (e) {
+        console.warn('Failed to load film curve profiles', e);
+      }
+    })();
+  }, []);
+
+  // Auto-disable filmCurve when inversion is turned off
+  useEffect(() => {
+    if (!inverted && filmCurveEnabled) {
+      setFilmCurveEnabled(false);
+    }
+  }, [inverted, filmCurveEnabled]);
 
   // Keep localStorage as a lightweight cache/backup
   const persistPresets = (next) => {
@@ -464,12 +501,13 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
 
   useEffect(() => {
     if (!canvasRef.current) return;
-    // Prefer remote preview pipeline
+    // Only trigger redraw when remoteImg changes (server responded) or geometry/compare mode changes
+    // Do NOT include inverted, inversionMode, etc. - those should wait for server response
     if (processRafRef.current) cancelAnimationFrame(processRafRef.current);
     processRafRef.current = requestAnimationFrame(() => { processImage(); });
     return () => { if (processRafRef.current) { cancelAnimationFrame(processRafRef.current); processRafRef.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remoteImg, inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, curves, rotation, orientation, isCropping, isRotating, lut1, lut2]);
+  }, [remoteImg, rotation, orientation, isCropping, isRotating]);
 
   // Render original (unprocessed) image for compare modes when geometry changes or image loads
   useEffect(() => {
@@ -748,46 +786,6 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     }
   };
 
-  // Generate Tone Mapping LUT (Exposure, Contrast, H/S/B/W)
-  const getToneLUT = () => {
-    const lut = new Uint8Array(256);
-    const expFactor = Math.pow(2, exposure / 50);
-    const contrastFactor = (259 * (contrast + 255)) / (255 * (259 - contrast));
-    
-    const blackPoint = -blacks * 0.002; 
-    const whitePoint = 1 - whites * 0.002;
-    const sFactor = shadows * 0.005;
-    const hFactor = highlights * 0.005;
-
-    for (let i = 0; i < 256; i++) {
-      let val = i / 255;
-
-      // 1. Exposure
-      val *= expFactor;
-
-      // 2. Contrast
-      val = (val - 0.5) * contrastFactor + 0.5;
-
-      // 3. Blacks & Whites
-      if (whitePoint !== blackPoint) {
-        val = (val - blackPoint) / (whitePoint - blackPoint);
-      }
-
-      // 4. Shadows
-      if (shadows !== 0) {
-        val += sFactor * Math.pow(1 - val, 2) * val * 4;
-      }
-
-      // 5. Highlights
-      if (highlights !== 0) {
-        val += hFactor * Math.pow(val, 2) * (1 - val) * 4;
-      }
-
-      lut[i] = Math.min(255, Math.max(0, Math.round(val * 255)));
-    }
-    return lut;
-  };
-
   // ============================================================================
   // Main Image Processing Function
   // ============================================================================
@@ -801,6 +799,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     // Nothing to render if neither preview nor base image is ready
     if (!remoteImg && !image) return;
     
+    // console.log('[processImage] Called. remoteImg src:', remoteImg?.src?.substring(0, 50), 'inverted state:', inverted); (Commented out to reduce noise)
+    
     // ========================================================================
     // Path 1: Server Preview (fastest, skip all client processing)
     // ========================================================================
@@ -811,6 +811,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       canvas.width = remoteImg.naturalWidth || remoteImg.width;
       canvas.height = remoteImg.naturalHeight || remoteImg.height;
       ctx.drawImage(remoteImg, 0, 0);
+      
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
       const histRGB = new Array(256).fill(0), histR = new Array(256).fill(0), histG = new Array(256).fill(0), histB = new Array(256).fill(0);
@@ -875,8 +876,15 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
               const totalRotation = rotation + orientation;
               const cropRect = isCropping ? null : committedCrop;
               
+              // Get Film Curve profile parameters
+              const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
+              const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+              const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
+              const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+              
                 processImageWebGL(webglCanvas, image, {
                   inverted, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
+                  filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
                   rotate: totalRotation,
                   cropRect: cropRect,
                   // pass preview scale to ensure WebGL output uses the same downscale as CPU/geometry
@@ -935,16 +943,6 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         data = imageData.data;
     }
 
-    // Pre-calculate lookup tables
-    const toneLUT = getToneLUT();
-    const lutRGB = getCurveLUT(curves.rgb);
-    const lutR = getCurveLUT(curves.red);
-    const lutG = getCurveLUT(curves.green);
-    const lutB = getCurveLUT(curves.blue);
-    
-    // White balance gains (use shared math for consistency)
-    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
-
     // Histogram buckets
     const histRGB = new Array(256).fill(0);
     const histR = new Array(256).fill(0);
@@ -981,76 +979,24 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         }
         // No need to putImageData, it's already on the canvas from drawImage(webglCanvas)
     } else {
-        // CPU Path: Must process every pixel
+        // CPU Path: Use shared module for consistent processing
+        const allLUTs = prepareLUTs({
+          exposure, contrast, highlights, shadows, whites, blacks,
+          curves, red, green, blue, temp, tint, lut1, lut2
+        });
+        const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
+
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
             const idx = (y * width + x) * 4;
             if (data[idx + 3] === 0) continue;
 
-            let r = data[idx];
-            let g = data[idx + 1];
-            let b = data[idx + 2];
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
 
-            // 1. Invert (if enabled)
-            if (inverted) {
-              if (inversionMode === 'log') {
-                r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-                g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-                b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-              } else {
-                r = 255 - r;
-                g = 255 - g;
-                b = 255 - b;
-              }
-            }
-
-            // 2. Color Balance (White Balance)
-            r *= rBal;
-            g *= gBal;
-            b *= bBal;
-
-            // Safety check for NaN/Infinity
-            if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
-              r = 0; g = 0; b = 0;
-            }
-
-            // Clamp before LUT
-            let rC = Math.min(255, Math.max(0, r));
-            let gC = Math.min(255, Math.max(0, g));
-            let bC = Math.min(255, Math.max(0, b));
-
-            // 3. Tone Mapping (Exposure, Contrast, H/S/B/W) via LUT
-            rC = toneLUT[Math.floor(rC)];
-            gC = toneLUT[Math.floor(gC)];
-            bC = toneLUT[Math.floor(bC)];
-            
-            // 4. Curves (Apply RGB LUT first, then Channel LUTs)
-            rC = lutRGB[rC];
-            gC = lutRGB[gC];
-            bC = lutRGB[bC];
-
-            rC = lutR[rC];
-            gC = lutG[gC];
-            bC = lutB[bC];
-
-            // 5. Loaded LUTs
-            if (lut1) {
-              const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut1);
-              rC = rC * (1 - lut1.intensity) + lr * 255 * lut1.intensity;
-              gC = gC * (1 - lut1.intensity) + lg * 255 * lut1.intensity;
-              bC = bC * (1 - lut1.intensity) + lb * 255 * lut1.intensity;
-            }
-            if (lut2) {
-              const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut2);
-              rC = rC * (1 - lut2.intensity) + lr * 255 * lut2.intensity;
-              gC = gC * (1 - lut2.intensity) + lg * 255 * lut2.intensity;
-              bC = bC * (1 - lut2.intensity) + lb * 255 * lut2.intensity;
-            }
-
-            // Clamp after LUTs
-            rC = Math.min(255, Math.max(0, rC));
-            gC = Math.min(255, Math.max(0, gC));
-            bC = Math.min(255, Math.max(0, bC));
+            // Use shared processPixel for consistent pipeline
+            const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
 
             // Update Histograms only for subsampled pixels
             if ((x % stride === 0) && (y % stride === 0)) {
@@ -1070,7 +1016,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
               maxCount = Math.max(maxCount, histR[rIdx], histG[gIdx], histB[bIdx], histRGB[lum]);
             }
 
-            // Final Clamp and write back full-resolution pixel
+            // Write back processed pixel
             data[idx] = rC;
             data[idx + 1] = gC;
             data[idx + 2] = bC;
@@ -1098,23 +1044,47 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
   useEffect(() => {
     if (!photoId) return;
     if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
+    
+    // Increment request ID to track this request
+    const requestId = ++previewRequestIdRef.current;
+    
     previewTimerRef.current = setTimeout(async () => {
       try {
         // Always send committedCrop for preview. During crop mode, server keeps showing last commit.
-        const params = { inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves };
+        const params = { 
+          inverted, inversionMode, filmType, 
+          filmCurveEnabled, filmCurveProfile, // New film curve params
+          exposure, contrast, highlights, shadows, whites, blacks, 
+          temp, tint, red, green, blue, 
+          rotation, orientation, cropRect: committedCrop, curves 
+        };
         const res = await filmlabPreview({ photoId, params, maxWidth: 1400 });
+        
+        // Check if this is still the latest request
+        if (requestId !== previewRequestIdRef.current) {
+          return;
+        }
+        
         if (!res || !res.ok) { return; }
         // Create object URL and load image for canvas draw
         if (remoteUrlRef.current) URL.revokeObjectURL(remoteUrlRef.current);
         const url = URL.createObjectURL(res.blob);
         remoteUrlRef.current = url;
         const img = new Image();
-        img.onload = () => { setRemoteImg(img); };
+        img.onload = () => { 
+          // Double-check request ID in onload callback
+          if (requestId !== previewRequestIdRef.current) {
+            URL.revokeObjectURL(url);
+            return;
+          }
+          setRemoteImg(img); 
+        };
+        img.onerror = (e) => { console.error('[Preview Request] Image load error:', e); };
         img.src = url;
-      } catch (e) { }
+      } catch (e) { console.error('[Preview Request] Exception:', e); }
     }, 180);
     return () => { if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null; } };
-  }, [photoId, inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, committedCrop, curves]);
+  }, [photoId, inverted, inversionMode, filmType, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, committedCrop, curves]);
 
   const renderOriginal = () => {
     if (!image || !origCanvasRef.current) return;
@@ -1323,78 +1293,23 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const size = lutExportSize;
     let content = `LUT_3D_SIZE ${size}\n`;
     
-    // Get current 1D LUTs
-    const toneLUT = getToneLUT();
-    const lutRGB = getCurveLUT(curves.rgb);
-    const lutR = getCurveLUT(curves.red);
-    const lutG = getCurveLUT(curves.green);
-    const lutB = getCurveLUT(curves.blue);
-    
-    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
+    // Use shared module for consistent processing
+    const allLUTs = prepareLUTs({
+      exposure, contrast, highlights, shadows, whites, blacks,
+      curves, red, green, blue, temp, tint, lut1, lut2
+    });
+    const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
 
     for (let b = 0; b < size; b++) {
       for (let g = 0; g < size; g++) {
         for (let r = 0; r < size; r++) {
-          // Original normalized color
-          let rN = r / (size - 1);
-          let gN = g / (size - 1);
-          let bN = b / (size - 1);
+          // Original normalized color -> 0-255
+          const rIn = (r / (size - 1)) * 255;
+          const gIn = (g / (size - 1)) * 255;
+          const bIn = (b / (size - 1)) * 255;
           
-          // Convert to 0-255
-          let rC = rN * 255;
-          let gC = gN * 255;
-          let bC = bN * 255;
-          
-          // 1. Invert
-          if (inverted) {
-            if (inversionMode === 'log') {
-              rC = 255 * (1 - Math.log(rC + 1) / Math.log(256));
-              gC = 255 * (1 - Math.log(gC + 1) / Math.log(256));
-              bC = 255 * (1 - Math.log(bC + 1) / Math.log(256));
-            } else {
-              rC = 255 - rC;
-              gC = 255 - gC;
-              bC = 255 - bC;
-            }
-          }
-          
-          // 2. WB
-          rC *= rBal;
-          gC *= gBal;
-          bC *= bBal;
-          
-          // Clamp
-          rC = Math.min(255, Math.max(0, rC));
-          gC = Math.min(255, Math.max(0, gC));
-          bC = Math.min(255, Math.max(0, bC));
-          
-          // 3. Tone LUT
-          rC = toneLUT[Math.floor(rC)];
-          gC = toneLUT[Math.floor(gC)];
-          bC = toneLUT[Math.floor(bC)];
-          
-          // 4. Curves
-          rC = lutRGB[rC];
-          gC = lutRGB[gC];
-          bC = lutRGB[bC];
-
-          rC = lutR[rC];
-          gC = lutG[gC];
-          bC = lutB[bC];
-          
-          // 5. Loaded LUTs
-          if (lut1) {
-             const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut1);
-             rC = rC * (1 - lut1.intensity) + lr * 255 * lut1.intensity;
-             gC = gC * (1 - lut1.intensity) + lg * 255 * lut1.intensity;
-             bC = bC * (1 - lut1.intensity) + lb * 255 * lut1.intensity;
-          }
-          if (lut2) {
-             const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut2);
-             rC = rC * (1 - lut2.intensity) + lr * 255 * lut2.intensity;
-             gC = gC * (1 - lut2.intensity) + lg * 255 * lut2.intensity;
-             bC = bC * (1 - lut2.intensity) + lb * 255 * lut2.intensity;
-          }
+          // Use shared pixel processing
+          const [rC, gC, bC] = processPixel(rIn, gIn, bIn, allLUTs, inversionParams);
           
           // Output normalized
           content += `${(rC/255).toFixed(6)} ${(gC/255).toFixed(6)} ${(bC/255).toFixed(6)}\n`;
@@ -1467,70 +1382,21 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Pre-calculate lookup tables
-    const toneLUT = getToneLUT();
-    const lutRGB = getCurveLUT(curves.rgb);
-    const lutR = getCurveLUT(curves.red);
-    const lutG = getCurveLUT(curves.green);
-    const lutB = getCurveLUT(curves.blue);
-    
-    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
+    // Use shared module for consistent processing
+    const allLUTs = prepareLUTs({
+      exposure, contrast, highlights, shadows, whites, blacks,
+      curves, red, green, blue, temp, tint, lut1, lut2
+    });
+    const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i+3] === 0) continue;
 
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
-      if (inverted) {
-        if (inversionMode === 'log') {
-          r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-          g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-          b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-        } else {
-          r = 255 - r;
-          g = 255 - g;
-          b = 255 - b;
-        }
-      }
-
-      r *= rBal;
-      g *= gBal;
-      b *= bBal;
-
-      let rC = Math.min(255, Math.max(0, r));
-      let gC = Math.min(255, Math.max(0, g));
-      let bC = Math.min(255, Math.max(0, b));
-
-      rC = toneLUT[Math.floor(rC)];
-      gC = toneLUT[Math.floor(gC)];
-      bC = toneLUT[Math.floor(bC)];
-      
-      rC = lutRGB[rC];
-      gC = lutRGB[gC];
-      bC = lutRGB[bC];
-
-      rC = lutR[rC];
-      gC = lutG[gC];
-      bC = lutB[bC];
-
-      if (lut1) {
-        const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut1);
-        rC = rC * (1 - lut1.intensity) + lr * 255 * lut1.intensity;
-        gC = gC * (1 - lut1.intensity) + lg * 255 * lut1.intensity;
-        bC = bC * (1 - lut1.intensity) + lb * 255 * lut1.intensity;
-      }
-      if (lut2) {
-        const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut2);
-        rC = rC * (1 - lut2.intensity) + lr * 255 * lut2.intensity;
-        gC = gC * (1 - lut2.intensity) + lg * 255 * lut2.intensity;
-        bC = bC * (1 - lut2.intensity) + lb * 255 * lut2.intensity;
-      }
-
-      rC = Math.min(255, Math.max(0, rC));
-      gC = Math.min(255, Math.max(0, gC));
-      bC = Math.min(255, Math.max(0, bC));
+      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
 
       data[i] = rC;
       data[i + 1] = gC;
@@ -1549,7 +1415,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     setHqBusy(true);
     try {
       const params = {
-        inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves
+        inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+        exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves
       };
       const res = await exportPositive(photoId, params, { format: 'jpeg' }); // Always store JPEG into library
       if (res && res.ok) {
@@ -1606,9 +1473,16 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         lut3d = buildCombinedLUT(lut1, lut2); // returns { data: Float32Array, size: number }
       }
 
+      // Get Film Curve profile parameters
+      const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
+      const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+      const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
+      const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+
       const params = { 
         inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
         temp, tint, red, green, blue, rotation, orientation,
+        filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
         cropRect: committedCrop,
         toneCurveLut: Array.from(toneCurveLut), // Pass as array
         lut3d: lut3d ? { size: lut3d.size, data: Array.from(lut3d.data) } : null
@@ -1636,7 +1510,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
 
   const handleDownload = async () => {
     if (!image || !photoId) return;
-    const paramsForServer = { inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves };
+    const paramsForServer = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves };
     // TIFF16 or BOTH use server render-positive endpoint for high bit depth / parity
     if (saveAsFormat === 'tiff16' || saveAsFormat === 'both') {
       try {
@@ -1725,6 +1599,12 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
             }
           }
         }
+        // Get Film Curve profile parameters
+        const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
+        const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+        const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
+        const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+
         processImageWebGL(webglCanvas, image, {
           inverted,
           inversionMode,
@@ -1735,6 +1615,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
           shadows,
           whites,
           blacks,
+          filmCurveEnabled,
+          filmCurveGamma,
+          filmCurveDMin,
+          filmCurveDMax,
           curves: {
             rgb: getCurveLUT(curves.rgb),
             red: getCurveLUT(curves.red),
@@ -1821,70 +1705,21 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Pre-calculate lookup tables
-    const toneLUT = getToneLUT();
-    const lutRGB = getCurveLUT(curves.rgb);
-    const lutR = getCurveLUT(curves.red);
-    const lutG = getCurveLUT(curves.green);
-    const lutB = getCurveLUT(curves.blue);
-    
-    const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
+    // Use shared module for consistent processing
+    const allLUTs = prepareLUTs({
+      exposure, contrast, highlights, shadows, whites, blacks,
+      curves, red, green, blue, temp, tint, lut1, lut2
+    });
+    const inversionParams = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile };
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i+3] === 0) continue;
 
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
-      if (inverted) {
-        if (inversionMode === 'log') {
-          r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-          g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-          b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-        } else {
-          r = 255 - r;
-          g = 255 - g;
-          b = 255 - b;
-        }
-      }
-
-      r *= rBal;
-      g *= gBal;
-      b *= bBal;
-
-      let rC = Math.min(255, Math.max(0, r));
-      let gC = Math.min(255, Math.max(0, g));
-      let bC = Math.min(255, Math.max(0, b));
-
-      rC = toneLUT[Math.floor(rC)];
-      gC = toneLUT[Math.floor(gC)];
-      bC = toneLUT[Math.floor(bC)];
-      
-      rC = lutRGB[rC];
-      gC = lutRGB[gC];
-      bC = lutRGB[bC];
-
-      rC = lutR[rC];
-      gC = lutG[gC];
-      bC = lutB[bC];
-
-      if (lut1) {
-        const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut1);
-        rC = rC * (1 - lut1.intensity) + lr * 255 * lut1.intensity;
-        gC = gC * (1 - lut1.intensity) + lg * 255 * lut1.intensity;
-        bC = bC * (1 - lut1.intensity) + lb * 255 * lut1.intensity;
-      }
-      if (lut2) {
-        const [lr, lg, lb] = sampleLUT(rC/255, gC/255, bC/255, lut2);
-        rC = rC * (1 - lut2.intensity) + lr * 255 * lut2.intensity;
-        gC = gC * (1 - lut2.intensity) + lg * 255 * lut2.intensity;
-        bC = bC * (1 - lut2.intensity) + lb * 255 * lut2.intensity;
-      }
-
-      rC = Math.min(255, Math.max(0, rC));
-      gC = Math.min(255, Math.max(0, gC));
-      bC = Math.min(255, Math.max(0, bC));
+      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
 
       data[i] = rC;
       data[i + 1] = gC;
@@ -2130,6 +1965,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         inverted={inverted} setInverted={setInverted}
         useGPU={useGPU} setUseGPU={setUseGPU}
         inversionMode={inversionMode} setInversionMode={setInversionMode}
+        filmType={filmType} setFilmType={setFilmType}
+        filmCurveEnabled={filmCurveEnabled} setFilmCurveEnabled={setFilmCurveEnabled}
+        filmCurveProfile={filmCurveProfile} setFilmCurveProfile={setFilmCurveProfile}
+        filmCurveProfiles={filmCurveProfiles} setFilmCurveProfiles={setFilmCurveProfiles}
         isPickingBase={isPickingBase} setIsPickingBase={setIsPickingBase}
         handleAutoBase={handleAutoBase}
         isPickingWB={isPickingWB} setIsPickingWB={setIsPickingWB}

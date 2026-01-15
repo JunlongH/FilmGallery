@@ -151,6 +151,20 @@ db.serialize(() => {
     params TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
+  
+  // Film curve profiles table for custom gamma/dMin/dMax configurations
+  db.run(`CREATE TABLE IF NOT EXISTS film_curve_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    gamma REAL NOT NULL DEFAULT 0.6,
+    d_min REAL NOT NULL DEFAULT 0.1,
+    d_max REAL NOT NULL DEFAULT 3.0,
+    category TEXT DEFAULT 'custom',
+    is_builtin INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME
+  )`);
 });
 
 // [ONEDRIVE-SYNC] Periodic WAL checkpoint for OneDrive sync (only in WAL mode)
