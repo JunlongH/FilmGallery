@@ -5,7 +5,10 @@
   "main": "index.js",
   "type": "commonjs",
   "exports": {
-    ".": "./index.js",
+    ".": {
+      "require": "./index.js",
+      "default": "./index.js"
+    },
     "./filmlab-core": "./filmlab-core.js",
     "./constants": "./filmLabConstants.js"
   },

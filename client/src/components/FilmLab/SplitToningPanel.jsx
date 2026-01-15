@@ -9,7 +9,7 @@ import React, { useState, useMemo } from 'react';
 import { 
   DEFAULT_SPLIT_TONE_PARAMS, 
   SPLIT_TONE_PRESETS 
-} from '../../utils/filmlab-shared';
+} from '@filmgallery/shared';
 
 /**
  * 色相选择器 - 圆形色轮

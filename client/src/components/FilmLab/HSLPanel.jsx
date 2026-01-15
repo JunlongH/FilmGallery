@@ -6,7 +6,7 @@
  */
 
 import React, { useState } from 'react';
-import { HSL_CHANNELS, HSL_CHANNEL_ORDER, DEFAULT_HSL_PARAMS } from '../../utils/filmlab-shared';
+import { HSL_CHANNELS, HSL_CHANNEL_ORDER, DEFAULT_HSL_PARAMS } from '@filmgallery/shared';
 
 // 通道颜色配置 (用于 UI 显示)
 const CHANNEL_COLORS = {

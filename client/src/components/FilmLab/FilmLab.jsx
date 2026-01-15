@@ -5,7 +5,7 @@ import FilmLabControls from './FilmLabControls';
 import FilmLabCanvas from './FilmLabCanvas';
 import { isWebGLAvailable, processImageWebGL } from './FilmLabWebGL';
 
-// 使用共享模块 (从 client/src/utils/filmlab-shared)
+// 使用统一共享模块 (via CRACO alias)
 import {
   processPixel,
   prepareLUTs,
@@ -16,7 +16,7 @@ import {
   EXPORT_MAX_WIDTH,
   DEFAULT_HSL_PARAMS,
   DEFAULT_SPLIT_TONE_PARAMS,
-} from '../../utils/filmlab-shared';
+} from '@filmgallery/shared';
 
 // ============================================================================
 // Configuration Constants (imported from shared module)
