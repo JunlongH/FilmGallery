@@ -21,6 +21,10 @@ const DEFAULT_SPLIT_TONE_PARAMS = {
     hue: 30,          // 高光色相 (0-360)
     saturation: 0,    // 高光饱和度 (0-100)
   },
+  midtones: {
+    hue: 0,           // 中间调色相 (0-360)
+    saturation: 0,    // 中间调饱和度 (0-100)
+  },
   shadows: {
     hue: 220,         // 阴影色相 (0-360)
     saturation: 0,    // 阴影饱和度 (0-100)
@@ -92,7 +96,7 @@ function hslToRgb(h, s, l) {
  * 
  * @param {number} luminance - 亮度 (0-1)
  * @param {number} balance - 平衡值 (-100 到 100)
- * @returns {{ shadow: number, highlight: number }} 权重
+ * @returns {{ shadow: number, midtone: number, highlight: number }} 权重
  */
 function calculateZoneWeights(luminance, balance = 0) {
   // 根据 balance 调整过渡点
@@ -100,6 +104,7 @@ function calculateZoneWeights(luminance, balance = 0) {
   const midpoint = 0.5 + balanceOffset;
   
   let shadowWeight = 0;
+  let midtoneWeight = 0;
   let highlightWeight = 0;
   
   // 阴影区权重
@@ -109,6 +114,23 @@ function calculateZoneWeights(luminance, balance = 0) {
     // 阴影到中间调过渡
     const t = (luminance - LUMINANCE_CONFIG.shadowEnd) / (midpoint - LUMINANCE_CONFIG.shadowEnd);
     shadowWeight = 1 - smoothstep(t);
+    midtoneWeight = smoothstep(t);
+  }
+  
+  // 中间调区权重 (在中点附近最强)
+  if (luminance >= LUMINANCE_CONFIG.shadowEnd && luminance <= LUMINANCE_CONFIG.highlightStart) {
+    if (luminance >= midpoint - 0.1 && luminance <= midpoint + 0.1) {
+      // 中心区域完全是中间调
+      midtoneWeight = 1;
+    } else if (luminance < midpoint) {
+      // 从阴影过渡到中间调
+      const t = (luminance - LUMINANCE_CONFIG.shadowEnd) / (midpoint - LUMINANCE_CONFIG.shadowEnd);
+      midtoneWeight = Math.max(midtoneWeight, smoothstep(t));
+    } else {
+      // 从中间调过渡到高光
+      const t = (luminance - midpoint) / (LUMINANCE_CONFIG.highlightStart - midpoint);
+      midtoneWeight = Math.max(midtoneWeight, 1 - smoothstep(t));
+    }
   }
   
   // 高光区权重
@@ -118,9 +140,10 @@ function calculateZoneWeights(luminance, balance = 0) {
     // 中间调到高光过渡
     const t = (luminance - midpoint) / (LUMINANCE_CONFIG.highlightStart - midpoint);
     highlightWeight = smoothstep(t);
+    midtoneWeight = Math.max(midtoneWeight, 1 - smoothstep(t));
   }
   
-  return { shadow: shadowWeight, highlight: highlightWeight };
+  return { shadow: shadowWeight, midtone: midtoneWeight, highlight: highlightWeight };
 }
 
 /**
@@ -143,10 +166,11 @@ function smoothstep(t) {
 function isDefaultSplitTone(params) {
   if (!params) return true;
   
-  const { highlights, shadows } = params;
+  const { highlights, midtones, shadows } = params;
   
   // 只检查饱和度，因为色相在饱和度为0时无意义
   if (highlights?.saturation && highlights.saturation !== 0) return false;
+  if (midtones?.saturation && midtones.saturation !== 0) return false;
   if (shadows?.saturation && shadows.saturation !== 0) return false;
   
   return true;
@@ -167,9 +191,11 @@ function applySplitTone(r, g, b, params = {}) {
     return [r, g, b];
   }
   
-  const { highlights = {}, shadows = {}, balance = 0 } = params;
+  const { highlights = {}, midtones = {}, shadows = {}, balance = 0 } = params;
   const highlightHue = highlights.hue ?? 30;
   const highlightSat = (highlights.saturation ?? 0) / 100;
+  const midtoneHue = midtones.hue ?? 0;
+  const midtoneSat = (midtones.saturation ?? 0) / 100;
   const shadowHue = shadows.hue ?? 220;
   const shadowSat = (shadows.saturation ?? 0) / 100;
   
@@ -181,6 +207,7 @@ function applySplitTone(r, g, b, params = {}) {
   
   // 生成着色颜色
   const highlightColor = hslToRgb(highlightHue, 1, 0.5);
+  const midtoneColor = hslToRgb(midtoneHue, 1, 0.5);
   const shadowColor = hslToRgb(shadowHue, 1, 0.5);
   
   // 混合
@@ -194,6 +221,14 @@ function applySplitTone(r, g, b, params = {}) {
     outR = outR + (highlightColor[0] - outR) * strength * 0.3;
     outG = outG + (highlightColor[1] - outG) * strength * 0.3;
     outB = outB + (highlightColor[2] - outB) * strength * 0.3;
+  }
+  
+  // 中间调着色
+  if (midtoneSat > 0 && weights.midtone > 0) {
+    const strength = midtoneSat * weights.midtone;
+    outR = outR + (midtoneColor[0] - outR) * strength * 0.3;
+    outG = outG + (midtoneColor[1] - outG) * strength * 0.3;
+    outB = outB + (midtoneColor[2] - outB) * strength * 0.3;
   }
   
   // 阴影着色

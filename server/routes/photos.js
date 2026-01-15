@@ -15,6 +15,9 @@ const PreparedStmt = require('../utils/prepared-statements');
 // Film Curve support
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../../packages/shared/filmLabCurve');
 
+// 使用统一渲染核心
+const { RenderCore } = require('../../packages/shared');
+
 // Helpers for tone and curves (mirror preview implementation)
 function buildToneLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 }) {
   const lut = new Uint8Array(256);
@@ -632,88 +635,46 @@ router.post('/:id/export-positive', async (req, res) => {
     const destPath = path.join(fullDir, exportName);
     const relDest = path.join('rolls', String(row.roll_id), 'full', exportName).replace(/\\/g, '/').replace(/\\/g, '/');
 
-    // Build base pipeline (rotate/resize/crop, invert, WB)
-    // Pass filmCurveEnabled so buildPipeline knows to defer inversion to JS
+    // Build base pipeline (rotate/resize/crop only - skip color ops for RenderCore parity)
     let imgBase = await buildPipeline(sourceAbs, {
       inverted, inversionMode, exposure, contrast, temp, tint,
       red: redGain, green: greenGain, blue: blueGain, rotation, orientation,
       filmCurveEnabled
-    }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true });
+    }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true, skipColorOps: true });
 
-    // Build LUTs for tones and curves
-    const toneLUT = buildToneLUT({
+    // 使用 RenderCore 统一渲染
+    const core = new RenderCore({
       exposure, contrast,
       highlights: Number.isFinite(p.highlights) ? p.highlights : 0,
       shadows: Number.isFinite(p.shadows) ? p.shadows : 0,
       whites: Number.isFinite(p.whites) ? p.whites : 0,
       blacks: Number.isFinite(p.blacks) ? p.blacks : 0,
+      curves: p.curves,
+      red: redGain, green: greenGain, blue: blueGain,
+      temp, tint,
+      lut1: p.lut1 || null,
+      lut2: p.lut2 || null,
+      inverted, inversionMode,
+      filmCurveEnabled, filmCurveProfile,
+      hslParams: p.hslParams || null,
+      splitToning: p.splitToning || null
     });
-    const curves = p.curves || { rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }], red: [{ x: 0, y: 0 }, { x: 255, y: 255 }], green: [{ x: 0, y: 0 }, { x: 255, y: 255 }], blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }] };
-    const lutRGB = buildCurveLUT(curves.rgb || []);
-    const lutR = buildCurveLUT(curves.red || []);
-    const lutG = buildCurveLUT(curves.green || []);
-    const lutB = buildCurveLUT(curves.blue || []);
-    
-    // WB gains for JS processing when inversion is deferred (log mode or film curve enabled)
-    const { computeWBGains } = require('../utils/filmlab-wb');
-    const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
-    // When Film Curve is enabled, we need to defer inversion to JS (since Film Curve must come before inversion)
-    const needsFilmCurve = inverted && filmCurveEnabled;
-    const needsLogInversion = inverted && inversionMode === 'log';
-    const needsLinearInversionInJs = inverted && filmCurveEnabled && inversionMode !== 'log';
-    const needsWbInJs = needsLogInversion || needsFilmCurve;
+    core.prepareLUTs();
 
-    // Get Film Curve profile params
-    let filmCurveParams = null;
-    if (needsFilmCurve) {
-      const profile = FILM_CURVE_PROFILES[filmCurveProfile] || FILM_CURVE_PROFILES.default;
-      filmCurveParams = {
-        gamma: profile.gamma,
-        dMin: profile.dMin,
-        dMax: profile.dMax
-      };
-    }
-
-    // Pull raw, apply LUTs, then encode to JPEG
+    // Pull raw, apply RenderCore processing, then encode to JPEG
     const { data, info } = await imgBase.raw().toBuffer({ resolveWithObject: true });
     const width = info.width; const height = info.height; const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      let r = data[i]; let g = data[i + 1]; let b = data[i + 2];
-      
-      // ① Film Curve (before inversion) - apply H&D density model
-      if (needsFilmCurve && filmCurveParams) {
-        r = applyFilmCurve(r, filmCurveParams);
-        g = applyFilmCurve(g, filmCurveParams);
-        b = applyFilmCurve(b, filmCurveParams);
-      }
-      
-      // ② Linear inversion (when deferred due to Film Curve)
-      if (needsLinearInversionInJs) {
-        r = 255 - r;
-        g = 255 - g;
-        b = 255 - b;
-      }
-      
-      // ② Log inversion: 255 * (1 - log(x+1) / log(256)) - matches client exactly
-      if (needsLogInversion) {
-        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-      }
-      
-      // Apply WB gains (only if log inversion was deferred)
-      if (needsWbInJs) {
-        r *= rBal; g *= gBal; b *= bBal;
-        r = Math.max(0, Math.min(255, r));
-        g = Math.max(0, Math.min(255, g));
-        b = Math.max(0, Math.min(255, b));
-      }
-      
-      r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
-      r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-      r = lutR[r]; g = lutG[g]; b = lutB[b];
-      out[j] = r; out[j + 1] = g; out[j + 2] = b;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const [rC, gC, bC] = core.processPixel(r, g, b);
+
+      out[j] = rC;
+      out[j + 1] = gC;
+      out[j + 2] = bC;
     }
     await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toFile(destPath);
 
@@ -723,67 +684,39 @@ router.post('/:id/export-positive', async (req, res) => {
       const tiffName = `${baseName}_exp_${timestamp}.tiff`;
       const tiffPath = path.join(fullDir, tiffName);
       try {
-          // Generate TIFF16 with tone & curves parity (approximate 16-bit LUT expansion)
+          // Generate TIFF16 with RenderCore parity
           const imgTiffBase = await buildPipeline(sourceAbs, {
             inverted, inversionMode, exposure, contrast, temp, tint,
             red: redGain, green: greenGain, blue: blueGain, rotation, orientation,
             filmCurveEnabled
-          }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true });
-          // Fetch raw 8-bit buffer then upscale to 16-bit applying curves already baked (toned & curved in JS via toneAndCurvesInJs)
+          }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true, skipColorOps: true });
+          
           const { data: raw8, info: info8 } = await imgTiffBase.raw().toBuffer({ resolveWithObject: true });
           const width8 = info8.width; const height8 = info8.height; const channels8 = info8.channels;
-          const raw16 = Buffer.allocUnsafe(width8 * height8 * channels8 * 2);
+          const raw16 = Buffer.allocUnsafe(width8 * height8 * 3 * 2);
           
-          // Apply Film Curve, Inversion, and WB before converting to 16-bit (same as JPEG path)
+          // Apply RenderCore processing
+          let j16 = 0;
           for (let i = 0; i < raw8.length; i += channels8) {
-            let r = raw8[i]; let g = raw8[i + 1]; let b = raw8[i + 2];
+            const r = raw8[i];
+            const g = raw8[i + 1];
+            const b = raw8[i + 2];
             
-            // ① Film Curve (before inversion)
-            if (needsFilmCurve && filmCurveParams) {
-              r = applyFilmCurve(r, filmCurveParams);
-              g = applyFilmCurve(g, filmCurveParams);
-              b = applyFilmCurve(b, filmCurveParams);
-            }
+            const [rC, gC, bC] = core.processPixel(r, g, b);
             
-            // ② Linear inversion (when deferred due to Film Curve)
-            if (needsLinearInversionInJs) {
-              r = 255 - r;
-              g = 255 - g;
-              b = 255 - b;
-            }
+            // Scale 8-bit to 16-bit
+            const r16 = (rC << 8) | rC;
+            const g16 = (gC << 8) | gC;
+            const b16 = (bC << 8) | bC;
             
-            // ② Log inversion
-            if (needsLogInversion) {
-              r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-              g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-              b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-            }
-            
-            // ③ WB gains
-            if (needsWbInJs) {
-              r *= rBal; g *= gBal; b *= bBal;
-              r = Math.max(0, Math.min(255, r));
-              g = Math.max(0, Math.min(255, g));
-              b = Math.max(0, Math.min(255, b));
-            }
-            
-            // Apply tone and curves
-            r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
-            r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-            r = lutR[r]; g = lutG[g]; b = lutB[b];
-            
-            // Update the buffer in place for 16-bit conversion below
-            raw8[i] = r; raw8[i + 1] = g; raw8[i + 2] = b;
+            raw16[j16++] = r16 & 0xFF;
+            raw16[j16++] = (r16 >> 8) & 0xFF;
+            raw16[j16++] = g16 & 0xFF;
+            raw16[j16++] = (g16 >> 8) & 0xFF;
+            raw16[j16++] = b16 & 0xFF;
+            raw16[j16++] = (b16 >> 8) & 0xFF;
           }
-          
-          for (let i=0, j=0; i<raw8.length; i++, j+=2) {
-            // Scale 8-bit to 16-bit (simple upscale)
-            const v8 = raw8[i];
-            const v16 = (v8 << 8) | v8; // replicate bits for smoother gradient
-            raw16[j] = v16 & 0xFF;
-            raw16[j+1] = (v16 >> 8) & 0xFF;
-          }
-          await sharp(raw16, { raw: { width: width8, height: height8, channels: channels8, depth: 'ushort' } })
+          await sharp(raw16, { raw: { width: width8, height: height8, channels: 3, depth: 'ushort' } })
             .tiff({ compression: 'lzw', bitdepth: 16 })
             .toFile(tiffPath);
         tiffRelPath = path.join('rolls', String(row.roll_id), 'full', tiffName).replace(/\\/g, '/');
@@ -889,7 +822,7 @@ router.post('/:id/render-positive', async (req, res) => {
         const lutR = buildCurveLUT(curves.red || []);
         const lutG = buildCurveLUT(curves.green || []);
         const lutB = buildCurveLUT(curves.blue || []);
-        const { computeWBGains } = require('../utils/filmlab-wb');
+        const { computeWBGains } = require('../../packages/shared');
         const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
         const needsLogInversion = inverted && inversionMode === 'log';
         const needsWbInJs = needsLogInversion;
@@ -945,7 +878,7 @@ router.post('/:id/render-positive', async (req, res) => {
     const lutB = buildCurveLUT(curves.blue || []);
     
     // WB gains and log inversion flags for JS processing
-    const { computeWBGains } = require('../utils/filmlab-wb');
+    const { computeWBGains } = require('../../packages/shared');
     const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
     const needsLogInversion = inverted && inversionMode === 'log';
     const needsWbInJs = needsLogInversion;

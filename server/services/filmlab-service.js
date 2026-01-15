@@ -1,6 +1,9 @@
 const sharp = require('sharp');
 sharp.cache(false);
 
+// 使用共享模块的白平衡计算
+const { computeWBGains } = require('../../packages/shared');
+
 // Build a sharp pipeline from params. Options:
 // { rotation, orientation, cropRect: {x,y,w,h} normalized relative to rotated image, maxWidth, toneAndCurvesInJs }
 // Returns a configured sharp instance (not yet written to file)
@@ -74,7 +77,6 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
   // White balance via per-channel gains (clamped)
   // Skip if log inversion is deferred (WB must come after inversion, so also defer WB)
   if (!deferInversionToJs) {
-    const { computeWBGains } = require('../utils/filmlab-wb');
     const [rBal, gBal, bBal] = computeWBGains({ red, green, blue, temp, tint });
     img = img.linear([rBal, gBal, bBal], [0, 0, 0]);
   }

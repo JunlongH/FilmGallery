@@ -118,6 +118,191 @@ const FS_GL2 = `#version 300 es
   uniform float u_filmCurveDMin;
   uniform float u_filmCurveDMax;
 
+  // HSL parameters (8 channels: red, orange, yellow, green, cyan, blue, purple, magenta)
+  uniform vec3 u_hslRed;
+  uniform vec3 u_hslOrange;
+  uniform vec3 u_hslYellow;
+  uniform vec3 u_hslGreen;
+  uniform vec3 u_hslCyan;
+  uniform vec3 u_hslBlue;
+  uniform vec3 u_hslPurple;
+  uniform vec3 u_hslMagenta;
+
+  // Split Toning parameters
+  uniform float u_splitHighlightHue;
+  uniform float u_splitHighlightSat;
+  uniform float u_splitMidtoneHue;
+  uniform float u_splitMidtoneSat;
+  uniform float u_splitShadowHue;
+  uniform float u_splitShadowSat;
+  uniform float u_splitBalance;
+
+  // HSL helper functions
+  vec3 rgb2hsl(vec3 color) {
+    float maxC = max(max(color.r, color.g), color.b);
+    float minC = min(min(color.r, color.g), color.b);
+    float delta = maxC - minC;
+    float L = (maxC + minC) * 0.5;
+    float H = 0.0;
+    float S = 0.0;
+    if (delta > 0.001) {
+      S = (L < 0.5) ? (delta / (maxC + minC)) : (delta / (2.0 - maxC - minC));
+      if (maxC == color.r) {
+        H = (color.g - color.b) / delta + (color.g < color.b ? 6.0 : 0.0);
+      } else if (maxC == color.g) {
+        H = (color.b - color.r) / delta + 2.0;
+      } else {
+        H = (color.r - color.g) / delta + 4.0;
+      }
+      H *= 60.0;
+    }
+    return vec3(H, S, L);
+  }
+
+  float hue2rgb(float p, float q, float t) {
+    if (t < 0.0) t += 1.0;
+    if (t > 1.0) t -= 1.0;
+    if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
+    if (t < 0.5) return q;
+    if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
+    return p;
+  }
+
+  vec3 hsl2rgb(vec3 hsl) {
+    float h = hsl.x / 360.0;
+    float s = hsl.y;
+    float l = hsl.z;
+    if (s < 0.001) return vec3(l);
+    float q = (l < 0.5) ? (l * (1.0 + s)) : (l + s - l * s);
+    float p = 2.0 * l - q;
+    return vec3(
+      hue2rgb(p, q, h + 1.0/3.0),
+      hue2rgb(p, q, h),
+      hue2rgb(p, q, h - 1.0/3.0)
+    );
+  }
+
+  float hslChannelWeight(float hue, float centerHue) {
+    float dist = min(abs(hue - centerHue), 360.0 - abs(hue - centerHue));
+    return max(0.0, 1.0 - dist / 30.0);
+  }
+
+  vec3 applyHSLAdjustment(vec3 color) {
+    vec3 hsl = rgb2hsl(color);
+    float h = hsl.x;
+    float totalHueShift = 0.0;
+    float totalSatMult = 1.0;
+    float totalLumShift = 0.0;
+    float totalWeight = 0.0;
+    
+    // Red (0°)
+    float w = hslChannelWeight(h, 0.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslRed.x * w;
+      totalSatMult *= 1.0 + (u_hslRed.y / 100.0) * w;
+      totalLumShift += (u_hslRed.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+    // Orange (30°)
+    w = hslChannelWeight(h, 30.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslOrange.x * w;
+      totalSatMult *= 1.0 + (u_hslOrange.y / 100.0) * w;
+      totalLumShift += (u_hslOrange.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+    // Yellow (60°)
+    w = hslChannelWeight(h, 60.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslYellow.x * w;
+      totalSatMult *= 1.0 + (u_hslYellow.y / 100.0) * w;
+      totalLumShift += (u_hslYellow.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+    // Green (120°)
+    w = hslChannelWeight(h, 120.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslGreen.x * w;
+      totalSatMult *= 1.0 + (u_hslGreen.y / 100.0) * w;
+      totalLumShift += (u_hslGreen.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+    // Cyan (180°)
+    w = hslChannelWeight(h, 180.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslCyan.x * w;
+      totalSatMult *= 1.0 + (u_hslCyan.y / 100.0) * w;
+      totalLumShift += (u_hslCyan.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+    // Blue (240°)
+    w = hslChannelWeight(h, 240.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslBlue.x * w;
+      totalSatMult *= 1.0 + (u_hslBlue.y / 100.0) * w;
+      totalLumShift += (u_hslBlue.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+    // Purple (270°)
+    w = hslChannelWeight(h, 270.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslPurple.x * w;
+      totalSatMult *= 1.0 + (u_hslPurple.y / 100.0) * w;
+      totalLumShift += (u_hslPurple.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+    // Magenta (300°)
+    w = hslChannelWeight(h, 300.0);
+    if (w > 0.0) {
+      totalHueShift += u_hslMagenta.x * w;
+      totalSatMult *= 1.0 + (u_hslMagenta.y / 100.0) * w;
+      totalLumShift += (u_hslMagenta.z / 100.0) * 0.5 * w;
+      totalWeight += w;
+    }
+
+    if (totalWeight > 0.0) {
+      hsl.x = mod(hsl.x + totalHueShift, 360.0);
+      hsl.y = clamp(hsl.y * totalSatMult, 0.0, 1.0);
+      hsl.z = clamp(hsl.z + totalLumShift, 0.0, 1.0);
+    }
+    return hsl2rgb(hsl);
+  }
+
+  float calcLuminance(vec3 c) {
+    return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+  }
+
+  vec3 applySplitTone(vec3 color) {
+    float lum = calcLuminance(color);
+    float shadowEnd = 0.25 + u_splitBalance * 0.15;
+    float highlightStart = 0.75 + u_splitBalance * 0.15;
+    float midpoint = 0.5 + u_splitBalance * 0.15;
+    
+    float shadowWeight = smoothstep(shadowEnd + 0.1, shadowEnd - 0.1, lum);
+    float highlightWeight = smoothstep(highlightStart - 0.1, highlightStart + 0.1, lum);
+    
+    // Midtone weight: strongest in the middle zone
+    float midtoneWeight = 1.0 - smoothstep(0.0, shadowEnd + 0.1, abs(lum - midpoint));
+    midtoneWeight *= (1.0 - shadowWeight) * (1.0 - highlightWeight);
+    midtoneWeight = clamp(midtoneWeight * 2.0, 0.0, 1.0);
+    
+    vec3 highlightTint = hsl2rgb(vec3(u_splitHighlightHue * 360.0, 1.0, 0.5));
+    vec3 midtoneTint = hsl2rgb(vec3(u_splitMidtoneHue * 360.0, 1.0, 0.5));
+    vec3 shadowTint = hsl2rgb(vec3(u_splitShadowHue * 360.0, 1.0, 0.5));
+    
+    vec3 result = color;
+    if (shadowWeight > 0.0 && u_splitShadowSat > 0.0) {
+      result = mix(result, result * shadowTint / 0.5, shadowWeight * u_splitShadowSat);
+    }
+    if (midtoneWeight > 0.0 && u_splitMidtoneSat > 0.0) {
+      result = mix(result, result * midtoneTint / 0.5, midtoneWeight * u_splitMidtoneSat);
+    }
+    if (highlightWeight > 0.0 && u_splitHighlightSat > 0.0) {
+      result = mix(result, result * highlightTint / 0.5, highlightWeight * u_splitHighlightSat);
+    }
+    return clamp(result, 0.0, 1.0);
+  }
+
   // Film Curve: Apply H&D density model to transmittance
   float applyFilmCurve(float value) {
     float gamma = u_filmCurveGamma;
@@ -189,6 +374,12 @@ const FS_GL2 = `#version 300 es
     float b = texture(u_toneCurveTex, vec2(c.b, 0.5)).b;
     c = vec3(r, g, b);
 
+    // HSL Adjustment
+    c = applyHSLAdjustment(c);
+
+    // Split Toning
+    c = applySplitTone(c);
+
     // 3D LUT
     if (u_hasLut3d > 0.5) {
        float size = u_lut3dSize;
@@ -233,6 +424,144 @@ const FS_GL1 = `
   uniform float u_filmCurveDMin;
   uniform float u_filmCurveDMax;
 
+  // HSL parameters (8 channels)
+  uniform vec3 u_hslRed;
+  uniform vec3 u_hslOrange;
+  uniform vec3 u_hslYellow;
+  uniform vec3 u_hslGreen;
+  uniform vec3 u_hslCyan;
+  uniform vec3 u_hslBlue;
+  uniform vec3 u_hslPurple;
+  uniform vec3 u_hslMagenta;
+
+  // Split Toning parameters
+  uniform float u_splitHighlightHue;
+  uniform float u_splitHighlightSat;
+  uniform float u_splitMidtoneHue;
+  uniform float u_splitMidtoneSat;
+  uniform float u_splitShadowHue;
+  uniform float u_splitShadowSat;
+  uniform float u_splitBalance;
+
+  // HSL helper functions
+  vec3 rgb2hsl(vec3 color) {
+    float maxC = max(max(color.r, color.g), color.b);
+    float minC = min(min(color.r, color.g), color.b);
+    float delta = maxC - minC;
+    float L = (maxC + minC) * 0.5;
+    float H = 0.0;
+    float S = 0.0;
+    if (delta > 0.001) {
+      S = (L < 0.5) ? (delta / (maxC + minC)) : (delta / (2.0 - maxC - minC));
+      if (maxC == color.r) {
+        H = (color.g - color.b) / delta + (color.g < color.b ? 6.0 : 0.0);
+      } else if (maxC == color.g) {
+        H = (color.b - color.r) / delta + 2.0;
+      } else {
+        H = (color.r - color.g) / delta + 4.0;
+      }
+      H *= 60.0;
+    }
+    return vec3(H, S, L);
+  }
+
+  float hue2rgb(float p, float q, float t) {
+    if (t < 0.0) t += 1.0;
+    if (t > 1.0) t -= 1.0;
+    if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
+    if (t < 0.5) return q;
+    if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
+    return p;
+  }
+
+  vec3 hsl2rgb(vec3 hsl) {
+    float h = hsl.x / 360.0;
+    float s = hsl.y;
+    float l = hsl.z;
+    if (s < 0.001) return vec3(l);
+    float q = (l < 0.5) ? (l * (1.0 + s)) : (l + s - l * s);
+    float p = 2.0 * l - q;
+    return vec3(
+      hue2rgb(p, q, h + 1.0/3.0),
+      hue2rgb(p, q, h),
+      hue2rgb(p, q, h - 1.0/3.0)
+    );
+  }
+
+  float hslChannelWeight(float hue, float centerHue) {
+    float dist = min(abs(hue - centerHue), 360.0 - abs(hue - centerHue));
+    return max(0.0, 1.0 - dist / 30.0);
+  }
+
+  vec3 applyHSLAdjustment(vec3 color) {
+    vec3 hsl = rgb2hsl(color);
+    float h = hsl.x;
+    float totalHueShift = 0.0;
+    float totalSatMult = 1.0;
+    float totalLumShift = 0.0;
+    float totalWeight = 0.0;
+    float w;
+    
+    w = hslChannelWeight(h, 0.0);
+    if (w > 0.0) { totalHueShift += u_hslRed.x * w; totalSatMult *= 1.0 + (u_hslRed.y / 100.0) * w; totalLumShift += (u_hslRed.z / 100.0) * 0.5 * w; totalWeight += w; }
+    w = hslChannelWeight(h, 30.0);
+    if (w > 0.0) { totalHueShift += u_hslOrange.x * w; totalSatMult *= 1.0 + (u_hslOrange.y / 100.0) * w; totalLumShift += (u_hslOrange.z / 100.0) * 0.5 * w; totalWeight += w; }
+    w = hslChannelWeight(h, 60.0);
+    if (w > 0.0) { totalHueShift += u_hslYellow.x * w; totalSatMult *= 1.0 + (u_hslYellow.y / 100.0) * w; totalLumShift += (u_hslYellow.z / 100.0) * 0.5 * w; totalWeight += w; }
+    w = hslChannelWeight(h, 120.0);
+    if (w > 0.0) { totalHueShift += u_hslGreen.x * w; totalSatMult *= 1.0 + (u_hslGreen.y / 100.0) * w; totalLumShift += (u_hslGreen.z / 100.0) * 0.5 * w; totalWeight += w; }
+    w = hslChannelWeight(h, 180.0);
+    if (w > 0.0) { totalHueShift += u_hslCyan.x * w; totalSatMult *= 1.0 + (u_hslCyan.y / 100.0) * w; totalLumShift += (u_hslCyan.z / 100.0) * 0.5 * w; totalWeight += w; }
+    w = hslChannelWeight(h, 240.0);
+    if (w > 0.0) { totalHueShift += u_hslBlue.x * w; totalSatMult *= 1.0 + (u_hslBlue.y / 100.0) * w; totalLumShift += (u_hslBlue.z / 100.0) * 0.5 * w; totalWeight += w; }
+    w = hslChannelWeight(h, 270.0);
+    if (w > 0.0) { totalHueShift += u_hslPurple.x * w; totalSatMult *= 1.0 + (u_hslPurple.y / 100.0) * w; totalLumShift += (u_hslPurple.z / 100.0) * 0.5 * w; totalWeight += w; }
+    w = hslChannelWeight(h, 300.0);
+    if (w > 0.0) { totalHueShift += u_hslMagenta.x * w; totalSatMult *= 1.0 + (u_hslMagenta.y / 100.0) * w; totalLumShift += (u_hslMagenta.z / 100.0) * 0.5 * w; totalWeight += w; }
+
+    if (totalWeight > 0.0) {
+      hsl.x = mod(hsl.x + totalHueShift, 360.0);
+      hsl.y = clamp(hsl.y * totalSatMult, 0.0, 1.0);
+      hsl.z = clamp(hsl.z + totalLumShift, 0.0, 1.0);
+    }
+    return hsl2rgb(hsl);
+  }
+
+  float calcLuminance(vec3 c) {
+    return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+  }
+
+  vec3 applySplitTone(vec3 color) {
+    float lum = calcLuminance(color);
+    float shadowEnd = 0.25 + u_splitBalance * 0.15;
+    float highlightStart = 0.75 + u_splitBalance * 0.15;
+    float midpoint = 0.5 + u_splitBalance * 0.15;
+    
+    float shadowWeight = smoothstep(shadowEnd + 0.1, shadowEnd - 0.1, lum);
+    float highlightWeight = smoothstep(highlightStart - 0.1, highlightStart + 0.1, lum);
+    
+    // Midtone weight: strongest in the middle zone
+    float midtoneWeight = 1.0 - smoothstep(0.0, shadowEnd + 0.1, abs(lum - midpoint));
+    midtoneWeight *= (1.0 - shadowWeight) * (1.0 - highlightWeight);
+    midtoneWeight = clamp(midtoneWeight * 2.0, 0.0, 1.0);
+    
+    vec3 highlightTint = hsl2rgb(vec3(u_splitHighlightHue * 360.0, 1.0, 0.5));
+    vec3 midtoneTint = hsl2rgb(vec3(u_splitMidtoneHue * 360.0, 1.0, 0.5));
+    vec3 shadowTint = hsl2rgb(vec3(u_splitShadowHue * 360.0, 1.0, 0.5));
+    
+    vec3 result = color;
+    if (shadowWeight > 0.0 && u_splitShadowSat > 0.0) {
+      result = mix(result, result * shadowTint / 0.5, shadowWeight * u_splitShadowSat);
+    }
+    if (midtoneWeight > 0.0 && u_splitMidtoneSat > 0.0) {
+      result = mix(result, result * midtoneTint / 0.5, midtoneWeight * u_splitMidtoneSat);
+    }
+    if (highlightWeight > 0.0 && u_splitHighlightSat > 0.0) {
+      result = mix(result, result * highlightTint / 0.5, highlightWeight * u_splitHighlightSat);
+    }
+    return clamp(result, 0.0, 1.0);
+  }
+
   // Film Curve: Apply H&D density model to transmittance
   float applyFilmCurve(float value) {
     float gamma = u_filmCurveGamma;
@@ -256,14 +585,6 @@ const FS_GL1 = `
       c.r = applyFilmCurve(c.r);
       c.g = applyFilmCurve(c.g);
       c.b = applyFilmCurve(c.b);
-    }
-    
-    if (u_inverted > 0.5) {
-      if (u_logMode > 0.5) {
-        c = vec3(1.0) - log(c * 255.0 + vec3(1.0)) / log(256.0);
-      } else {
-        c = vec3(1.0) - c;
-      }
     }
     
     if (u_inverted > 0.5) {
@@ -304,6 +625,12 @@ const FS_GL1 = `
     float g = texture2D(u_toneCurveTex, vec2(c.g, 0.5)).g;
     float b = texture2D(u_toneCurveTex, vec2(c.b, 0.5)).b;
     c = vec3(r, g, b);
+
+    // HSL Adjustment
+    c = applyHSLAdjustment(c);
+
+    // Split Toning
+    c = applySplitTone(c);
 
     gl_FragColor = vec4(c, 1.0);
   }
@@ -517,6 +844,31 @@ function runJob(job) {
       gl.uniform1f(u_filmCurveDMin, (params?.filmCurveDMin ?? 0.1));
       const u_filmCurveDMax = gl.getUniformLocation(prog, 'u_filmCurveDMax');
       gl.uniform1f(u_filmCurveDMax, (params?.filmCurveDMax ?? 3.0));
+
+      // HSL Uniforms
+      const hslParams = params?.hslParams || {};
+      const getHSL = (ch) => {
+        const data = hslParams[ch] || {};
+        return [data.hue ?? 0, data.saturation ?? 0, data.luminance ?? 0];
+      };
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslRed'), new Float32Array(getHSL('red')));
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslOrange'), new Float32Array(getHSL('orange')));
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslYellow'), new Float32Array(getHSL('yellow')));
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslGreen'), new Float32Array(getHSL('green')));
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslCyan'), new Float32Array(getHSL('cyan')));
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslBlue'), new Float32Array(getHSL('blue')));
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslPurple'), new Float32Array(getHSL('purple')));
+      gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslMagenta'), new Float32Array(getHSL('magenta')));
+
+      // Split Toning Uniforms
+      const splitToning = params?.splitToning || {};
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_splitHighlightHue'), (splitToning.highlights?.hue ?? 0) / 360.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_splitHighlightSat'), (splitToning.highlights?.saturation ?? 0) / 100.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_splitMidtoneHue'), (splitToning.midtones?.hue ?? 0) / 360.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_splitMidtoneSat'), (splitToning.midtones?.saturation ?? 0) / 100.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_splitShadowHue'), (splitToning.shadows?.hue ?? 0) / 360.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_splitShadowSat'), (splitToning.shadows?.saturation ?? 0) / 100.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_splitBalance'), (splitToning.balance ?? 0) / 100.0);
 
       // Draw
       gl.viewport(0, 0, canvas.width, canvas.height);

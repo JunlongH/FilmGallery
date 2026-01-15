@@ -202,6 +202,7 @@ export default function SplitToningPanel({
   // 当前参数
   const params = useMemo(() => ({
     highlights: splitToning?.highlights || DEFAULT_SPLIT_TONE_PARAMS.highlights,
+    midtones: splitToning?.midtones || DEFAULT_SPLIT_TONE_PARAMS.midtones,
     shadows: splitToning?.shadows || DEFAULT_SPLIT_TONE_PARAMS.shadows,
     balance: splitToning?.balance ?? DEFAULT_SPLIT_TONE_PARAMS.balance,
   }), [splitToning]);
@@ -224,6 +225,16 @@ export default function SplitToningPanel({
     });
   };
   
+  // 更新中间调参数
+  const updateMidtones = (key, value) => {
+    updateParams({
+      midtones: {
+        ...params.midtones,
+        [key]: value
+      }
+    });
+  };
+  
   // 更新阴影参数
   const updateShadows = (key, value) => {
     updateParams({
@@ -241,6 +252,7 @@ export default function SplitToningPanel({
     if (preset) {
       setSplitToning({
         highlights: { ...preset.highlights },
+        midtones: preset.midtones ? { ...preset.midtones } : { hue: 0, saturation: 0 },
         shadows: { ...preset.shadows },
         balance: preset.balance,
       });
@@ -257,6 +269,7 @@ export default function SplitToningPanel({
   // 检查是否有修改
   const hasChanges = 
     params.highlights.saturation !== 0 || 
+    params.midtones.saturation !== 0 ||
     params.shadows.saturation !== 0;
 
   if (collapsed) {
@@ -361,6 +374,24 @@ export default function SplitToningPanel({
         onSaturationChange={(v) => updateHighlights('saturation', v)}
         onMouseDown={pushToHistory}
         color="#ffcc00"
+      />
+      
+      {/* 分隔线 */}
+      <div style={{ 
+        height: 1, 
+        background: '#333', 
+        margin: '4px 0' 
+      }} />
+      
+      {/* 中间调控制 */}
+      <ToneControl
+        label="中间调"
+        hue={params.midtones.hue}
+        saturation={params.midtones.saturation}
+        onHueChange={(v) => updateMidtones('hue', v)}
+        onSaturationChange={(v) => updateMidtones('saturation', v)}
+        onMouseDown={pushToHistory}
+        color="#88dd88"
       />
       
       {/* 分隔线 */}

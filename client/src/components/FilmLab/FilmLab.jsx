@@ -5,10 +5,9 @@ import FilmLabControls from './FilmLabControls';
 import FilmLabCanvas from './FilmLabCanvas';
 import { isWebGLAvailable, processImageWebGL } from './FilmLabWebGL';
 
-// 使用统一共享模块 (via CRACO alias)
+// 使用统一渲染核心 (via CRACO alias)
 import {
-  processPixel,
-  prepareLUTs,
+  RenderCore,
   computeWBGains,
   solveTempTintFromSample,
   PREVIEW_MAX_WIDTH_SERVER,
@@ -180,6 +179,12 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     return {
       inverted, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
       curves, lut1, lut2,
+      // HSL and Split Toning params for WebGL preview (serialized for cache comparison)
+      hslParams, splitToning,
+      hslKey: JSON.stringify(hslParams),
+      splitToneKey: JSON.stringify(splitToning),
+      // Film Curve params
+      filmCurveEnabled, filmCurveProfile,
       // Include geometry params to invalidate cache when geometry changes
       rotation, orientation, isCropping,
       // Serialize committedCrop for comparison
@@ -189,6 +194,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     };
   }, [inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
       temp, tint, red, green, blue, curves, lut1, lut2,
+      hslParams, splitToning, filmCurveEnabled, filmCurveProfile,
       rotation, orientation, isCropping, committedCrop, image]);
 
   // Pre-calculate geometry for canvas sizing and crop overlay sync
@@ -512,13 +518,15 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
 
   useEffect(() => {
     if (!canvasRef.current) return;
-    // Only trigger redraw when remoteImg changes (server responded) or geometry/compare mode changes
-    // Do NOT include inverted, inversionMode, etc. - those should wait for server response
+    // Trigger redraw when:
+    // 1. remoteImg changes (server responded)
+    // 2. geometry/compare mode changes
+    // 3. webglParams changes (for instant local WebGL preview while dragging)
     if (processRafRef.current) cancelAnimationFrame(processRafRef.current);
     processRafRef.current = requestAnimationFrame(() => { processImage(); });
     return () => { if (processRafRef.current) { cancelAnimationFrame(processRafRef.current); processRafRef.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remoteImg, rotation, orientation, isCropping, isRotating]);
+  }, [remoteImg, rotation, orientation, isCropping, isRotating, webglParams]);
 
   // Render original (unprocessed) image for compare modes when geometry changes or image loads
   useEffect(() => {
@@ -813,12 +821,13 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     // console.log('[processImage] Called. remoteImg src:', remoteImg?.src?.substring(0, 50), 'inverted state:', inverted); (Commented out to reduce noise)
     
     // ========================================================================
-    // Path 1: Server Preview (fastest, skip all client processing)
+    // Path 1: Server Preview (use when params match cached server response)
     // ========================================================================
     // If we have a server-rendered preview, just paint it and compute histogram
-    // BUT: If we are cropping, we need the full raw image to draw the crop UI over, 
-    // and the remoteImg might be cropped. So ignore remoteImg while cropping.
-    if (remoteImg && !isCropping) {
+    // BUT: Skip if webglParams changed (user is dragging slider) - use local WebGL for instant feedback
+    // Also skip if cropping, as remoteImg might be cropped.
+    const paramsMatchServer = lastWebglParamsRef.current === webglParams;
+    if (remoteImg && !isCropping && paramsMatchServer) {
       canvas.width = remoteImg.naturalWidth || remoteImg.width;
       canvas.height = remoteImg.naturalHeight || remoteImg.height;
       ctx.drawImage(remoteImg, 0, 0);
@@ -906,7 +915,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
                     green: getCurveLUT(curves.green),
                     blue: getCurveLUT(curves.blue)
                  },
-                 lut3: combinedLUT
+                 lut3: combinedLUT,
+                 // HSL and Split Toning parameters
+                 hslParams,
+                 splitToning
               });
               
               processedCanvasRef.current = webglCanvas;
@@ -990,15 +1002,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         }
         // No need to putImageData, it's already on the canvas from drawImage(webglCanvas)
     } else {
-        // CPU Path: Use shared module for consistent processing
-        const allLUTs = prepareLUTs({
+        // CPU Path: 使用统一渲染核心
+        const core = new RenderCore({
           exposure, contrast, highlights, shadows, whites, blacks,
-          curves, red, green, blue, temp, tint, lut1, lut2
-        });
-        const inversionParams = { 
+          curves, red, green, blue, temp, tint, lut1, lut2,
           inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
           hslParams, splitToning
-        };
+        });
+        core.prepareLUTs();
 
         for (let y = 0; y < height; y++) {
           for (let x = 0; x < width; x++) {
@@ -1009,8 +1020,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
             const g = data[idx + 1];
             const b = data[idx + 2];
 
-            // Use shared processPixel for consistent pipeline
-            const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+            // 使用 RenderCore 进行一致的像素处理
+            const [rC, gC, bC] = core.processPixel(r, g, b);
 
             // Update Histograms only for subsampled pixels
             if ((x % stride === 0) && (y % stride === 0)) {
@@ -1070,7 +1081,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
           filmCurveEnabled, filmCurveProfile, // New film curve params
           exposure, contrast, highlights, shadows, whites, blacks, 
           temp, tint, red, green, blue, 
-          rotation, orientation, cropRect: committedCrop, curves 
+          rotation, orientation, cropRect: committedCrop, curves,
+          hslParams, splitToning // HSL and Split Toning params
         };
         const res = await filmlabPreview({ photoId, params, maxWidth: 1400 });
         
@@ -1098,7 +1110,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       } catch (e) { console.error('[Preview Request] Exception:', e); }
     }, 180);
     return () => { if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null; } };
-  }, [photoId, inverted, inversionMode, filmType, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, committedCrop, curves]);
+  }, [photoId, inverted, inversionMode, filmType, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, committedCrop, curves, hslParams, splitToning]);
 
   const renderOriginal = () => {
     if (!image || !origCanvasRef.current) return;
@@ -1307,15 +1319,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const size = lutExportSize;
     let content = `LUT_3D_SIZE ${size}\n`;
     
-    // Use shared module for consistent processing
-    const allLUTs = prepareLUTs({
+    // 使用统一渲染核心
+    const core = new RenderCore({
       exposure, contrast, highlights, shadows, whites, blacks,
-      curves, red, green, blue, temp, tint, lut1, lut2
-    });
-    const inversionParams = { 
+      curves, red, green, blue, temp, tint, lut1, lut2,
       inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
       hslParams, splitToning
-    };
+    });
+    core.prepareLUTs();
 
     for (let b = 0; b < size; b++) {
       for (let g = 0; g < size; g++) {
@@ -1325,8 +1336,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
           const gIn = (g / (size - 1)) * 255;
           const bIn = (b / (size - 1)) * 255;
           
-          // Use shared pixel processing
-          const [rC, gC, bC] = processPixel(rIn, gIn, bIn, allLUTs, inversionParams);
+          // 使用 RenderCore 进行像素处理
+          const [rC, gC, bC] = core.processPixel(rIn, gIn, bIn);
           
           // Output normalized
           content += `${(rC/255).toFixed(6)} ${(gC/255).toFixed(6)} ${(bC/255).toFixed(6)}\n`;
@@ -1399,15 +1410,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Use shared module for consistent processing
-    const allLUTs = prepareLUTs({
+    // 使用统一渲染核心
+    const core = new RenderCore({
       exposure, contrast, highlights, shadows, whites, blacks,
-      curves, red, green, blue, temp, tint, lut1, lut2
-    });
-    const inversionParams = { 
+      curves, red, green, blue, temp, tint, lut1, lut2,
       inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
       hslParams, splitToning
-    };
+    });
+    core.prepareLUTs();
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i+3] === 0) continue;
@@ -1416,7 +1426,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       const g = data[i + 1];
       const b = data[i + 2];
 
-      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+      const [rC, gC, bC] = core.processPixel(r, g, b);
 
       data[i] = rC;
       data[i + 1] = gC;
@@ -1436,7 +1446,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     try {
       const params = {
         inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
-        exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves
+        exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves,
+        hslParams, splitToning
       };
       const res = await exportPositive(photoId, params, { format: 'jpeg' }); // Always store JPEG into library
       if (res && res.ok) {
@@ -1505,7 +1516,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
         cropRect: committedCrop,
         toneCurveLut: Array.from(toneCurveLut), // Pass as array
-        lut3d: lut3d ? { size: lut3d.size, data: Array.from(lut3d.data) } : null
+        lut3d: lut3d ? { size: lut3d.size, data: Array.from(lut3d.data) } : null,
+        hslParams, splitToning
       };
       
       const res = await window.__electron.filmlabGpuProcess({ params, photoId, imageUrl });
@@ -1645,7 +1657,10 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
             green: getCurveLUT(curves.green),
             blue: getCurveLUT(curves.blue)
           },
-          lut3: combinedLUT
+          lut3: combinedLUT,
+          // HSL and Split Toning parameters
+          hslParams,
+          splitToning
         });
         // Apply rotation + crop on CPU from GPU result
         const canvas = document.createElement('canvas');
@@ -1725,15 +1740,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
 
-    // Use shared module for consistent processing
-    const allLUTs = prepareLUTs({
+    // 使用统一渲染核心
+    const core = new RenderCore({
       exposure, contrast, highlights, shadows, whites, blacks,
-      curves, red, green, blue, temp, tint, lut1, lut2
-    });
-    const inversionParams = { 
+      curves, red, green, blue, temp, tint, lut1, lut2,
       inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
       hslParams, splitToning
-    };
+    });
+    core.prepareLUTs();
 
     for (let i = 0; i < data.length; i += 4) {
       if (data[i+3] === 0) continue;
@@ -1742,7 +1756,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       const g = data[i + 1];
       const b = data[i + 2];
 
-      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+      const [rC, gC, bC] = core.processPixel(r, g, b);
 
       data[i] = rC;
       data[i + 1] = gC;

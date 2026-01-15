@@ -22,8 +22,9 @@ function isDefaultHSLParams(hslParams) {
 function isDefaultSplitToneParams(splitToning) {
   if (!splitToning) return true;
   const highlightSat = splitToning.highlights?.saturation ?? 0;
+  const midtoneSat = splitToning.midtones?.saturation ?? 0;
   const shadowSat = splitToning.shadows?.saturation ?? 0;
-  return highlightSat === 0 && shadowSat === 0;
+  return highlightSat === 0 && midtoneSat === 0 && shadowSat === 0;
 }
 
 function createShader(gl, type, source) {
@@ -192,6 +193,8 @@ export function processImageWebGL(canvas, image, params = {}) {
     uniform int u_useSplitTone;
     uniform float u_highlightHue;
     uniform float u_highlightSat;
+    uniform float u_midtoneHue;
+    uniform float u_midtoneSat;
     uniform float u_shadowHue;
     uniform float u_shadowSat;
     uniform float u_splitBalance;
@@ -361,16 +364,23 @@ export function processImageWebGL(canvas, image, params = {}) {
     vec3 applySplitToning(vec3 color) {
       float lum = calcLuminance(color);
       
-      // Calculate shadow and highlight weights with balance
+      // Calculate zone boundaries with balance
       float shadowEnd = 0.25 + u_splitBalance * 0.15;
       float highlightStart = 0.75 + u_splitBalance * 0.15;
+      float midpoint = 0.5 + u_splitBalance * 0.15;
       
       // Smooth transitions
       float shadowWeight = 1.0 - smoothstep(shadowEnd - 0.15, shadowEnd + 0.15, lum);
       float highlightWeight = smoothstep(highlightStart - 0.15, highlightStart + 0.15, lum);
       
+      // Midtone weight: strongest in the middle zone, fading to shadow/highlight zones
+      float midtoneWeight = 1.0 - smoothstep(0.0, shadowEnd + 0.1, abs(lum - midpoint));
+      midtoneWeight *= (1.0 - shadowWeight) * (1.0 - highlightWeight);
+      midtoneWeight = clamp(midtoneWeight * 2.0, 0.0, 1.0);
+      
       // Convert hue to RGB tint (hue is already 0-1)
       vec3 highlightTint = hsl2rgb(vec3(u_highlightHue * 360.0, 1.0, 0.5));
+      vec3 midtoneTint = hsl2rgb(vec3(u_midtoneHue * 360.0, 1.0, 0.5));
       vec3 shadowTint = hsl2rgb(vec3(u_shadowHue * 360.0, 1.0, 0.5));
       
       vec3 result = color;
@@ -379,6 +389,12 @@ export function processImageWebGL(canvas, image, params = {}) {
       if (shadowWeight > 0.0 && u_shadowSat > 0.0) {
         vec3 tinted = result * shadowTint * 2.0; // *2 to normalize since tint is at L=0.5
         result = mix(result, tinted, shadowWeight * u_shadowSat);
+      }
+      
+      // Apply midtone tint
+      if (midtoneWeight > 0.0 && u_midtoneSat > 0.0) {
+        vec3 tinted = result * midtoneTint * 2.0;
+        result = mix(result, tinted, midtoneWeight * u_midtoneSat);
       }
       
       // Apply highlight tint
@@ -676,6 +692,8 @@ export function processImageWebGL(canvas, image, params = {}) {
     locs.u_useSplitTone = gl.getUniformLocation(program, 'u_useSplitTone');
     locs.u_highlightHue = gl.getUniformLocation(program, 'u_highlightHue');
     locs.u_highlightSat = gl.getUniformLocation(program, 'u_highlightSat');
+    locs.u_midtoneHue = gl.getUniformLocation(program, 'u_midtoneHue');
+    locs.u_midtoneSat = gl.getUniformLocation(program, 'u_midtoneSat');
     locs.u_shadowHue = gl.getUniformLocation(program, 'u_shadowHue');
     locs.u_shadowSat = gl.getUniformLocation(program, 'u_shadowSat');
     locs.u_splitBalance = gl.getUniformLocation(program, 'u_splitBalance');
@@ -849,6 +867,8 @@ export function processImageWebGL(canvas, image, params = {}) {
     gl.uniform1i(locs.u_useSplitTone, 1);
     gl.uniform1f(locs.u_highlightHue, (splitToning.highlights?.hue ?? 30) / 360.0);
     gl.uniform1f(locs.u_highlightSat, (splitToning.highlights?.saturation ?? 0) / 100.0);
+    gl.uniform1f(locs.u_midtoneHue, (splitToning.midtones?.hue ?? 0) / 360.0);
+    gl.uniform1f(locs.u_midtoneSat, (splitToning.midtones?.saturation ?? 0) / 100.0);
     gl.uniform1f(locs.u_shadowHue, (splitToning.shadows?.hue ?? 220) / 360.0);
     gl.uniform1f(locs.u_shadowSat, (splitToning.shadows?.saturation ?? 0) / 100.0);
     gl.uniform1f(locs.u_splitBalance, (splitToning.balance ?? 0) / 100.0);

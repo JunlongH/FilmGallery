@@ -8,11 +8,9 @@ sharp.cache(false);
 const { uploadsDir } = require('../config/paths');
 const { buildPipeline } = require('../services/filmlab-service');
 
-// 使用共享模块确保客户端/服务端一致性
+// 使用统一渲染核心
 const {
-  prepareLUTs,
-  processPixel,
-  computeWBGains,
+  RenderCore,
   EXPORT_MAX_WIDTH,
   PREVIEW_MAX_WIDTH_SERVER
 } = require('../../packages/shared');
@@ -47,42 +45,17 @@ router.post('/preview', async (req, res) => {
     const channels = info.channels; // expect 3
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    // Use shared module for consistent processing (supports 3D LUTs)
-    const allLUTs = prepareLUTs({
-      exposure: params?.exposure || 0,
-      contrast: params?.contrast || 0,
-      highlights: params?.highlights || 0,
-      shadows: params?.shadows || 0,
-      whites: params?.whites || 0,
-      blacks: params?.blacks || 0,
-      curves: params?.curves,
-      red: params?.red ?? 1.0,
-      green: params?.green ?? 1.0,
-      blue: params?.blue ?? 1.0,
-      temp: params?.temp || 0,
-      tint: params?.tint || 0,
-      lut1: params?.lut1 || null,
-      lut2: params?.lut2 || null
-    });
-    const inversionParams = { 
-      inverted: params?.inverted || false, 
-      inversionMode: params?.inversionMode || 'linear',
-      filmType: params?.filmType || 'default',
-      // Film Curve params (independent of inversion)
-      filmCurveEnabled: params?.filmCurveEnabled || false,
-      filmCurveProfile: params?.filmCurveProfile || 'default',
-      filmCurveGamma: params?.filmCurveGamma,
-      filmCurveDMin: params?.filmCurveDMin,
-      filmCurveDMax: params?.filmCurveDMax
-    };
+    // 使用统一渲染核心
+    const core = new RenderCore(params || {});
+    core.prepareLUTs();
 
-    // Process pixels using shared module
+    // Process pixels using RenderCore
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
 
-      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+      const [rC, gC, bC] = core.processPixel(r, g, b);
 
       out[j] = rC;
       out[j + 1] = gC;
@@ -133,42 +106,17 @@ router.post('/render', async (req, res) => {
     const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    // Use shared module for consistent processing
-    const allLUTs = prepareLUTs({
-      exposure: params?.exposure || 0,
-      contrast: params?.contrast || 0,
-      highlights: params?.highlights || 0,
-      shadows: params?.shadows || 0,
-      whites: params?.whites || 0,
-      blacks: params?.blacks || 0,
-      curves: params?.curves,
-      red: params?.red ?? 1.0,
-      green: params?.green ?? 1.0,
-      blue: params?.blue ?? 1.0,
-      temp: params?.temp || 0,
-      tint: params?.tint || 0,
-      lut1: params?.lut1 || null,
-      lut2: params?.lut2 || null
-    });
-    const inversionParams = { 
-      inverted: params?.inverted || false, 
-      inversionMode: params?.inversionMode || 'linear',
-      filmType: params?.filmType || 'default',
-      // Film Curve params (independent of inversion)
-      filmCurveEnabled: params?.filmCurveEnabled || false,
-      filmCurveProfile: params?.filmCurveProfile || 'default',
-      filmCurveGamma: params?.filmCurveGamma,
-      filmCurveDMin: params?.filmCurveDMin,
-      filmCurveDMax: params?.filmCurveDMax
-    };
+    // 使用统一渲染核心
+    const core = new RenderCore(params || {});
+    core.prepareLUTs();
 
-    // Process pixels using shared module
+    // Process pixels using RenderCore
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
 
-      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+      const [rC, gC, bC] = core.processPixel(r, g, b);
 
       out[j] = rC;
       out[j + 1] = gC;
@@ -241,42 +189,17 @@ router.post('/export', async (req, res) => {
     const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    // Use shared module for consistent processing
-    const allLUTs = prepareLUTs({
-      exposure: params?.exposure || 0,
-      contrast: params?.contrast || 0,
-      highlights: params?.highlights || 0,
-      shadows: params?.shadows || 0,
-      whites: params?.whites || 0,
-      blacks: params?.blacks || 0,
-      curves: params?.curves,
-      red: params?.red ?? 1.0,
-      green: params?.green ?? 1.0,
-      blue: params?.blue ?? 1.0,
-      temp: params?.temp || 0,
-      tint: params?.tint || 0,
-      lut1: params?.lut1 || null,
-      lut2: params?.lut2 || null
-    });
-    const inversionParams = { 
-      inverted: params?.inverted || false, 
-      inversionMode: params?.inversionMode || 'linear',
-      filmType: params?.filmType || 'default',
-      // Film Curve params (independent of inversion)
-      filmCurveEnabled: params?.filmCurveEnabled || false,
-      filmCurveProfile: params?.filmCurveProfile || 'default',
-      filmCurveGamma: params?.filmCurveGamma,
-      filmCurveDMin: params?.filmCurveDMin,
-      filmCurveDMax: params?.filmCurveDMax
-    };
+    // 使用统一渲染核心
+    const core = new RenderCore(params || {});
+    core.prepareLUTs();
 
-    // Process pixels using shared module
+    // Process pixels using RenderCore
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
 
-      const [rC, gC, bC] = processPixel(r, g, b, allLUTs, inversionParams);
+      const [rC, gC, bC] = core.processPixel(r, g, b);
 
       out[j] = rC;
       out[j + 1] = gC;

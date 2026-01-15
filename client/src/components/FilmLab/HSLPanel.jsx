@@ -22,14 +22,14 @@ const CHANNEL_COLORS = {
 
 // 通道名称翻译
 const CHANNEL_NAMES = {
-  red:     '红色',
-  orange:  '橙色',
-  yellow:  '黄色',
-  green:   '绿色',
-  cyan:    '青色',
-  blue:    '蓝色',
-  purple:  '紫色',
-  magenta: '品红',
+  red:     'Red',
+  orange:  'Orange',
+  yellow:  'Yellow',
+  green:   'Green',
+  cyan:    'Cyan',
+  blue:    'Blue',
+  purple:  'Purple',
+  magenta: 'Magenta',
 };
 
 /**
@@ -71,7 +71,7 @@ function ChannelSliders({ channel, params, onChange, onMouseDown }) {
       {/* 三个滑块 */}
       <div style={{ paddingLeft: 4 }}>
         <HSLSlider
-          label="色相"
+          label="Hue"
           value={channelParams.hue}
           min={-180}
           max={180}
@@ -80,7 +80,7 @@ function ChannelSliders({ channel, params, onChange, onMouseDown }) {
           suffix="°"
         />
         <HSLSlider
-          label="饱和度"
+          label="Saturation"
           value={channelParams.saturation}
           min={-100}
           max={100}
@@ -88,7 +88,7 @@ function ChannelSliders({ channel, params, onChange, onMouseDown }) {
           onMouseDown={onMouseDown}
         />
         <HSLSlider
-          label="明度"
+          label="Luminance"
           value={channelParams.luminance}
           min={-100}
           max={100}
@@ -209,7 +209,7 @@ export default function HSLPanel({
           <button
             className="iv-btn-icon"
             onClick={() => setViewMode(viewMode === 'compact' ? 'expanded' : 'compact')}
-            title={viewMode === 'compact' ? '展开所有' : '紧凑模式'}
+            title={viewMode === 'compact' ? 'Expand All' : 'Compact Mode'}
             style={{ fontSize: 10, padding: '2px 6px' }}
           >
             {viewMode === 'compact' ? '⊞' : '⊟'}
@@ -219,7 +219,7 @@ export default function HSLPanel({
             <button
               className="iv-btn-icon"
               onClick={handleReset}
-              title="重置所有 HSL"
+              title="Reset All HSL"
               style={{ fontSize: 10, padding: '2px 6px', color: '#f88' }}
             >
               ↺
