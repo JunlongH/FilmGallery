@@ -16,6 +16,7 @@ const filmCurve = require('./filmLabCurve');
 const hsl = require('./filmLabHSL');
 const exportParams = require('./filmLabExport');
 const splitTone = require('./filmLabSplitTone');
+const render = require('./render');
 
 // 统一导出
 module.exports = {
@@ -244,4 +245,14 @@ module.exports = {
   
   /** 计算亮度 */
   calculateLuminance: splitTone.calculateLuminance,
+  
+  // ============================================================================
+  // 统一渲染核心
+  // ============================================================================
+  
+  /** 统一渲染核心类 */
+  RenderCore: render.RenderCore,
+  
+  /** 默认 Film Curve 参数 */
+  DEFAULT_FILM_CURVE: render.DEFAULT_FILM_CURVE,
 };

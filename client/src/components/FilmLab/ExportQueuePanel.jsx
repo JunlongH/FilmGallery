@@ -422,7 +422,8 @@ export default function ExportQueuePanel({
 export function useExportQueue(apiBase = '') {
   const [jobs, setJobs] = useState([]);
   const [visible, setVisible] = useState(false);
-  const wsRef = useRef(null);
+  // eslint-disable-next-line no-unused-vars
+  const wsRef = useRef(null); // Reserved for WebSocket real-time updates
   
   // 获取任务列表
   const fetchJobs = useCallback(async () => {
