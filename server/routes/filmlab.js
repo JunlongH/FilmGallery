@@ -8,13 +8,18 @@ sharp.cache(false);
 const { uploadsDir } = require('../config/paths');
 const { buildPipeline } = require('../services/filmlab-service');
 
-// 使用统一渲染核心
+// 使用统一渲染核心和源路径解析器
 const {
   RenderCore,
   EXPORT_MAX_WIDTH,
   PREVIEW_MAX_WIDTH_SERVER,
   getEffectiveInverted
 } = require('../../packages/shared');
+
+const { 
+  getStrictSourcePath, 
+  SOURCE_TYPE 
+} = require('../../packages/shared/sourcePathResolver');
 
 // POST /api/filmlab/preview
 // Body: { photoId, params, maxWidth, sourceType }
@@ -27,21 +32,29 @@ router.post('/preview', async (req, res) => {
     });
     if (!row) return res.status(404).json({ error: 'photo not found' });
     
-    // 根据 sourceType 选择源文件
-    let relSource;
-    switch (sourceType) {
-      case 'positive':
-        relSource = row.positive_rel_path || row.original_rel_path || row.full_rel_path || row.negative_rel_path;
-        break;
-      case 'negative':
-        relSource = row.negative_rel_path || row.original_rel_path || row.full_rel_path || row.positive_rel_path;
-        break;
-      case 'original':
-      default:
-        relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
-        break;
+    // 【重要】使用严格源路径选择，不允许跨类型回退
+    const sourceResult = getStrictSourcePath(row, sourceType || 'original', {
+      allowFallbackWithinType: true,
+      allowCrossTypeFallback: false  // 绝不允许正片模式回退到负片
+    });
+    
+    if (!sourceResult.path) {
+      // 如果正片模式但无正片文件，返回明确错误
+      return res.status(400).json({ 
+        error: 'source_type_unavailable',
+        message: sourceResult.warning || `No ${sourceType} file available for this photo`,
+        sourceType,
+        photoId
+      });
     }
-    if (!relSource) return res.status(400).json({ error: 'no usable source path' });
+    
+    const relSource = sourceResult.path;
+    
+    // 记录警告（如有）
+    if (sourceResult.warning) {
+      console.log(`[FilmLab Preview] Photo ${photoId}: ${sourceResult.warning}`);
+    }
+    
     const abs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 

@@ -115,19 +115,57 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
 
   const imgUrl = buildUploadUrl(rawCandidate) + `?t=${Date.now()}`;
 
-  // 根据 filmLabSourceType 选择源路径
+  /**
+   * 严格源路径选择 - 不允许跨类型回退
+   * 
+   * 核心原则：
+   * 1. positive 模式必须使用 positive_rel_path，无则返回 null
+   * 2. negative/original 模式可在同类型内回退
+   * 3. 绝不允许 positive 模式加载 negative 文件（这是 bug 根源）
+   * 
+   * @returns {{ path: string|null, valid: boolean, warning: string|null }}
+   */
   const getSourcePathForFilmLab = () => {
     switch (filmLabSourceType) {
       case 'positive':
-        // 优先使用已渲染的正片
-        return img.positive_rel_path || img.full_rel_path || img.negative_rel_path || img.original_rel_path;
+        // 【严格】正片模式必须有正片文件，不允许回退
+        if (img.positive_rel_path) {
+          return { path: img.positive_rel_path, valid: true, warning: null };
+        }
+        // 无正片文件时返回 null，UI 应阻止此操作
+        console.warn('[ImageViewer] Positive mode but no positive_rel_path available for photo:', img.id);
+        return { 
+          path: null, 
+          valid: false, 
+          warning: '此照片没有正片文件，请先使用负片模式生成正片' 
+        };
+        
       case 'negative':
-        // 优先使用负片
-        return img.negative_rel_path || img.original_rel_path || img.full_rel_path || img.positive_rel_path;
+        // 负片模式：可回退到 original 或 legacy full_rel_path
+        if (img.negative_rel_path) {
+          return { path: img.negative_rel_path, valid: true, warning: null };
+        }
+        if (img.original_rel_path) {
+          return { path: img.original_rel_path, valid: true, warning: '使用原始文件作为负片源' };
+        }
+        if (img.full_rel_path) {
+          return { path: img.full_rel_path, valid: true, warning: '使用旧版文件路径' };
+        }
+        return { path: null, valid: false, warning: '无可用的负片/原始文件' };
+        
       case 'original':
       default:
-        // 优先使用原始上传（TIFF/Raw）
-        return img.original_rel_path || img.negative_rel_path || img.full_rel_path || img.positive_rel_path;
+        // 原始模式：可回退到 negative 或 legacy full_rel_path
+        if (img.original_rel_path) {
+          return { path: img.original_rel_path, valid: true, warning: null };
+        }
+        if (img.negative_rel_path) {
+          return { path: img.negative_rel_path, valid: true, warning: '使用负片文件作为源' };
+        }
+        if (img.full_rel_path) {
+          return { path: img.full_rel_path, valid: true, warning: '使用旧版文件路径' };
+        }
+        return { path: null, valid: false, warning: '无可用的源文件' };
     }
   };
 
@@ -159,13 +197,33 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   };
 
   if (showInverter) {
-    // 使用选定的源类型
-    const sourcePath = getSourcePathForFilmLab();
+    // 使用选定的源类型（获取严格匹配的源路径）
+    const sourceResult = getSourcePathForFilmLab();
+    
+    // 如果源类型无效（正片模式但无正片文件），显示警告并阻止
+    if (!sourceResult.valid) {
+      return (
+        <>
+          <ModalDialog 
+            isOpen={true} 
+            type="alert" 
+            title="无法打开 FilmLab" 
+            message={sourceResult.warning || '所选源类型不可用'}
+            onConfirm={() => { setShowInverter(false); }}
+          />
+        </>
+      );
+    }
 
     // 添加时间戳防止缓存问题，并在 photoId 变化时强制重新加载
-    const targetUrl = sourcePath 
-        ? buildUploadUrl(`/uploads/${sourcePath}`) + `?t=${Date.now()}&photoId=${img.id}`
+    const targetUrl = sourceResult.path 
+        ? buildUploadUrl(`/uploads/${sourceResult.path}`) + `?t=${Date.now()}&photoId=${img.id}`
         : imgUrl;
+    
+    // 如果有警告但仍然有效，在控制台记录
+    if (sourceResult.warning) {
+      console.log('[ImageViewer] Source selection warning:', sourceResult.warning);
+    }
 
     return (
       <>

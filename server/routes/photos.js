@@ -18,6 +18,9 @@ const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../../packages/shared/f
 // 使用统一渲染核心
 const { RenderCore, getEffectiveInverted } = require('../../packages/shared');
 
+// 使用统一源路径解析器
+const { getStrictSourcePath, SOURCE_TYPE } = require('../../packages/shared/sourcePathResolver');
+
 // Helpers for tone and curves (mirror preview implementation)
 function buildToneLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 }) {
   const lut = new Uint8Array(256);
@@ -615,32 +618,29 @@ router.post('/:id/export-positive', async (req, res) => {
     const row = await getAsync('SELECT id, roll_id, frame_number, original_rel_path, negative_rel_path, positive_rel_path, full_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Photo not found' });
     
-    // 根据 sourceType 选择源文件
-    let relSource;
-    switch (sourceType) {
-      case 'positive':
-        // 使用已渲染的正片
-        relSource = row.positive_rel_path || row.full_rel_path;
-        if (!relSource) {
-          return res.status(400).json({ error: 'No positive image available for editing' });
-        }
-        break;
-      case 'negative':
-        // 使用负片
-        relSource = row.negative_rel_path || row.full_rel_path || row.original_rel_path;
-        break;
-      case 'original':
-      default:
-        // 使用原始上传文件（默认）
-        relSource = row.original_rel_path || row.negative_rel_path || row.full_rel_path || row.positive_rel_path;
-        break;
+    // 【重要】使用严格源路径选择，不允许跨类型回退
+    const sourceResult = getStrictSourcePath(row, sourceType, {
+      allowFallbackWithinType: true,
+      allowCrossTypeFallback: false  // 绝不允许正片模式回退到负片
+    });
+    
+    if (!sourceResult.path) {
+      return res.status(400).json({ 
+        error: 'source_type_unavailable',
+        message: sourceResult.warning || `No ${sourceType} file available for this photo`,
+        sourceType,
+        photoId: id
+      });
     }
     
-    console.log(`[EXPORT-POSITIVE] Using sourceType: ${sourceType}, source: ${relSource}`);
+    const relSource = sourceResult.path;
     
-    if (!relSource) {
-      return res.status(400).json({ error: 'No usable image source for export (missing original/positive/full/negative paths)' });
+    // 记录警告（如有）
+    if (sourceResult.warning) {
+      console.log(`[EXPORT-POSITIVE] Photo ${id}: ${sourceResult.warning}`);
     }
+    
+    console.log(`[EXPORT-POSITIVE] Using sourceType: ${sourceType}, actualType: ${sourceResult.actualType}, source: ${relSource}`);
     let sourceAbs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(sourceAbs)) {
       return res.status(404).json({ error: 'Source file missing on disk: ' + relSource });
@@ -842,22 +842,24 @@ router.post('/:id/render-positive', async (req, res) => {
     const row = await getAsync('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Photo not found' });
     
-    // 根据 sourceType 选择源文件
-    let relSource;
-    switch (sourceType) {
-      case 'positive':
-        relSource = row.positive_rel_path || row.full_rel_path;
-        break;
-      case 'negative':
-        relSource = row.negative_rel_path || row.original_rel_path || row.full_rel_path;
-        break;
-      case 'original':
-      default:
-        relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
-        break;
+    // 【重要】使用严格源路径选择，不允许跨类型回退
+    const sourceResult = getStrictSourcePath(row, sourceType, {
+      allowFallbackWithinType: true,
+      allowCrossTypeFallback: false
+    });
+    
+    if (!sourceResult.path) {
+      return res.status(400).json({ 
+        error: 'source_type_unavailable',
+        message: sourceResult.warning || `No ${sourceType} file available`,
+        sourceType,
+        photoId: id
+      });
     }
     
-    if (!relSource) return res.status(400).json({ error: 'No usable source for render-positive' });
+    const relSource = sourceResult.path;
+    console.log(`[RENDER-POSITIVE] Photo ${id}: sourceType=${sourceType}, actual=${sourceResult.actualType}`);
+    
     const sourceAbs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(sourceAbs)) return res.status(404).json({ error: 'Source file missing on disk' });
 

@@ -337,6 +337,17 @@ const FS_GL2 = `#version 300 es
       }
     }
 
+    // =========================================================================
+    // 【重要】3D LUT - 在反转后立即应用
+    // 对于"反转 LUT"类型，LUT 必须在此处应用才能正确工作
+    // 之后的曝光/对比度等调整将作用于 LUT 输出
+    // =========================================================================
+    if (u_hasLut3d > 0.5) {
+       float size = u_lut3dSize;
+       vec3 uvw = c * (size - 1.0) / size + 0.5 / size;
+       c = texture(u_lut3d, uvw).rgb;
+    }
+
     // WB gains
     c *= u_gains;
 
@@ -380,12 +391,8 @@ const FS_GL2 = `#version 300 es
     // Split Toning
     c = applySplitTone(c);
 
-    // 3D LUT
-    if (u_hasLut3d > 0.5) {
-       float size = u_lut3dSize;
-       vec3 uvw = c * (size - 1.0) / size + 0.5 / size;
-       c = texture(u_lut3d, uvw).rgb;
-    }
+    // 【注意】3D LUT 已移动到反转后立即应用（见上方）
+    // 保留此注释以便追溯
 
     fragColor = vec4(c, 1.0);
   }

@@ -18,6 +18,7 @@ const exportParams = require('./filmLabExport');
 const splitTone = require('./filmLabSplitTone');
 const render = require('./render');
 const helpers = require('./filmLabHelpers');
+const sourcePathResolver = require('./sourcePathResolver');
 
 // 统一导出
 module.exports = {
@@ -287,4 +288,23 @@ module.exports = {
   
   /** 获取 LUT 3D 采样的 GLSL 代码 */
   getLUT3DSamplingGLSL: helpers.getLUT3DSamplingGLSL,
+  
+  // ============================================================================
+  // 源路径解析器 (统一管理图片文件路径选择)
+  // ============================================================================
+  
+  /** 源类型枚举 */
+  SOURCE_TYPE: sourcePathResolver.SOURCE_TYPE,
+  
+  /** 获取严格匹配的源文件路径 */
+  getStrictSourcePath: sourcePathResolver.getStrictSourcePath,
+  
+  /** 验证源类型与加载文件是否匹配 */
+  validateSourceMatch: sourcePathResolver.validateSourceMatch,
+  
+  /** 检查照片是否可以使用指定的源类型 */
+  canUseSourceType: sourcePathResolver.canUseSourceType,
+  
+  /** 获取照片可用的所有源类型 */
+  getAvailableSourceTypes: sourcePathResolver.getAvailableSourceTypes,
 };
