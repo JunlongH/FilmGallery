@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import LutLibrary from './Settings/LutLibrary';
 
 export default function Settings() {
   const [config, setConfig] = useState({});
   const [saving, setSaving] = useState(false);
   const [savingWriteThrough, setSavingWriteThrough] = useState(false);
   const [actualPaths, setActualPaths] = useState(null);
+  const [activeTab, setActiveTab] = useState('general'); // 'general' | 'luts'
 
   const isElectron = !!window.__electron;
   const canPickDirs = !!window.__electron?.pickDataRoot && !!window.__electron?.setDataRoot;
@@ -94,8 +96,52 @@ export default function Settings() {
   return (
     <div>
       <h2>Settings</h2>
+      
+      {/* Tab Navigation */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '1px solid #ddd' }}>
+        <button
+          onClick={() => setActiveTab('general')}
+          style={{
+            padding: '10px 20px',
+            border: 'none',
+            background: activeTab === 'general' ? '#fff' : 'transparent',
+            borderBottom: activeTab === 'general' ? '2px solid #5a4632' : '2px solid transparent',
+            color: activeTab === 'general' ? '#5a4632' : '#888',
+            fontWeight: activeTab === 'general' ? 600 : 400,
+            cursor: 'pointer',
+            fontSize: 14
+          }}
+        >
+          通用设置
+        </button>
+        <button
+          onClick={() => setActiveTab('luts')}
+          style={{
+            padding: '10px 20px',
+            border: 'none',
+            background: activeTab === 'luts' ? '#fff' : 'transparent',
+            borderBottom: activeTab === 'luts' ? '2px solid #5a4632' : '2px solid transparent',
+            color: activeTab === 'luts' ? '#5a4632' : '#888',
+            fontWeight: activeTab === 'luts' ? 600 : 400,
+            cursor: 'pointer',
+            fontSize: 14
+          }}
+        >
+          LUT 库管理
+        </button>
+      </div>
 
-      {!isElectron && (
+      {/* LUT Library Tab */}
+      {activeTab === 'luts' && (
+        <div style={{ margin: -16 }}>
+          <LutLibrary />
+        </div>
+      )}
+
+      {/* General Settings Tab */}
+      {activeTab === 'general' && (
+        <>
+          {!isElectron && (
         <div className="card" style={{ padding: 16, marginBottom: 16, color: '#555' }}>
           Storage path settings are only available in the Electron desktop app.
         </div>
@@ -157,6 +203,8 @@ export default function Settings() {
           Changes apply immediately to the local server. Existing files are not moved automatically.
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }

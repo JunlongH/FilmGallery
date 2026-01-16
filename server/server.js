@@ -146,6 +146,11 @@ const mountRoutes = () => {
   app.use('/api/conflicts', require('./routes/conflicts'));
   app.use('/api/health', require('./routes/health'));
   app.use('/api/export', require('./routes/export')); // Batch export queue
+  app.use('/api/batch-render', require('./routes/batch-render')); // Batch render
+  app.use('/api/batch-download', require('./routes/batch-download')); // Batch download
+  app.use('/api/export-history', require('./routes/export-history')); // Export history
+  app.use('/api/import', require('./routes/import')); // External positive import
+  app.use('/api/luts', require('./routes/luts')); // LUT file management
   app.get('/api/_profiler', (req, res) => res.json(getProfilerStats()));
   app.get('/api/_prepared-statements', (req, res) => res.json(PreparedStmt.getStats()));
 };

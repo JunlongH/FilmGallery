@@ -3,6 +3,7 @@ import { setRollPreset, listPresets, createPreset, updatePreset, deletePreset as
 import { getCurveLUT, parseCubeLUT, getMaxSafeRect, getPresetRatio, getExifOrientation } from './utils';
 import FilmLabControls from './FilmLabControls';
 import FilmLabCanvas from './FilmLabCanvas';
+import PhotoSwitcher from './PhotoSwitcher';
 import { isWebGLAvailable, processImageWebGL } from './FilmLabWebGL';
 
 // 使用统一渲染核心 (via CRACO alias)
@@ -15,6 +16,9 @@ import {
   EXPORT_MAX_WIDTH,
   DEFAULT_HSL_PARAMS,
   DEFAULT_SPLIT_TONE_PARAMS,
+  getEffectiveInverted,
+  buildCombinedLUT,
+  packLUT3DForWebGL,
 } from '@filmgallery/shared';
 
 // ============================================================================
@@ -26,50 +30,27 @@ import {
 
 // Calculate the maximum inscribed rectangle (no black corners) after rotation
 
+// buildCombinedLUT 和 packLUT3DForWebGL 现在从 shared 模块导入
 
-
-
-
-
-const buildCombinedLUT = (a, b) => {
-  const base = a || b;
-  if (!base) return null;
-  const size = base.size;
-  const total = size * size * size;
-  const out = new Float32Array(total * 3);
-  const aData = a ? a.data : null; const aInt = a ? a.intensity : 0;
-  const bData = b ? b.data : null; const bInt = b ? b.intensity : 0;
-  for (let i = 0, j = 0; i < total; i++, j += 3) {
-    // Original color before LUT (identity grid)
-    // Reconstruct original normalized RGB from index
-    const rIdx = i % size;
-    const gIdx = Math.floor(i / size) % size;
-    const bIdx = Math.floor(i / (size * size));
-    const r0 = rIdx / (size - 1);
-    const g0 = gIdx / (size - 1);
-    const b0 = bIdx / (size - 1);
-    let r = r0, g = g0, b_ = b0;
-    if (aData && aInt > 0) {
-      const ar = aData[j]; const ag = aData[j+1]; const ab = aData[j+2];
-      r = r * (1 - aInt) + ar * aInt;
-      g = g * (1 - aInt) + ag * aInt;
-      b_ = b_ * (1 - aInt) + ab * aInt;
-    }
-    if (bData && bInt > 0) {
-      const br = bData[j]; const bg = bData[j+1]; const bb = bData[j+2];
-      r = r * (1 - bInt) + br * bInt;
-      g = g * (1 - bInt) + bg * bInt;
-      b_ = b_ * (1 - bInt) + bb * bInt;
-    }
-    out[j] = r; out[j+1] = g; out[j+2] = b_;
-  }
-  return { size, data: out };
-};
-
-export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, onPhotoUpdate }) {
+export default function FilmLab({ 
+  imageUrl, 
+  onClose, 
+  onSave, 
+  rollId, 
+  photoId, 
+  onPhotoUpdate,
+  sourceType = 'original', // 'original' | 'negative' | 'positive' - 当前编辑的源类型
+  // PhotoSwitcher 相关 props（可选）
+  photos = null,           // 当前卷的所有照片
+  onPhotoChange = null,    // 切换照片回调
+  showPhotoSwitcher = false // 是否显示 PhotoSwitcher
+}) {
   const canvasRef = useRef(null);
   const origCanvasRef = useRef(null); // Original (unprocessed) canvas for compare mode
   const [image, setImage] = useState(null);
+  
+  // PhotoSwitcher 状态
+  const [photoSwitcherCollapsed, setPhotoSwitcherCollapsed] = useState(true);
   
   // Parameters
   const [inverted, setInverted] = useState(false); // Default to false as requested
@@ -172,12 +153,29 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
   const processedCanvasRef = useRef(null);
   const lastWebglParamsRef = useRef(null);
 
+  // 当 sourceType 变化时，清除 WebGL 缓存以避免显示旧的渲染结果
+  // 这是修复"正片模式下先显示正片然后跳到负片"问题的关键
+  useEffect(() => {
+    processedCanvasRef.current = null;
+    lastWebglParamsRef.current = null;
+    // 同时清除远程预览缓存
+    setRemoteImg(null);
+    
+    // 关键修复：当切换到正片模式时，强制将 inverted 状态设为 false
+    // 这确保 UI 状态与有效反转状态同步，避免状态不一致导致的闪烁
+    if (sourceType === 'positive') {
+      setInverted(false);
+    }
+  }, [sourceType]);
+
   const webglParams = React.useMemo(() => {
     const gains = computeWBGains({ red, green, blue, temp, tint });
     // compute preview-scale consistent with geometry (preview max width)
     const scale = image && image.width ? Math.min(1, PREVIEW_MAX_WIDTH_CLIENT / image.width) : 1;
+    // 使用统一的 getEffectiveInverted 函数计算有效反转状态
+    const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
     return {
-      inverted, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
+      inverted: effectiveInvertedValue, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
       curves, lut1, lut2,
       // HSL and Split Toning params for WebGL preview (serialized for cache comparison)
       hslParams, splitToning,
@@ -190,12 +188,41 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       // Serialize committedCrop for comparison
       cropKey: `${committedCrop.x},${committedCrop.y},${committedCrop.w},${committedCrop.h}`,
       // include scale so WebGL output matches geometry.rotatedW used by overlay
-      scale
+      scale,
+      // Include sourceType to invalidate cache when source changes
+      sourceType
     };
   }, [inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
       temp, tint, red, green, blue, curves, lut1, lut2,
       hslParams, splitToning, filmCurveEnabled, filmCurveProfile,
-      rotation, orientation, isCropping, committedCrop, image]);
+      rotation, orientation, isCropping, committedCrop, image, sourceType]);
+
+  // 当前参数（用于 PhotoSwitcher "Apply to batch" 功能）
+  const currentParams = React.useMemo(() => ({
+    inverted,
+    inversionMode,
+    filmCurveEnabled,
+    filmCurveProfile,
+    exposure,
+    contrast,
+    highlights,
+    shadows,
+    whites,
+    blacks,
+    temp,
+    tint,
+    red,
+    green,
+    blue,
+    rotation,
+    orientation,
+    cropRect: committedCrop,
+    curves,
+    hslParams,
+    splitToning
+  }), [inverted, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, 
+      highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, 
+      orientation, committedCrop, curves, hslParams, splitToning]);
 
   // Pre-calculate geometry for canvas sizing and crop overlay sync
   const geometry = React.useMemo(() => {
@@ -301,7 +328,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     if (!preset) return;
     const { params } = preset;
     pushToHistory();
-    setInverted(params.inverted);
+    // 在正片模式下，不应该应用反转设置
+    setInverted(sourceType === 'positive' ? false : params.inverted);
     setInversionMode(params.inversionMode);
     setExposure(params.exposure);
     setContrast(params.contrast);
@@ -370,7 +398,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     setFuture(prev => [...prev, current]);
     setHistory(prev => prev.slice(0, -1));
     
-    setInverted(previous.inverted);
+    // 在正片模式下，不应该恢复反转设置
+    setInverted(sourceType === 'positive' ? false : previous.inverted);
     setExposure(previous.exposure);
     setContrast(previous.contrast);
     setHighlights(previous.highlights || 0);
@@ -395,7 +424,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     setHistory(prev => [...prev, current]);
     setFuture(prev => prev.slice(0, -1));
     
-    setInverted(next.inverted);
+    // 在正片模式下，不应该恢复反转设置
+    setInverted(sourceType === 'positive' ? false : next.inverted);
     setExposure(next.exposure);
     setContrast(next.contrast);
     setHighlights(next.highlights || 0);
@@ -459,7 +489,8 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
             try {
                 // Request a "flat" preview (no params) to serve as the base image
                 // We use a reasonably large size for the editor base
-                const res = await filmlabPreview({ photoId, params: {}, maxWidth: 2000 });
+                // 传入 sourceType 以确保加载正确的源文件
+                const res = await filmlabPreview({ photoId, params: {}, maxWidth: 2000, sourceType });
                 if (active && res.ok) {
                     const url = URL.createObjectURL(res.blob);
                     const img = new Image();
@@ -482,6 +513,27 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     img.src = imageUrl;
     img.onload = () => {
       setImage(img);
+    };
+    img.onerror = (e) => {
+      console.error('Failed to load image:', imageUrl, e);
+      // 如果直接加载失败且有 photoId，尝试通过 API 代理加载
+      if (photoId) {
+        console.log('Attempting to load via API proxy...');
+        (async () => {
+          try {
+            const res = await filmlabPreview({ photoId, params: {}, maxWidth: 2000, sourceType });
+            if (res.ok) {
+              const url = URL.createObjectURL(res.blob);
+              const proxyImg = new Image();
+              proxyImg.onload = () => setImage(proxyImg);
+              proxyImg.onerror = () => console.error('Proxy load also failed');
+              proxyImg.src = url;
+            }
+          } catch (err) {
+            console.error('Proxy load failed:', err);
+          }
+        })();
+      }
     };
 
     // Fetch and parse EXIF to detect browser auto-rotation
@@ -514,7 +566,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
          setRotationOffset(offset);
       })
       .catch(e => console.warn('Failed to parse EXIF', e));
-  }, [imageUrl, photoId]);
+  }, [imageUrl, photoId, sourceType]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -902,8 +954,9 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
               const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
               const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
               
+              // webglParams.inverted 已经根据 sourceType 计算过了
                 processImageWebGL(webglCanvas, image, {
-                  inverted, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
+                  inverted: webglParams.inverted, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
                   filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
                   rotate: totalRotation,
                   cropRect: cropRect,
@@ -1003,10 +1056,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         // No need to putImageData, it's already on the canvas from drawImage(webglCanvas)
     } else {
         // CPU Path: 使用统一渲染核心
+        // 使用统一的 getEffectiveInverted 函数计算有效反转状态
+        const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
         const core = new RenderCore({
           exposure, contrast, highlights, shadows, whites, blacks,
           curves, red, green, blue, temp, tint, lut1, lut2,
-          inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+          lut1Intensity: lut1?.intensity ?? 1.0,
+          lut2Intensity: lut2?.intensity ?? 1.0,
+          inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
           hslParams, splitToning
         });
         core.prepareLUTs();
@@ -1076,15 +1133,18 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     previewTimerRef.current = setTimeout(async () => {
       try {
         // Always send committedCrop for preview. During crop mode, server keeps showing last commit.
+        // 关键修复：使用 getEffectiveInverted 计算有效反转状态
+        // 这确保服务器预览请求与本地 WebGL 渲染使用相同的反转逻辑
+        const effectiveInvertedForPreview = getEffectiveInverted(sourceType, inverted);
         const params = { 
-          inverted, inversionMode, filmType, 
+          inverted: effectiveInvertedForPreview, inversionMode, filmType, 
           filmCurveEnabled, filmCurveProfile, // New film curve params
           exposure, contrast, highlights, shadows, whites, blacks, 
           temp, tint, red, green, blue, 
           rotation, orientation, cropRect: committedCrop, curves,
           hslParams, splitToning // HSL and Split Toning params
         };
-        const res = await filmlabPreview({ photoId, params, maxWidth: 1400 });
+        const res = await filmlabPreview({ photoId, params, maxWidth: 1400, sourceType });
         
         // Check if this is still the latest request
         if (requestId !== previewRequestIdRef.current) {
@@ -1110,7 +1170,7 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       } catch (e) { console.error('[Preview Request] Exception:', e); }
     }, 180);
     return () => { if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null; } };
-  }, [photoId, inverted, inversionMode, filmType, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, committedCrop, curves, hslParams, splitToning]);
+  }, [photoId, inverted, inversionMode, filmType, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, committedCrop, curves, hslParams, splitToning, sourceType]);
 
   const renderOriginal = () => {
     if (!image || !origCanvasRef.current) return;
@@ -1320,10 +1380,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     let content = `LUT_3D_SIZE ${size}\n`;
     
     // 使用统一渲染核心
+    // 使用统一的 getEffectiveInverted 函数计算有效反转状态
+    const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
     const core = new RenderCore({
       exposure, contrast, highlights, shadows, whites, blacks,
       curves, red, green, blue, temp, tint, lut1, lut2,
-      inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+      lut1Intensity: lut1?.intensity ?? 1.0,
+      lut2Intensity: lut2?.intensity ?? 1.0,
+      inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1411,10 +1475,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const data = imageData.data;
 
     // 使用统一渲染核心
+    // 使用统一的 getEffectiveInverted 函数计算有效反转状态
+    const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
     const core = new RenderCore({
       exposure, contrast, highlights, shadows, whites, blacks,
       curves, red, green, blue, temp, tint, lut1, lut2,
-      inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+      lut1Intensity: lut1?.intensity ?? 1.0,
+      lut2Intensity: lut2?.intensity ?? 1.0,
+      inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1444,21 +1512,37 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     if (!photoId || hqBusy) return;
     setHqBusy(true);
     try {
+      // 将 LUT 数据转换为可序列化格式
+      const serializeLut = (lut) => {
+        if (!lut || !lut.data || lut.intensity <= 0) return null;
+        return {
+          size: lut.size,
+          data: Array.from(lut.data), // Float32Array -> Array
+          intensity: lut.intensity
+        };
+      };
+      
       const params = {
-        inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+        sourceType, // 传递源类型以便服务器选择正确的源文件
+        inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
+        inversionMode, filmCurveEnabled, filmCurveProfile,
         exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves,
-        hslParams, splitToning
+        hslParams, splitToning,
+        lut1: serializeLut(lut1),
+        lut2: serializeLut(lut2),
+        lut1Intensity: lut1?.intensity ?? 1.0,
+        lut2Intensity: lut2?.intensity ?? 1.0
       };
       const res = await exportPositive(photoId, params, { format: 'jpeg' }); // Always store JPEG into library
       if (res && res.ok) {
         // Ask parent to refresh photo list / data
         if (onPhotoUpdate) onPhotoUpdate();
       } else if (res && res.error) {
-        if (typeof window !== 'undefined') alert('导出失败: ' + res.error);
+        if (typeof window !== 'undefined') alert('Export Failed: ' + res.error);
       }
     } catch (e) {
       console.error('High quality export failed', e);
-      if (typeof window !== 'undefined') alert('高质量导出失败: ' + (e.message || e));
+      if (typeof window !== 'undefined') alert('High Quality Export Failed: ' + (e.message || e));
     } finally {
       setHqBusy(false);
     }
@@ -1511,7 +1595,9 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
 
       const params = { 
-        inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
+        sourceType, // 传递源类型
+        inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
+        inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
         temp, tint, red, green, blue, rotation, orientation,
         filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
         cropRect: committedCrop,
@@ -1523,18 +1609,18 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
       const res = await window.__electron.filmlabGpuProcess({ params, photoId, imageUrl });
       if (!res || !res.ok) {
         const msg = (res && (res.error || res.message)) || 'unknown_error';
-        if (typeof window !== 'undefined') alert('GPU 导出失败: ' + msg);
+        if (typeof window !== 'undefined') alert('GPU Export Failed: ' + msg);
       } else {
         if (onPhotoUpdate) onPhotoUpdate();
         // Reveal saved file and inform user where it went
         if (res.filePath) {
           try { window.__electron.showInFolder && window.__electron.showInFolder(res.filePath); } catch(_){}
-          if (typeof window !== 'undefined') alert('GPU 导出已保存到:\n' + res.filePath);
+          if (typeof window !== 'undefined') alert('GPU Export Saved To:\n' + res.filePath);
         }
       }
     } catch (e) {
       console.error('GPU export failed', e);
-      if (typeof window !== 'undefined') alert('GPU 导出失败: ' + (e.message || e));
+      if (typeof window !== 'undefined') alert('GPU Export Failed: ' + (e.message || e));
     } finally {
       setGpuBusy(false);
     }
@@ -1542,7 +1628,9 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
 
   const handleDownload = async () => {
     if (!image || !photoId) return;
-    const paramsForServer = { inverted, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves };
+    // 关键修复：使用 getEffectiveInverted 计算有效反转状态
+    const effectiveInvertedForServer = getEffectiveInverted(sourceType, inverted);
+    const paramsForServer = { inverted: effectiveInvertedForServer, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves, sourceType };
     // TIFF16 or BOTH use server render-positive endpoint for high bit depth / parity
     if (saveAsFormat === 'tiff16' || saveAsFormat === 'both') {
       try {
@@ -1553,14 +1641,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         }
         const r = await renderPositive(photoId, paramsForServer, { format: 'tiff16' });
         if (!r.ok) {
-          if (typeof window !== 'undefined') alert('TIFF16 渲染失败: ' + r.error);
+          if (typeof window !== 'undefined') alert('TIFF16 Render Failed: ' + r.error);
           return;
         }
         triggerBlobDownload(r.blob, `film-lab-render-${Date.now()}.tiff`);
         return;
       } catch (e) {
         console.error('Render-positive TIFF16 failed', e);
-        if (typeof window !== 'undefined') alert('TIFF16 渲染失败: ' + (e.message || e));
+        if (typeof window !== 'undefined') alert('TIFF16 Render Failed: ' + (e.message || e));
         return;
       }
     }
@@ -1637,8 +1725,11 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
         const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
 
+        // 使用统一的 getEffectiveInverted 函数计算有效反转状态
+        const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
+
         processImageWebGL(webglCanvas, image, {
-          inverted,
+          inverted: effectiveInvertedValue,
           inversionMode,
           gains,
           exposure,
@@ -1741,10 +1832,14 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
     const data = imageData.data;
 
     // 使用统一渲染核心
+    // 使用统一的 getEffectiveInverted 函数计算有效反转状态
+    const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
     const core = new RenderCore({
       exposure, contrast, highlights, shadows, whites, blacks,
       curves, red, green, blue, temp, tint, lut1, lut2,
-      inverted, inversionMode, filmCurveEnabled, filmCurveProfile,
+      lut1Intensity: lut1?.intensity ?? 1.0,
+      lut2Intensity: lut2?.intensity ?? 1.0,
+      inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1998,7 +2093,23 @@ export default function FilmLab({ imageUrl, onClose, onSave, rollId, photoId, on
         expectedWidth={geometry ? Math.round(geometry.rotatedW) : 0}
       />
 
+      {/* PhotoSwitcher - 照片切换器 */}
+      {showPhotoSwitcher && rollId && (
+        <PhotoSwitcher
+          rollId={rollId}
+          currentPhotoId={photoId}
+          onPhotoChange={onPhotoChange}
+          onApplyToBatch={(jobId, count) => {
+            alert(`已启动批量应用任务\n任务 ID: ${jobId}\n处理照片: ${count} 张`);
+          }}
+          currentParams={currentParams}
+          collapsed={photoSwitcherCollapsed}
+          onToggleCollapse={() => setPhotoSwitcherCollapsed(!photoSwitcherCollapsed)}
+        />
+      )}
+
       <FilmLabControls
+        sourceType={sourceType}
         inverted={inverted} setInverted={setInverted}
         useGPU={useGPU} setUseGPU={setUseGPU}
         inversionMode={inversionMode} setInversionMode={setInversionMode}

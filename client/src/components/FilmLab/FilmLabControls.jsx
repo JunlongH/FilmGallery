@@ -3,6 +3,7 @@ import SliderControl from './SliderControl';
 import ToneCurveEditor from './ToneCurveEditor';
 import HSLPanel from './HSLPanel';
 import SplitToningPanel from './SplitToningPanel';
+import LutSelectorModal from './LutSelectorModal';
 import { createFilmCurveProfile, updateFilmCurveProfile, deleteFilmCurveProfile } from '../../api';
 
 // Film Curve Profile Selector Component
@@ -246,6 +247,7 @@ function FilmCurveProfileSelector({
 }
 
 export default function FilmLabControls({
+  sourceType = 'original', // 源类型: 'original' | 'negative' | 'positive'
   inverted, setInverted,
   useGPU, setUseGPU,
   inversionMode, setInversionMode,
@@ -305,6 +307,10 @@ export default function FilmLabControls({
   setExportFormat
 }) {
   const [presetName, setPresetName] = React.useState('');
+  // LUT 库选择器状态
+  const [showLutSelector, setShowLutSelector] = React.useState(false);
+  const [lutSelectorIndex, setLutSelectorIndex] = React.useState(1); // 1 or 2
+  
   const handleSavePresetClick = () => {
     if (!presetName.trim()) return;
     onSavePreset(presetName.trim());
@@ -315,11 +321,49 @@ export default function FilmLabControls({
     // helper for toggles
     if (compareMode === mode) setCompareMode('off'); else setCompareMode(mode);
   };
+  
+  // 打开LUT选择器
+  const openLutSelector = (index) => {
+    setLutSelectorIndex(index);
+    setShowLutSelector(true);
+  };
+  
+  // 处理LUT选择
+  const handleLutSelect = (lutData) => {
+    pushToHistory();
+    if (lutSelectorIndex === 1) {
+      setLut1(lutData);
+    } else {
+      setLut2(lutData);
+    }
+    setShowLutSelector(false);
+  };
+  
+  // 源类型标签配置
+  const sourceLabels = {
+    original: { icon: '🎞️', label: '原始', color: '#4caf50' },
+    negative: { icon: '📷', label: '负片', color: '#2196f3' },
+    positive: { icon: '✨', label: '正片', color: '#ff9800' }
+  };
+  const currentSource = sourceLabels[sourceType] || sourceLabels.original;
+  
   return (
     <div className="iv-sidebar iv-scroll" style={{ width: 320, background: '#1e1e1e', padding: 24, color: '#eee', display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', borderLeft: '1px solid #333', boxShadow: '-5px 0 15px rgba(0,0,0,0.5)' }}>
         {/* Undo / Redo block will appear first, compare block moved just above it */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ margin: 0, color: '#fff', fontSize: 18, fontWeight: 600, letterSpacing: 0.5 }}>Film Lab</h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <h3 style={{ margin: 0, color: '#fff', fontSize: 18, fontWeight: 600, letterSpacing: 0.5 }}>Film Lab</h3>
+          <span style={{ 
+            fontSize: 10, 
+            padding: '2px 6px', 
+            borderRadius: 4, 
+            background: currentSource.color + '22',
+            color: currentSource.color,
+            fontWeight: 500
+          }}>
+            {currentSource.icon} {currentSource.label}
+          </span>
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <button className="iv-btn iv-btn-primary" onClick={handleSave} style={{ padding: '4px 12px' }} title="保存处理结果到正片库（始终写入JPEG）">SAVE</button>
           <button className="iv-btn" onClick={onHighQualityExport} disabled={highQualityBusy} style={{ padding: '4px 12px', background: highQualityBusy ? '#555' : '#444', borderColor: highQualityBusy ? '#666' : '#555' }} title="服务器基于原始高位深扫描生成高质量正片">
@@ -653,10 +697,9 @@ export default function FilmLabControls({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}>LUT 1</span>
             {!lut1 ? (
-              <label className="iv-btn" style={{ fontSize: 10, padding: '2px 8px', cursor: 'pointer' }}>
+              <button className="iv-btn" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => openLutSelector(1)}>
                 LOAD
-                <input type="file" accept=".cube" style={{ display: 'none' }} onChange={(e) => handleLutUpload(e, 1)} />
-              </label>
+              </button>
             ) : (
               <button className="iv-btn iv-btn-danger" onClick={() => { pushToHistory(); setLut1(null); }} style={{ fontSize: 10, padding: '2px 8px' }}>REMOVE</button>
             )}
@@ -680,10 +723,9 @@ export default function FilmLabControls({
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}>LUT 2</span>
             {!lut2 ? (
-              <label className="iv-btn" style={{ fontSize: 10, padding: '2px 8px', cursor: 'pointer' }}>
+              <button className="iv-btn" style={{ fontSize: 10, padding: '2px 8px' }} onClick={() => openLutSelector(2)}>
                 LOAD
-                <input type="file" accept=".cube" style={{ display: 'none' }} onChange={(e) => handleLutUpload(e, 2)} />
-              </label>
+              </button>
             ) : (
               <button className="iv-btn iv-btn-danger" onClick={() => { pushToHistory(); setLut2(null); }} style={{ fontSize: 10, padding: '2px 8px' }}>REMOVE</button>
             )}
@@ -702,6 +744,14 @@ export default function FilmLabControls({
           )}
         </div>
       </div>
+      
+      {/* LUT 选择器 Modal */}
+      {showLutSelector && (
+        <LutSelectorModal
+          onClose={() => setShowLutSelector(false)}
+          onSelect={handleLutSelect}
+        />
+      )}
 
       {/* Preset Management */}
       <div style={{ borderTop: '1px solid #333', paddingTop: 20 }}>

@@ -17,6 +17,7 @@ const hsl = require('./filmLabHSL');
 const exportParams = require('./filmLabExport');
 const splitTone = require('./filmLabSplitTone');
 const render = require('./render');
+const helpers = require('./filmLabHelpers');
 
 // 统一导出
 module.exports = {
@@ -255,4 +256,35 @@ module.exports = {
   
   /** 默认 Film Curve 参数 */
   DEFAULT_FILM_CURVE: render.DEFAULT_FILM_CURVE,
+  
+  // ============================================================================
+  // 辅助函数 (WebGL/CPU 共用)
+  // ============================================================================
+  
+  /** 计算有效的反转状态 */
+  getEffectiveInverted: helpers.getEffectiveInverted,
+  
+  /** 检查是否为正片模式 */
+  isPositiveMode: helpers.isPositiveMode,
+  
+  /** 检查是否应显示反转控件 */
+  shouldShowInversionControls: helpers.shouldShowInversionControls,
+  
+  /** 计算 3D LUT 索引 */
+  getLUT3DIndex: helpers.getLUT3DIndex,
+  
+  /** 打包 3D LUT 为 WebGL 纹理格式 */
+  packLUT3DForWebGL: helpers.packLUT3DForWebGL,
+  
+  /** 合并两个 3D LUT */
+  buildCombinedLUT: helpers.buildCombinedLUT,
+  
+  /** 规范化 sourceType */
+  normalizeSourceType: helpers.normalizeSourceType,
+  
+  /** 规范化反转模式 */
+  normalizeInversionMode: helpers.normalizeInversionMode,
+  
+  /** 获取 LUT 3D 采样的 GLSL 代码 */
+  getLUT3DSamplingGLSL: helpers.getLUT3DSamplingGLSL,
 };

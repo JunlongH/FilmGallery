@@ -16,7 +16,7 @@ const PreparedStmt = require('../utils/prepared-statements');
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../../packages/shared/filmLabCurve');
 
 // 使用统一渲染核心
-const { RenderCore } = require('../../packages/shared');
+const { RenderCore, getEffectiveInverted } = require('../../packages/shared');
 
 // Helpers for tone and curves (mirror preview implementation)
 function buildToneLUT({ exposure = 0, contrast = 0, highlights = 0, shadows = 0, whites = 0, blacks = 0 }) {
@@ -589,6 +589,10 @@ router.post('/:id/export-positive', async (req, res) => {
   const body = req.body || {};
   const p = (body.params) || {};
   const format = (body.format || 'jpeg').toLowerCase(); // 'jpeg' | 'tiff16' | 'both'
+  
+  // 获取源类型，决定从哪个源文件开始处理
+  const sourceType = p.sourceType || 'original'; // 'original' | 'negative' | 'positive'
+  
   // Extract params with defaults
   const inverted = !!p.inverted;
   const inversionMode = p.inversionMode === 'log' ? 'log' : 'linear';
@@ -608,10 +612,32 @@ router.post('/:id/export-positive', async (req, res) => {
 
   try {
     // Fetch photo row to get original path & roll info
-    const row = await getAsync('SELECT id, roll_id, frame_number, original_rel_path, positive_rel_path, full_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [id]);
+    const row = await getAsync('SELECT id, roll_id, frame_number, original_rel_path, negative_rel_path, positive_rel_path, full_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Photo not found' });
-    // Pick best available source: prefer original; fallback to positive/full; then negative
-    let relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+    
+    // 根据 sourceType 选择源文件
+    let relSource;
+    switch (sourceType) {
+      case 'positive':
+        // 使用已渲染的正片
+        relSource = row.positive_rel_path || row.full_rel_path;
+        if (!relSource) {
+          return res.status(400).json({ error: 'No positive image available for editing' });
+        }
+        break;
+      case 'negative':
+        // 使用负片
+        relSource = row.negative_rel_path || row.full_rel_path || row.original_rel_path;
+        break;
+      case 'original':
+      default:
+        // 使用原始上传文件（默认）
+        relSource = row.original_rel_path || row.negative_rel_path || row.full_rel_path || row.positive_rel_path;
+        break;
+    }
+    
+    console.log(`[EXPORT-POSITIVE] Using sourceType: ${sourceType}, source: ${relSource}`);
+    
     if (!relSource) {
       return res.status(400).json({ error: 'No usable image source for export (missing original/positive/full/negative paths)' });
     }
@@ -642,6 +668,22 @@ router.post('/:id/export-positive', async (req, res) => {
       filmCurveEnabled
     }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true, skipColorOps: true });
 
+    // 处理 LUT 数据（从客户端传来的是数组，需要转为 Float32Array）
+    const deserializeLut = (lutData) => {
+      if (!lutData || !lutData.data) return null;
+      return {
+        size: lutData.size,
+        data: lutData.data instanceof Float32Array ? lutData.data : new Float32Array(lutData.data),
+        intensity: lutData.intensity ?? 1.0
+      };
+    };
+    
+    const lut1Data = deserializeLut(p.lut1);
+    const lut2Data = deserializeLut(p.lut2);
+    
+    // 使用 getEffectiveInverted 计算有效反转状态，正片模式不需要反转
+    const effectiveInverted = getEffectiveInverted(sourceType, inverted);
+    
     // 使用 RenderCore 统一渲染
     const core = new RenderCore({
       exposure, contrast,
@@ -652,9 +694,11 @@ router.post('/:id/export-positive', async (req, res) => {
       curves: p.curves,
       red: redGain, green: greenGain, blue: blueGain,
       temp, tint,
-      lut1: p.lut1 || null,
-      lut2: p.lut2 || null,
-      inverted, inversionMode,
+      lut1: lut1Data,
+      lut2: lut2Data,
+      lut1Intensity: p.lut1Intensity ?? lut1Data?.intensity ?? 1.0,
+      lut2Intensity: p.lut2Intensity ?? lut2Data?.intensity ?? 1.0,
+      inverted: effectiveInverted, inversionMode,
       filmCurveEnabled, filmCurveProfile,
       hslParams: p.hslParams || null,
       splitToning: p.splitToning || null
@@ -781,8 +825,10 @@ router.post('/:id/render-positive', async (req, res) => {
   if (!['jpeg','tiff16'].includes(format)) {
     return res.status(400).json({ error: 'Unsupported format for render-positive' });
   }
+  // 客户端已经使用 getEffectiveInverted 计算过了，直接使用
   const inverted = !!p.inverted;
   const inversionMode = p.inversionMode === 'log' ? 'log' : 'linear';
+  const sourceType = p.sourceType || 'original'; // 'original' | 'negative' | 'positive'
   const exposure = Number.isFinite(p.exposure) ? p.exposure : 0;
   const contrast = Number.isFinite(p.contrast) ? p.contrast : 0;
   const temp = Number.isFinite(p.temp) ? p.temp : 0;
@@ -795,7 +841,22 @@ router.post('/:id/render-positive', async (req, res) => {
   try {
     const row = await getAsync('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Photo not found' });
-    let relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+    
+    // 根据 sourceType 选择源文件
+    let relSource;
+    switch (sourceType) {
+      case 'positive':
+        relSource = row.positive_rel_path || row.full_rel_path;
+        break;
+      case 'negative':
+        relSource = row.negative_rel_path || row.original_rel_path || row.full_rel_path;
+        break;
+      case 'original':
+      default:
+        relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+        break;
+    }
+    
     if (!relSource) return res.status(400).json({ error: 'No usable source for render-positive' });
     const sourceAbs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(sourceAbs)) return res.status(404).json({ error: 'Source file missing on disk' });

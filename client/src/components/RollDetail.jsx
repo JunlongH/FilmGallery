@@ -1,7 +1,7 @@
 // src/components/RollDetail.jsx
 import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRoll, getPhotos, uploadPhotosToRoll, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions, createBatchExport } from '../api';
+import { getRoll, getPhotos, uploadPhotosToRoll, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions } from '../api';
 import { useParams } from 'react-router-dom';
 import ImageViewer from './ImageViewer';
 import PhotoItem from './PhotoItem';
@@ -11,7 +11,8 @@ import LocationSelect from './LocationSelect.jsx';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
 import ContactSheetModal from './ContactSheetModal.jsx';
 import EquipmentSelector from './EquipmentSelector';
-import ExportQueuePanel from './FilmLab/ExportQueuePanel';
+import { BatchRenderModal, BatchDownloadModal } from './BatchExport';
+import { ImportPositiveModal } from './ImportPositive';
 import '../styles/sidebar.css';
 import '../styles/forms.css';
 import '../styles/roll-detail-card.css';
@@ -33,9 +34,11 @@ export default function RollDetail() {
   const [showBatchSidebar, setShowBatchSidebar] = useState(false);
   const [showRollSidebar, setShowRollSidebar] = useState(false);
   const [showContactSheet, setShowContactSheet] = useState(false);
-  const [showExportQueue, setShowExportQueue] = useState(false);
-  const [exportBusy, setExportBusy] = useState(false);
   const [selectedCamera, setSelectedCamera] = useState(null); // for fixed lens detection
+  // 批量渲染/下载模态框状态
+  const [showBatchRenderModal, setShowBatchRenderModal] = useState(false);
+  const [showBatchDownloadModal, setShowBatchDownloadModal] = useState(false);
+  const [showImportPositiveModal, setShowImportPositiveModal] = useState(false);
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -168,36 +171,30 @@ export default function RollDetail() {
     }
   }
 
-  // 批量导出处理
-  async function handleBatchExport() {
-    const photoIds = multiSelect && selectedPhotos.length > 0 
-      ? selectedPhotos.map(p => p.id) 
-      : photos.map(p => p.id);
-    
-    if (photoIds.length === 0) {
-      showAlert('No Photos', 'No photos to export.');
+  // 批量渲染 - 打开模态框
+  function handleBatchRender() {
+    if (photos.length === 0) {
+      showAlert('No Photos', 'No photos to render.');
       return;
     }
+    setShowBatchRenderModal(true);
+  }
 
-    setExportBusy(true);
-    try {
-      const result = await createBatchExport({
-        photoIds,
-        params: {}, // 使用各照片保存的处理参数
-        format: 'jpeg',
-        quality: 95,
-        maxWidth: 4000,
-      });
-      
-      if (result.jobId) {
-        showAlert('Export Started', `Batch export job created: ${photoIds.length} photos. Job ID: ${result.jobId}`);
-        setShowExportQueue(true);
-      }
-    } catch (err) {
-      console.error('Batch export failed', err);
-      showAlert('Export Failed', 'Failed to start batch export: ' + (err.message || err));
-    } finally {
-      setExportBusy(false);
+  // 批量下载 - 打开模态框
+  function handleBatchDownload() {
+    if (photos.length === 0) {
+      showAlert('No Photos', 'No photos to download.');
+      return;
+    }
+    setShowBatchDownloadModal(true);
+  }
+
+  // 批量渲染/下载完成回调
+  function handleBatchExportComplete(progress) {
+    queryClient.invalidateQueries(['rollPhotos', id]);
+    queryClient.invalidateQueries(['roll', id]);
+    if (progress.status === 'completed') {
+      showAlert('完成', `成功处理 ${progress.completed} / ${progress.total} 张照片`);
     }
   }
 
@@ -303,36 +300,6 @@ export default function RollDetail() {
         onCancel={dialog.onCancel}
       />
       
-      {/* 导出队列面板 */}
-      {showExportQueue && (
-        <div 
-          role="presentation" 
-          onClick={() => setShowExportQueue(false)} 
-          style={{ 
-            position: 'fixed', 
-            inset: 0, 
-            background: 'rgba(0,0,0,0.5)', 
-            zIndex: 10050,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center'
-          }}
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              maxWidth: 500, 
-              maxHeight: '80vh', 
-              overflow: 'auto',
-              borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
-            }}
-          >
-            <ExportQueuePanel onClose={() => setShowExportQueue(false)} />
-          </div>
-        </div>
-      )}
-      
       <div className="roll-card">
         <div className="roll-info-column">
           <div className="roll-header-section">
@@ -436,7 +403,7 @@ export default function RollDetail() {
                 Negative
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <button className="primary-btn" onClick={() => !multiSelect && fileInputRef.current && fileInputRef.current.click()} disabled={multiSelect}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 Upload Photos
@@ -447,20 +414,50 @@ export default function RollDetail() {
               {multiSelect && selectedPhotos.length > 0 && (
                 <button className="primary-btn" style={{ background:'#2563eb' }} onClick={() => setShowBatchSidebar(true)}>Edit Selected ({selectedPhotos.length})</button>
               )}
+              {/* 新增: 批量渲染按钮 */}
               {photos.length > 0 && (
                 <button 
                   className="primary-btn" 
-                  style={{ background: exportBusy ? '#555' : '#7c3aed' }} 
-                  onClick={handleBatchExport}
-                  disabled={exportBusy}
-                  title={multiSelect && selectedPhotos.length > 0 ? `Export ${selectedPhotos.length} selected photos` : `Export all ${photos.length} photos`}
+                  style={{ background: '#2196F3' }} 
+                  onClick={handleBatchRender}
+                  title="批量 FilmLab 渲染"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}>
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                  </svg>
+                  Batch Render
+                </button>
+              )}
+              {/* 新增: 批量下载按钮 */}
+              {photos.length > 0 && (
+                <button 
+                  className="primary-btn" 
+                  style={{ background: '#4CAF50' }} 
+                  onClick={handleBatchDownload}
+                  title="批量下载照片"
                 >
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}>
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                     <polyline points="7 10 12 15 17 10"/>
                     <line x1="12" y1="15" x2="12" y2="3"/>
                   </svg>
-                  {exportBusy ? 'Exporting...' : (multiSelect && selectedPhotos.length > 0 ? `Export (${selectedPhotos.length})` : 'Batch Export')}
+                  Batch Download
+                </button>
+              )}
+              {/* 新增: 导入外部正片按钮 */}
+              {photos.length > 0 && (
+                <button 
+                  className="primary-btn" 
+                  style={{ background: '#9C27B0' }} 
+                  onClick={() => setShowImportPositiveModal(true)}
+                  title="导入外部处理的正片（如 Lightroom、NLP）"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}>
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17 8 12 3 7 8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  Import Positive
                 </button>
               )}
               {!multiSelect && photos.length > 0 && (
@@ -757,6 +754,39 @@ export default function RollDetail() {
         onClose={() => setShowContactSheet(false)}
         roll={roll}
         photos={photos}
+      />
+
+      {/* 批量渲染模态框 */}
+      <BatchRenderModal
+        isOpen={showBatchRenderModal}
+        onClose={() => setShowBatchRenderModal(false)}
+        rollId={Number(id)}
+        selectedPhotos={multiSelect ? selectedPhotos : []}
+        allPhotos={photos}
+        onComplete={handleBatchExportComplete}
+      />
+
+      {/* 批量下载模态框 */}
+      <BatchDownloadModal
+        isOpen={showBatchDownloadModal}
+        onClose={() => setShowBatchDownloadModal(false)}
+        rollId={Number(id)}
+        rollName={roll?.title || ''}
+        selectedPhotos={multiSelect ? selectedPhotos : []}
+        allPhotos={photos}
+        onComplete={handleBatchExportComplete}
+      />
+
+      {/* 导入外部正片模态框 */}
+      <ImportPositiveModal
+        isOpen={showImportPositiveModal}
+        onClose={() => setShowImportPositiveModal(false)}
+        rollId={Number(id)}
+        rollName={roll?.title || ''}
+        onComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ['photos', id] });
+          setShowImportPositiveModal(false);
+        }}
       />
 
       <input type="file" multiple ref={fileInputRef} style={{ display: 'none' }} onChange={onUpload} />

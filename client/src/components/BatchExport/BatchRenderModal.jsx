@@ -1,0 +1,702 @@
+/**
+ * 批量渲染模态框
+ * 
+ * @component BatchRenderModal
+ * @description 批量 FilmLab 渲染配置界面
+ */
+
+import React, { useState, useEffect, useMemo } from 'react';
+import BatchExportProgress from './BatchExportProgress';
+import {
+  createBatchRenderLibrary,
+  createBatchRenderDownload,
+  getBatchRenderProgress,
+  cancelBatchRender,
+  pauseBatchRender,
+  resumeBatchRender,
+  listPresets,
+  API_BASE
+} from '../../api';
+
+// ============================================================================
+// 常量
+// ============================================================================
+
+const OUTPUT_MODE = {
+  LIBRARY: 'library',
+  DOWNLOAD: 'download'
+};
+
+const SCOPE = {
+  SELECTED: 'selected',
+  ALL: 'all',
+  NO_POSITIVE: 'no-positive'
+};
+
+const PARAMS_SOURCE = {
+  PRESET: 'preset',
+  CUSTOM: 'custom',
+  LUT: 'lut'
+};
+
+// ============================================================================
+// 组件
+// ============================================================================
+
+export default function BatchRenderModal({
+  isOpen,
+  onClose,
+  rollId,
+  selectedPhotos = [],
+  allPhotos = [],
+  onComplete,
+  onOpenFilmLab // 可选: 打开 FilmLab 调参
+}) {
+  // 状态
+  const [outputMode, setOutputMode] = useState(OUTPUT_MODE.LIBRARY);
+  const [outputDir, setOutputDir] = useState('');
+  const [scope, setScope] = useState(SCOPE.SELECTED);
+  const [paramsSource, setParamsSource] = useState(PARAMS_SOURCE.PRESET);
+  const [selectedPresetId, setSelectedPresetId] = useState(null);
+  const [customParams, setCustomParams] = useState(null);
+  const [format, setFormat] = useState('jpeg');
+  const [quality, setQuality] = useState(95);
+  
+  // LUT 状态
+  const [lutFile, setLutFile] = useState(null);
+  const [lutFileName, setLutFileName] = useState('');
+  const [lutIntensity, setLutIntensity] = useState(1.0);
+  
+  // 预设列表
+  const [presets, setPresets] = useState([]);
+  
+  // 任务状态
+  const [jobId, setJobId] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // 模态框打开时重置 jobId
+  useEffect(() => {
+    if (isOpen) {
+      setJobId(null);
+      setIsSubmitting(false);
+    }
+  }, [isOpen]);
+  
+  // 计算各范围的照片数量
+  const counts = useMemo(() => {
+    const noPositive = allPhotos.filter(p => !p.positive_rel_path);
+    return {
+      selected: selectedPhotos.length,
+      all: allPhotos.length,
+      noPositive: noPositive.length
+    };
+  }, [selectedPhotos, allPhotos]);
+  
+  // 加载预设
+  useEffect(() => {
+    if (isOpen) {
+      listPresets().then(resp => {
+        const data = resp?.presets || [];
+        setPresets(data);
+        if (data.length > 0 && !selectedPresetId) {
+          setSelectedPresetId(data[0].id);
+        }
+      }).catch(e => console.error('Failed to load presets:', e));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+  
+  // 重置范围（如果没有选中照片）
+  useEffect(() => {
+    if (selectedPhotos.length === 0 && scope === SCOPE.SELECTED) {
+      setScope(counts.noPositive > 0 ? SCOPE.NO_POSITIVE : SCOPE.ALL);
+    }
+  }, [selectedPhotos.length, scope, counts.noPositive]);
+  
+  // 选择输出目录
+  const handleSelectDir = async () => {
+    if (window.__electron && window.__electron.selectDirectory) {
+      const dir = await window.__electron.selectDirectory();
+      if (dir) setOutputDir(dir);
+    } else {
+      // 浏览器环境：使用 prompt
+      const dir = prompt('请输入输出目录路径:', outputDir || 'D:/Exports');
+      if (dir) setOutputDir(dir);
+    }
+  };
+  
+  // 开始渲染
+  const handleStart = async () => {
+    if (isSubmitting) return;
+    
+    // 验证
+    if (outputMode === OUTPUT_MODE.DOWNLOAD && !outputDir) {
+      alert('请选择输出目录');
+      return;
+    }
+    
+    if (paramsSource === PARAMS_SOURCE.PRESET && !selectedPresetId) {
+      alert('请选择预设');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    
+    try {
+      // 构建参数
+      const photoIds = scope === SCOPE.SELECTED 
+        ? selectedPhotos.map(p => p.id)
+        : undefined;
+      
+      const paramsSourceObj = (() => {
+        switch (paramsSource) {
+          case PARAMS_SOURCE.PRESET:
+            return { type: 'preset', presetId: selectedPresetId };
+          case PARAMS_SOURCE.CUSTOM:
+            return { type: 'custom', params: customParams || {} };
+          case PARAMS_SOURCE.LUT:
+            return { type: 'lut', lutPath: lutFileName, lutIntensity: lutIntensity };
+          default:
+            return { type: 'preset', presetId: selectedPresetId };
+        }
+      })();
+      
+      let result;
+      if (outputMode === OUTPUT_MODE.LIBRARY) {
+        result = await createBatchRenderLibrary({
+          rollId,
+          scope,
+          photoIds,
+          paramsSource: paramsSourceObj
+        });
+      } else {
+        result = await createBatchRenderDownload({
+          rollId,
+          scope,
+          photoIds,
+          paramsSource: paramsSourceObj,
+          outputDir,
+          format,
+          quality
+        });
+      }
+      
+      if (result.jobId) {
+        setJobId(result.jobId);
+      } else {
+        throw new Error(result.error || 'Failed to create job');
+      }
+    } catch (e) {
+      console.error('Failed to start batch render:', e);
+      alert('启动批量渲染失败: ' + e.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+  
+  // 任务完成
+  const handleJobComplete = (progress) => {
+    // 清除 jobId，返回配置界面
+    setJobId(null);
+    
+    // 弹窗提示
+    alert(`完成\n成功处理 ${progress.completed} / ${progress.total} 张照片`);
+    
+    if (onComplete) {
+      onComplete(progress);
+    }
+  };
+  
+  // 关闭
+  const handleClose = () => {
+    if (jobId) {
+      // 有正在进行的任务，确认取消
+      if (!window.confirm('任务正在进行中，确定要关闭吗？')) {
+        return;
+      }
+      cancelBatchRender(jobId).catch(() => {});
+    }
+    setJobId(null);
+    onClose();
+  };
+  
+  if (!isOpen) return null;
+  
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      background: 'rgba(0,0,0,0.8)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 10000
+    }}>
+      <div style={{
+        background: '#1e1e1e',
+        borderRadius: 12,
+        padding: 24,
+        minWidth: 500,
+        maxWidth: 600,
+        maxHeight: '80vh',
+        overflow: 'auto'
+      }}>
+        {/* 标题栏 */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 20
+        }}>
+          <h2 style={{ margin: 0, color: '#fff' }}>批量渲染</h2>
+          <button
+            onClick={handleClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#888',
+              fontSize: 24,
+              cursor: 'pointer'
+            }}
+          >
+            ×
+          </button>
+        </div>
+        
+        {/* 任务进行中显示进度 */}
+        {jobId ? (
+          <BatchExportProgress
+            jobId={jobId}
+            jobType="render"
+            getProgress={getBatchRenderProgress}
+            cancelJob={cancelBatchRender}
+            pauseJob={pauseBatchRender}
+            resumeJob={resumeBatchRender}
+            onComplete={handleJobComplete}
+          />
+        ) : (
+          <>
+            {/* 输出模式 */}
+            <Section title="输出模式">
+              <RadioGroup
+                value={outputMode}
+                onChange={setOutputMode}
+                options={[
+                  { value: OUTPUT_MODE.LIBRARY, label: '写入库 (更新正片和缩略图)' },
+                  { value: OUTPUT_MODE.DOWNLOAD, label: '渲染后下载到本地' }
+                ]}
+              />
+              
+              {outputMode === OUTPUT_MODE.DOWNLOAD && (
+                <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                  <input
+                    type="text"
+                    value={outputDir}
+                    onChange={e => setOutputDir(e.target.value)}
+                    placeholder="输出目录"
+                    style={{
+                      flex: 1,
+                      padding: '8px 12px',
+                      background: '#252525',
+                      border: '1px solid #333',
+                      borderRadius: 4,
+                      color: '#fff'
+                    }}
+                  />
+                  <button
+                    onClick={handleSelectDir}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#333',
+                      border: 'none',
+                      borderRadius: 4,
+                      color: '#fff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    选择...
+                  </button>
+                </div>
+              )}
+            </Section>
+            
+            {/* 照片范围 */}
+            <Section title="照片范围">
+              <RadioGroup
+                value={scope}
+                onChange={setScope}
+                options={[
+                  { 
+                    value: SCOPE.SELECTED, 
+                    label: `选中的照片 (${counts.selected} 张)`,
+                    disabled: counts.selected === 0
+                  },
+                  { 
+                    value: SCOPE.ALL, 
+                    label: `所有照片 (${counts.all} 张)` 
+                  },
+                  { 
+                    value: SCOPE.NO_POSITIVE, 
+                    label: `仅无正片 (${counts.noPositive} 张)`,
+                    disabled: counts.noPositive === 0
+                  }
+                ]}
+              />
+            </Section>
+            
+            {/* 处理参数 */}
+            <Section title="处理参数">
+              <RadioGroup
+                value={paramsSource}
+                onChange={setParamsSource}
+                options={[
+                  { value: PARAMS_SOURCE.PRESET, label: '使用预设' },
+                  { value: PARAMS_SOURCE.CUSTOM, label: '使用 FilmLab 调参', disabled: !onOpenFilmLab },
+                  { value: PARAMS_SOURCE.LUT, label: '应用 LUT 文件' }
+                ]}
+              />
+              
+              {paramsSource === PARAMS_SOURCE.PRESET && (
+                <div style={{ marginTop: 12 }}>
+                  <select
+                    value={selectedPresetId || ''}
+                    onChange={e => setSelectedPresetId(Number(e.target.value))}
+                    style={{
+                      width: '100%',
+                      padding: '8px 12px',
+                      background: '#252525',
+                      border: '1px solid #333',
+                      borderRadius: 4,
+                      color: '#fff'
+                    }}
+                  >
+                    {presets.length === 0 && (
+                      <option value="">无可用预设</option>
+                    )}
+                    {presets.map(p => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              
+              {paramsSource === PARAMS_SOURCE.CUSTOM && onOpenFilmLab && (
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    onClick={() => onOpenFilmLab((params) => setCustomParams(params))}
+                    style={{
+                      padding: '8px 16px',
+                      background: '#2196F3',
+                      border: 'none',
+                      borderRadius: 4,
+                      color: '#fff',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    打开 FilmLab 调参...
+                  </button>
+                  {customParams && (
+                    <div style={{ marginTop: 8, color: '#4CAF50', fontSize: 12 }}>
+                      ✓ 已配置自定义参数
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {paramsSource === PARAMS_SOURCE.LUT && (
+                <LutSelector
+                  lutFileName={lutFileName}
+                  lutIntensity={lutIntensity}
+                  onLutSelect={(name) => setLutFileName(name)}
+                  onIntensityChange={(v) => setLutIntensity(v)}
+                />
+              )}
+            </Section>
+            
+            {/* 输出设置 (仅下载模式) */}
+            {outputMode === OUTPUT_MODE.DOWNLOAD && (
+              <Section title="输出设置">
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', color: '#888', fontSize: 12, marginBottom: 4 }}>
+                      格式
+                    </label>
+                    <select
+                      value={format}
+                      onChange={e => setFormat(e.target.value)}
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: '#252525',
+                        border: '1px solid #333',
+                        borderRadius: 4,
+                        color: '#fff'
+                      }}
+                    >
+                      <option value="jpeg">JPEG</option>
+                      <option value="tiff16">TIFF (16-bit)</option>
+                    </select>
+                  </div>
+                  
+                  {format === 'jpeg' && (
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: 'block', color: '#888', fontSize: 12, marginBottom: 4 }}>
+                        质量
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={quality}
+                        onChange={e => setQuality(Number(e.target.value))}
+                        style={{
+                          width: '100%',
+                          padding: '8px 12px',
+                          background: '#252525',
+                          border: '1px solid #333',
+                          borderRadius: 4,
+                          color: '#fff'
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </Section>
+            )}
+            
+            {/* 按钮 */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: 12,
+              marginTop: 24
+            }}>
+              <button
+                onClick={handleClose}
+                style={{
+                  padding: '10px 24px',
+                  background: '#333',
+                  border: 'none',
+                  borderRadius: 6,
+                  color: '#fff',
+                  cursor: 'pointer'
+                }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleStart}
+                disabled={isSubmitting}
+                style={{
+                  padding: '10px 24px',
+                  background: isSubmitting ? '#666' : '#2196F3',
+                  border: 'none',
+                  borderRadius: 6,
+                  color: '#fff',
+                  cursor: isSubmitting ? 'not-allowed' : 'pointer'
+                }}
+              >
+                {isSubmitting ? '启动中...' : '开始渲染'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// 子组件
+// ============================================================================
+
+function Section({ title, children }) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{
+        color: '#888',
+        fontSize: 12,
+        fontWeight: 600,
+        marginBottom: 10,
+        textTransform: 'uppercase'
+      }}>
+        ▼ {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function RadioGroup({ value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {options.map(opt => (
+        <label
+          key={opt.value}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            cursor: opt.disabled ? 'not-allowed' : 'pointer',
+            opacity: opt.disabled ? 0.5 : 1
+          }}
+        >
+          <input
+            type="radio"
+            checked={value === opt.value}
+            onChange={() => !opt.disabled && onChange(opt.value)}
+            disabled={opt.disabled}
+            style={{ accentColor: '#2196F3' }}
+          />
+          <span style={{ color: '#ddd' }}>{opt.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * LUT 选择器组件
+ */
+function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange }) {
+  const [luts, setLuts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const fileInputRef = React.useRef(null);
+  
+  // 加载已上传的 LUT 文件列表
+  useEffect(() => {
+    loadLuts();
+  }, []);
+  
+  const loadLuts = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/luts`);
+      if (res.ok) {
+        const data = await res.json();
+        setLuts(data.luts || []);
+      }
+    } catch (e) {
+      console.error('Failed to load LUTs:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // 上传新 LUT 文件
+  const handleUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    const ext = file.name.toLowerCase().split('.').pop();
+    if (!['cube', '3dl', 'csp', 'lut'].includes(ext)) {
+      alert('仅支持 .cube, .3dl, .csp, .lut 格式');
+      return;
+    }
+    
+    const formData = new FormData();
+    formData.append('lut', file);
+    
+    try {
+      const res = await fetch(`${API_BASE}/api/luts/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      
+      // 检查响应内容类型，避免解析 HTML 错误页面
+      const contentType = res.headers.get('content-type');
+      if (res.ok) {
+        const data = await res.json();
+        await loadLuts();
+        onLutSelect(data.filename);
+      } else {
+        // 只有当响应是 JSON 时才尝试解析
+        if (contentType && contentType.includes('application/json')) {
+          const err = await res.json();
+          alert('上传失败: ' + (err.error || '未知错误'));
+        } else {
+          alert('上传失败: 服务器错误 (' + res.status + ')');
+        }
+      }
+    } catch (e) {
+      console.error('Failed to upload LUT:', e);
+      alert('上传失败: ' + e.message);
+    }
+    
+    e.target.value = '';
+  };
+  
+  return (
+    <div style={{ marginTop: 12 }}>
+      {/* LUT 选择 */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <select
+          value={lutFileName || ''}
+          onChange={e => onLutSelect(e.target.value)}
+          style={{
+            flex: 1,
+            padding: '8px 12px',
+            background: '#252525',
+            border: '1px solid #333',
+            borderRadius: 4,
+            color: '#fff'
+          }}
+        >
+          <option value="">选择 LUT 文件...</option>
+          {luts.map(lut => (
+            <option key={lut.name} value={lut.name}>{lut.name}</option>
+          ))}
+        </select>
+        
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".cube,.3dl,.csp,.lut"
+          onChange={handleUpload}
+          style={{ display: 'none' }}
+        />
+        
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          style={{
+            padding: '8px 12px',
+            background: '#333',
+            border: 'none',
+            borderRadius: 4,
+            color: '#fff',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap'
+          }}
+        >
+          上传 LUT
+        </button>
+      </div>
+      
+      {/* 强度滑块 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <label style={{ color: '#888', fontSize: 12, minWidth: 40 }}>强度</label>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={lutIntensity}
+          onChange={e => onIntensityChange(parseFloat(e.target.value))}
+          style={{ flex: 1 }}
+        />
+        <span style={{ color: '#fff', fontSize: 12, minWidth: 40, textAlign: 'right' }}>
+          {Math.round(lutIntensity * 100)}%
+        </span>
+      </div>
+      
+      {lutFileName && (
+        <div style={{ marginTop: 8, color: '#4CAF50', fontSize: 12 }}>
+          ✓ 已选择: {lutFileName}
+        </div>
+      )}
+    </div>
+  );
+}

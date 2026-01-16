@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { buildUploadUrl, updatePositiveFromNegative } from '../api';
+import { buildUploadUrl, updatePositiveFromNegative, getSingleDownloadUrl } from '../api';
 import FilmLab from './FilmLab/FilmLab';
 import ModalDialog from './ModalDialog';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
@@ -15,6 +15,10 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   const lastPos = useRef({ x: 0, y: 0 });
   const containerRef = useRef();
   const [showDetails, setShowDetails] = useState(false);
+  
+  // FilmLab源图像类型选择
+  const [showSourceSelector, setShowSourceSelector] = useState(false);
+  const [filmLabSourceType, setFilmLabSourceType] = useState('original'); // 'original' | 'negative' | 'positive'
 
   useEffect(() => {
     setI(index);
@@ -111,22 +115,56 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
 
   const imgUrl = buildUploadUrl(rawCandidate) + `?t=${Date.now()}`;
 
-  if (showInverter) {
-    // For FilmLab, we always want to edit the ORIGINAL source (Negative or Raw Scan), 
-    // not the already-processed Positive JPG.
-    // Priority: Original (TIFF/Raw) > Negative > Full/Positive
-    let sourcePath = img.original_rel_path || img.negative_rel_path;
-    
-    // Fallback to full path if no separate source exists
-    if (!sourcePath) sourcePath = img.full_rel_path || img.positive_rel_path;
-
-    // If explicitly in negative mode, prefer negative path
-    if (isNegativeMode && img.negative_rel_path) {
-        sourcePath = img.negative_rel_path;
+  // 根据 filmLabSourceType 选择源路径
+  const getSourcePathForFilmLab = () => {
+    switch (filmLabSourceType) {
+      case 'positive':
+        // 优先使用已渲染的正片
+        return img.positive_rel_path || img.full_rel_path || img.negative_rel_path || img.original_rel_path;
+      case 'negative':
+        // 优先使用负片
+        return img.negative_rel_path || img.original_rel_path || img.full_rel_path || img.positive_rel_path;
+      case 'original':
+      default:
+        // 优先使用原始上传（TIFF/Raw）
+        return img.original_rel_path || img.negative_rel_path || img.full_rel_path || img.positive_rel_path;
     }
+  };
 
+  // 检查各源类型是否可用
+  const availableSources = {
+    original: !!(img.original_rel_path),
+    negative: !!(img.negative_rel_path || img.full_rel_path),
+    positive: !!(img.positive_rel_path)
+  };
+
+  // 源类型选择器弹窗
+  const handleFilmLabClick = () => {
+    // 如果只有一种源可用，直接打开FilmLab
+    const availableCount = Object.values(availableSources).filter(Boolean).length;
+    if (availableCount <= 1) {
+      setIsNegativeMode(true);
+      setShowInverter(true);
+      return;
+    }
+    // 否则显示选择器
+    setShowSourceSelector(true);
+  };
+
+  const openFilmLabWithSource = (sourceType) => {
+    setFilmLabSourceType(sourceType);
+    setShowSourceSelector(false);
+    setIsNegativeMode(sourceType !== 'positive');
+    setShowInverter(true);
+  };
+
+  if (showInverter) {
+    // 使用选定的源类型
+    const sourcePath = getSourcePathForFilmLab();
+
+    // 添加时间戳防止缓存问题，并在 photoId 变化时强制重新加载
     const targetUrl = sourcePath 
-        ? buildUploadUrl(`/uploads/${sourcePath}`) 
+        ? buildUploadUrl(`/uploads/${sourcePath}`) + `?t=${Date.now()}&photoId=${img.id}`
         : imgUrl;
 
     return (
@@ -143,8 +181,19 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
           imageUrl={targetUrl}
           rollId={img.roll_id}
           photoId={img.id}
+          sourceType={filmLabSourceType}
           onPhotoUpdate={onPhotoUpdate}
           onClose={() => { setShowInverter(false); setIsNegativeMode(false); }} 
+          // PhotoSwitcher 相关 props
+          photos={images}
+          showPhotoSwitcher={images.length > 1}
+          onPhotoChange={(newPhoto) => {
+            // 切换到新照片
+            const newIndex = images.findIndex(p => p.id === newPhoto.id);
+            if (newIndex !== -1) {
+              setI(newIndex);
+            }
+          }}
           onSave={(blob) => { 
               // Directly save without confirmation if user clicked Save in FilmLab
               // Or keep confirmation if preferred. User asked to fix "save not working".
@@ -190,72 +239,43 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
 
   const handleDownload = async () => {
     console.log('[DOWNLOAD] Starting download for photo ID:', img.id);
-    console.log('[DOWNLOAD] Photo metadata:', { 
-      camera: img.camera, 
-      lens: img.lens, 
-      iso: img.iso, 
-      aperture: img.aperture,
-      shutter_speed: img.shutter_speed,
-      photographer: img.photographer
-    });
     
     try {
-      // Strategy: Use server-side EXIF writing endpoint for reliability
-      // Server has exiftool which is more robust than client-side piexifjs
+      // 使用统一的下载 API，支持 EXIF 写入
+      const downloadUrl = getSingleDownloadUrl(img.id, 'positive', true);
+      console.log('[DOWNLOAD] Using unified download URL:', downloadUrl);
       
-      if (img.id && window.__electron) {
-        // For Electron (desktop), use server endpoint to get EXIF-embedded image
-        console.log('[DOWNLOAD] Using server-side EXIF endpoint for photo ID:', img.id);
-        
-        try {
-          const apiBase = window.__electron.API_BASE || 'http://127.0.0.1:4000';
-          const exifUrl = `${apiBase}/api/photos/${img.id}/download-with-exif`;
-          
-          console.log('[DOWNLOAD] Fetching from:', exifUrl);
-          const response = await fetch(exifUrl, { method: 'POST' });
-          
-          if (!response.ok) {
-            throw new Error(`Server returned ${response.status}`);
-          }
-          
-          const blob = await response.blob();
-          console.log('[DOWNLOAD] Received blob size:', blob.size, 'bytes');
-          
-          const defaultName = img.filename ? img.filename.split('/').pop() : `photo_${img.id}.jpg`;
-          const saveRes = await window.__electron.filmLabSaveAs({ blob, defaultName });
-          
-          if (saveRes && saveRes.error) {
-            throw new Error(saveRes.error);
-          }
-          
-          console.log('[DOWNLOAD] ✅ Download with EXIF successful');
-          return;
-        } catch (serverErr) {
-          console.warn('[DOWNLOAD] Server EXIF endpoint failed, falling back to client-side:', serverErr);
-          // Fall through to client-side fallback
-        }
+      const response = await fetch(downloadUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Server returned ${response.status}`);
       }
       
-      // Fallback: Direct download without EXIF (for web or if server endpoint fails)
-      console.log('[DOWNLOAD] Using fallback direct download');
-      const response = await fetch(imgUrl);
       const blob = await response.blob();
-
+      console.log('[DOWNLOAD] Received blob size:', blob.size, 'bytes');
+      
+      const defaultName = img.filename ? img.filename.split('/').pop() : `photo_${img.id}.jpg`;
+      
       if (window.__electron) {
-        const defaultName = img.filename ? img.filename.split('/').pop() : `image_${i+1}.jpg`;
-        const res = await window.__electron.filmLabSaveAs({ blob, defaultName });
-        if (res && res.error) {
-           showAlert('Error', 'Save failed: ' + res.error);
+        // Electron: 使用系统保存对话框
+        const saveRes = await window.__electron.filmLabSaveAs({ blob, defaultName });
+        
+        if (saveRes && saveRes.error) {
+          throw new Error(saveRes.error);
         }
+        
+        console.log('[DOWNLOAD] ✅ Download with EXIF successful');
       } else {
+        // Web: 使用链接下载
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
-        a.download = img.filename ? img.filename.split('/').pop() : `image_${i+1}.jpg`;
+        a.download = defaultName;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
       }
     } catch (e) {
       console.error('Download failed', e);
@@ -286,7 +306,7 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
         <div className="iv-title">{img.caption || img.frame_number || `Image ${i+1} / ${images.length}`}</div>
         <div className="iv-controls">
           <button className="iv-btn" onClick={() => setShowDetails(true)} title="Edit Meta">Edit Meta</button>
-          <button className="iv-btn" onClick={() => { setIsNegativeMode(true); setShowInverter(true); }} title="Film Lab (Invert/Color)">Film Lab</button>
+          <button className="iv-btn" onClick={handleFilmLabClick} title="Film Lab (Invert/Color)">Film Lab</button>
           <button className="iv-btn" onClick={handleDownload} title="Save to Disk">Download</button>
           <button className="iv-btn" onClick={zoomOut}>−</button>
           <button className="iv-btn" onClick={reset}>Reset</button>
@@ -294,6 +314,95 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
           <button className="iv-btn iv-close" onClick={onClose}>Close</button>
         </div>
       </div>
+      
+      {/* 源图像类型选择器弹窗 */}
+      {showSourceSelector && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100
+        }} onClick={() => setShowSourceSelector(false)}>
+          <div style={{
+            backgroundColor: '#2a2a2a',
+            borderRadius: 12,
+            padding: '24px 32px',
+            minWidth: 320,
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)'
+          }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 16px', color: '#fff', fontSize: 18, fontWeight: 600 }}>选择编辑源</h3>
+            <p style={{ margin: '0 0 20px', color: '#999', fontSize: 13 }}>选择要在 Film Lab 中编辑的图像源</p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {/* Original/Raw */}
+              <button
+                className="iv-btn"
+                onClick={() => openFilmLabWithSource('original')}
+                disabled={!availableSources.original && !availableSources.negative}
+                style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  background: '#333',
+                  opacity: (!availableSources.original && !availableSources.negative) ? 0.4 : 1
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>🎞️ 原始 (Original)</div>
+                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                  {availableSources.original ? '使用原始上传的TIFF/Raw文件' : 
+                   availableSources.negative ? '使用负片扫描' : '无可用源'}
+                </div>
+              </button>
+              
+              {/* Negative */}
+              <button
+                className="iv-btn"
+                onClick={() => openFilmLabWithSource('negative')}
+                disabled={!availableSources.negative}
+                style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  background: '#333',
+                  opacity: !availableSources.negative ? 0.4 : 1
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>📷 负片 (Negative)</div>
+                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                  {availableSources.negative ? '使用负片扫描进行反相处理' : '无负片文件'}
+                </div>
+              </button>
+              
+              {/* Positive */}
+              <button
+                className="iv-btn"
+                onClick={() => openFilmLabWithSource('positive')}
+                disabled={!availableSources.positive}
+                style={{
+                  padding: '12px 16px',
+                  textAlign: 'left',
+                  background: '#333',
+                  opacity: !availableSources.positive ? 0.4 : 1
+                }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 500, color: '#fff' }}>✨ 正片 (Positive)</div>
+                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                  {availableSources.positive ? '微调已渲染的正片（色调/曲线调整）' : '尚未渲染正片'}
+                </div>
+              </button>
+            </div>
+            
+            <button
+              className="iv-btn"
+              onClick={() => setShowSourceSelector(false)}
+              style={{ marginTop: 16, width: '100%', padding: '10px', background: '#444' }}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
       <div
         className="iv-canvas"

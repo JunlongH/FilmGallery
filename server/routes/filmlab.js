@@ -12,20 +12,35 @@ const { buildPipeline } = require('../services/filmlab-service');
 const {
   RenderCore,
   EXPORT_MAX_WIDTH,
-  PREVIEW_MAX_WIDTH_SERVER
+  PREVIEW_MAX_WIDTH_SERVER,
+  getEffectiveInverted
 } = require('../../packages/shared');
 
 // POST /api/filmlab/preview
-// Body: { photoId, params, maxWidth }
+// Body: { photoId, params, maxWidth, sourceType }
 router.post('/preview', async (req, res) => {
-  const { photoId, params, maxWidth } = req.body || {};
+  const { photoId, params, maxWidth, sourceType } = req.body || {};
   if (!photoId) return res.status(400).json({ error: 'photoId required' });
   try {
     const row = await new Promise((resolve, reject) => {
       db.get('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
     });
     if (!row) return res.status(404).json({ error: 'photo not found' });
-    const relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+    
+    // 根据 sourceType 选择源文件
+    let relSource;
+    switch (sourceType) {
+      case 'positive':
+        relSource = row.positive_rel_path || row.original_rel_path || row.full_rel_path || row.negative_rel_path;
+        break;
+      case 'negative':
+        relSource = row.negative_rel_path || row.original_rel_path || row.full_rel_path || row.positive_rel_path;
+        break;
+      case 'original':
+      default:
+        relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
+        break;
+    }
     if (!relSource) return res.status(400).json({ error: 'no usable source path' });
     const abs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
@@ -46,7 +61,9 @@ router.post('/preview', async (req, res) => {
     const out = Buffer.allocUnsafe(width * height * 3);
 
     // 使用统一渲染核心
-    const core = new RenderCore(params || {});
+    // 使用 getEffectiveInverted 计算有效反转状态，正片模式不需要反转
+    const effectiveInverted = getEffectiveInverted(sourceType, params?.inverted);
+    const core = new RenderCore({ ...params, inverted: effectiveInverted });
     core.prepareLUTs();
 
     // Process pixels using RenderCore

@@ -2,6 +2,9 @@
 // Provides a basic shader pipeline for inversion (linear/log), white balance (r/g/b gains), exposure and contrast.
 // This is intentionally small and dependency-free. We'll extend it later for curves and 3D LUTs.
 
+// 从共享模块导入 LUT 打包函数以确保与 CPU 路径一致
+import { packLUT3DForWebGL } from '@filmgallery/shared';
+
 // Debug flag - set to true during development for detailed logging
 const DEBUG_WEBGL = false;
 
@@ -177,6 +180,7 @@ export function processImageWebGL(canvas, image, params = {}) {
     uniform sampler2D u_lut3d;
     uniform int u_useLut3d;
     uniform int u_lutSize;
+    uniform float u_lutIntensity; // LUT 强度 (0-1)
 
     // HSL adjustments (8 channels x 3 values: hue, saturation, luminance)
     uniform int u_useHSL;
@@ -565,6 +569,12 @@ export function processImageWebGL(canvas, image, params = {}) {
       
       vec3 c = col;
 
+      // ③ Apply 3D LUT if enabled (MOVED EARLY to support Inversion LUTs)
+      if (u_useLut3d == 1) {
+        vec3 lutColor = sampleLUT3D(c);
+        c = mix(c, lutColor, u_lutIntensity);
+      }
+
       // Apply gains (White Balance)
       c = c * u_gains;
 
@@ -601,11 +611,6 @@ export function processImageWebGL(canvas, image, params = {}) {
       // ⑦ Split Toning
       if (u_useSplitTone == 1) {
         c = applySplitToning(c);
-      }
-
-      // ⑧ Apply 3D LUT if enabled
-      if (u_useLut3d == 1) {
-        c = sampleLUT3D(c);
       }
 
       gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
@@ -678,6 +683,7 @@ export function processImageWebGL(canvas, image, params = {}) {
     locs.u_lut3d = gl.getUniformLocation(program, 'u_lut3d');
     locs.u_useLut3d = gl.getUniformLocation(program, 'u_useLut3d');
     locs.u_lutSize = gl.getUniformLocation(program, 'u_lutSize');
+    locs.u_lutIntensity = gl.getUniformLocation(program, 'u_lutIntensity'); // 新增：LUT 强度
     // HSL uniforms
     locs.u_useHSL = gl.getUniformLocation(program, 'u_useHSL');
     locs.u_hslRed = gl.getUniformLocation(program, 'u_hslRed');
@@ -773,44 +779,39 @@ export function processImageWebGL(canvas, image, params = {}) {
     gl.uniform1i(locs.u_useCurves, 0);
   }
 
-  // Handle 3D LUT: expect params.lut3 = { size, data(Float32Array 0..1) }
+  // Handle 3D LUT: expect params.lut3 = { size, data(Float32Array 0..1), intensity? }
+  // 使用统一的 packLUT3DForWebGL 函数确保与 CPU 路径一致
   if (params.lut3 && params.lut3.size && params.lut3.data) {
     const size = params.lut3.size;
     const dataF = params.lut3.data;
-    // pack into width=size, height=size*size RGBA unsigned bytes
+    const intensity = params.lut3.intensity ?? 1.0;
+    
+    // 使用共享模块的打包函数
+    const buf = packLUT3DForWebGL(dataF, size);
     const w = size;
     const h = size * size;
-    const buf = new Uint8Array(w * h * 4);
-    // iterate b (slice), g, r
-    let ptr = 0;
-    for (let b = 0; b < size; b++) {
-      for (let g = 0; g < size; g++) {
-        for (let r = 0; r < size; r++) {
-          const idx = (r + g*size + b*size*size) * 3; // input is RGB floats
-          const vr = Math.max(0, Math.min(1, dataF[idx]));
-          const vg = Math.max(0, Math.min(1, dataF[idx+1]));
-          const vb = Math.max(0, Math.min(1, dataF[idx+2]));
-          buf[ptr++] = Math.round(vr * 255);
-          buf[ptr++] = Math.round(vg * 255);
-          buf[ptr++] = Math.round(vb * 255);
-          buf[ptr++] = 255;
-        }
-      }
-    }
 
     if (!cache.lut3Tex) cache.lut3Tex = gl.createTexture();
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D, cache.lut3Tex);
+    // 关键修复：LUT 纹理不需要翻转 Y 轴
+    // 之前继承了图像上传时设置的 UNPACK_FLIP_Y_WEBGL = true，导致 LUT 数据被垂直翻转
+    // 这会使 Blue 切片顺序颠倒，Green 轴反向，产生严重的色彩偏差
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    // 恢复翻转设置，以便后续图像上传正常工作
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.uniform1i(locs.u_lut3d, 5);
     gl.uniform1i(locs.u_useLut3d, 1);
     gl.uniform1i(locs.u_lutSize, size);
+    gl.uniform1f(locs.u_lutIntensity, intensity); // 设置 LUT 强度
   } else {
     gl.uniform1i(locs.u_useLut3d, 0);
+    gl.uniform1f(locs.u_lutIntensity, 0.0);
   }
 
   // HSL Adjustments

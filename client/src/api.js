@@ -845,3 +845,371 @@ export async function resumeExportJob(jobId) {
   return resp.json();
 }
 
+// ============================================================================
+// 批量渲染 API
+// ============================================================================
+
+/**
+ * 创建批量渲染任务（写入库）
+ * @param {Object} options - 配置选项
+ * @param {number} options.rollId - 卷 ID
+ * @param {string} options.scope - 'selected' | 'all' | 'no-positive'
+ * @param {number[]} [options.photoIds] - 照片 ID 列表（scope='selected' 时必填）
+ * @param {Object} options.paramsSource - 参数来源
+ * @returns {Promise<Object>} { jobId, totalPhotos, status }
+ */
+export async function createBatchRenderLibrary(options) {
+  const resp = await fetch(`${API_BASE}/api/batch-render/library`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  return resp.json();
+}
+
+/**
+ * 创建批量渲染任务（下载到目录）
+ * @param {Object} options - 配置选项
+ * @param {number} options.rollId - 卷 ID
+ * @param {string} options.scope - 'selected' | 'all' | 'no-positive'
+ * @param {number[]} [options.photoIds] - 照片 ID 列表
+ * @param {Object} options.paramsSource - 参数来源
+ * @param {string} options.outputDir - 输出目录
+ * @param {string} [options.format='jpeg'] - 格式
+ * @param {number} [options.quality=95] - 质量
+ * @returns {Promise<Object>} { jobId, totalPhotos, outputDir, status }
+ */
+export async function createBatchRenderDownload(options) {
+  const resp = await fetch(`${API_BASE}/api/batch-render/download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  return resp.json();
+}
+
+/**
+ * 获取批量渲染任务进度
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 进度信息
+ */
+export async function getBatchRenderProgress(jobId) {
+  return jsonFetch(`/api/batch-render/${jobId}/progress`);
+}
+
+/**
+ * 取消批量渲染任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 结果
+ */
+export async function cancelBatchRender(jobId) {
+  const resp = await fetch(`${API_BASE}/api/batch-render/${jobId}/cancel`, { method: 'POST' });
+  return resp.json();
+}
+
+/**
+ * 暂停批量渲染任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 结果
+ */
+export async function pauseBatchRender(jobId) {
+  const resp = await fetch(`${API_BASE}/api/batch-render/${jobId}/pause`, { method: 'POST' });
+  return resp.json();
+}
+
+/**
+ * 恢复批量渲染任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 结果
+ */
+export async function resumeBatchRender(jobId) {
+  const resp = await fetch(`${API_BASE}/api/batch-render/${jobId}/resume`, { method: 'POST' });
+  return resp.json();
+}
+
+/**
+ * 获取所有批量渲染任务
+ * @returns {Promise<Object>} 任务列表
+ */
+export async function getBatchRenderJobs() {
+  return jsonFetch('/api/batch-render/jobs');
+}
+
+// ============================================================================
+// 批量下载 API
+// ============================================================================
+
+/**
+ * 创建批量下载任务
+ * @param {Object} options - 配置选项
+ * @param {number} options.rollId - 卷 ID
+ * @param {string} options.scope - 'selected' | 'all'
+ * @param {number[]} [options.photoIds] - 照片 ID 列表
+ * @param {string} options.type - 'positive' | 'negative' | 'original'
+ * @param {string} options.outputDir - 输出目录
+ * @param {Object} [options.exif] - EXIF 选项
+ * @param {string} [options.namingPattern] - 命名规则
+ * @returns {Promise<Object>} { jobId, totalPhotos, availablePhotos, outputDir, status }
+ */
+export async function createBatchDownload(options) {
+  const resp = await fetch(`${API_BASE}/api/batch-download`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  return resp.json();
+}
+
+/**
+ * 获取批量下载任务进度
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 进度信息
+ */
+export async function getBatchDownloadProgress(jobId) {
+  return jsonFetch(`/api/batch-download/${jobId}/progress`);
+}
+
+/**
+ * 取消批量下载任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 结果
+ */
+export async function cancelBatchDownload(jobId) {
+  const resp = await fetch(`${API_BASE}/api/batch-download/${jobId}/cancel`, { method: 'POST' });
+  return resp.json();
+}
+
+/**
+ * 检查某类型文件的可用性
+ * @param {number} rollId - 卷 ID
+ * @param {string} type - 'positive' | 'negative' | 'original'
+ * @param {string} [scope='all'] - 'selected' | 'all'
+ * @param {number[]} [photoIds] - 照片 ID 列表
+ * @returns {Promise<Object>} { type, total, available, missing }
+ */
+export async function checkDownloadAvailability(rollId, type, scope = 'all', photoIds = []) {
+  const params = new URLSearchParams();
+  params.append('rollId', rollId);
+  params.append('type', type);
+  params.append('scope', scope);
+  if (photoIds.length > 0) {
+    params.append('photoIds', JSON.stringify(photoIds));
+  }
+  return jsonFetch(`/api/batch-download/availability?${params}`);
+}
+
+/**
+ * 单张照片下载（带 EXIF）
+ * @param {number} photoId - 照片 ID
+ * @param {string} [type='positive'] - 'positive' | 'negative' | 'original'
+ * @param {boolean} [exif=false] - 是否写入 EXIF
+ * @returns {string} 下载 URL
+ */
+export function getSingleDownloadUrl(photoId, type = 'positive', exif = false) {
+  return `${API_BASE}/api/batch-download/single/${photoId}?type=${type}&exif=${exif}`;
+}
+
+// ============================================================================
+// 外部正片导入 API
+// ============================================================================
+
+/**
+ * 获取可用的匹配策略
+ * @returns {Promise<Object>} { strategies: [...] }
+ */
+export async function getImportStrategies() {
+  return jsonFetch('/api/import/strategies');
+}
+
+/**
+ * 预览导入匹配结果
+ * @param {number} rollId - 卷 ID
+ * @param {string[]} filePaths - 导入文件路径列表
+ * @param {string} strategy - 匹配策略 'filename' | 'frame' | 'manual'
+ * @returns {Promise<Object>} { success, matches, stats, unmatchedPhotos }
+ */
+export async function previewImport(rollId, filePaths, strategy = 'filename') {
+  const resp = await fetch(`${API_BASE}/api/import/preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rollId, filePaths, strategy })
+  });
+  return resp.json();
+}
+
+/**
+ * 更新手动匹配
+ * @param {number} rollId - 卷 ID
+ * @param {Array} matches - 当前匹配结果
+ * @param {number} fileIndex - 文件索引
+ * @param {number|null} photoId - 照片 ID
+ * @returns {Promise<Object>} { success, matches, stats, unmatchedPhotos }
+ */
+export async function updateManualMatch(rollId, matches, fileIndex, photoId) {
+  const resp = await fetch(`${API_BASE}/api/import/manual-match`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rollId, matches, fileIndex, photoId })
+  });
+  return resp.json();
+}
+
+/**
+ * 执行导入
+ * @param {number} rollId - 卷 ID
+ * @param {Array} matches - 匹配结果
+ * @param {string} conflictResolution - 冲突处理 'overwrite' | 'skip'
+ * @returns {Promise<Object>} { jobId, status, total }
+ */
+export async function executeImport(rollId, matches, conflictResolution = 'overwrite') {
+  const resp = await fetch(`${API_BASE}/api/import/execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rollId, matches, conflictResolution })
+  });
+  return resp.json();
+}
+
+/**
+ * 获取导入任务进度
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>} 进度信息
+ */
+export async function getImportProgress(jobId) {
+  return jsonFetch(`/api/import/${jobId}/progress`);
+}
+
+/**
+ * 取消导入任务
+ * @param {string} jobId - 任务 ID
+ * @returns {Promise<Object>}
+ */
+export async function cancelImport(jobId) {
+  const resp = await fetch(`${API_BASE}/api/import/${jobId}/cancel`, { method: 'POST' });
+  return resp.json();
+}
+
+// ============================================================================
+// 导出历史 API
+// ============================================================================
+
+/**
+ * 获取导出历史
+ * @param {Object} options
+ * @param {number} options.limit - 限制数量
+ * @param {number} options.offset - 偏移量
+ * @param {number} options.rollId - 按卷筛选
+ * @param {string} options.jobType - 按类型筛选 ('render' | 'download' | 'import')
+ * @returns {Promise<Object>} { history: [...] }
+ */
+export async function getExportHistory({ limit, offset, rollId, jobType } = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.append('limit', limit);
+  if (offset) params.append('offset', offset);
+  if (rollId) params.append('rollId', rollId);
+  if (jobType) params.append('jobType', jobType);
+  
+  const resp = await fetch(`${API_BASE}/api/export-history?${params}`);
+  return resp.json();
+}
+
+/**
+ * 获取导出统计
+ * @returns {Promise<Object>} { stats: [...] }
+ */
+export async function getExportStats() {
+  const resp = await fetch(`${API_BASE}/api/export-history/stats`);
+  return resp.json();
+}
+
+/**
+ * 清理旧历史记录
+ * @param {number} keepCount - 保留数量
+ * @returns {Promise<Object>} { deleted: number }
+ */
+export async function cleanupExportHistory(keepCount = 100) {
+  const resp = await fetch(`${API_BASE}/api/export-history/cleanup?keepCount=${keepCount}`, {
+    method: 'DELETE'
+  });
+  return resp.json();
+}
+
+// ============================================================================
+// LUT 库 API
+// ============================================================================
+
+/**
+ * 获取 LUT 列表
+ * @returns {Promise<Object>} { luts: [...] }
+ */
+export async function listLuts() {
+  const resp = await fetch(`${API_BASE}/api/luts`);
+  return resp.json();
+}
+
+/**
+ * 上传 LUT 文件
+ * @param {File} file - LUT 文件
+ * @returns {Promise<Object>} 上传结果
+ */
+export async function uploadLut(file) {
+  const fd = new FormData();
+  fd.append('file', file);
+  const resp = await fetch(`${API_BASE}/api/luts`, {
+    method: 'POST',
+    body: fd
+  });
+  return resp.json();
+}
+
+/**
+ * 删除 LUT 文件
+ * @param {string} name - LUT 文件名
+ * @returns {Promise<Object>} 删除结果
+ */
+export async function deleteLut(name) {
+  const resp = await fetch(`${API_BASE}/api/luts/${encodeURIComponent(name)}`, {
+    method: 'DELETE'
+  });
+  return resp.json();
+}
+
+/**
+ * 加载并解析 LUT 文件
+ * @param {string} name - LUT 文件名
+ * @returns {Promise<Object>} { size: number, data: Float32Array }
+ */
+export async function loadLutFromLibrary(name) {
+  const resp = await fetch(`${API_BASE}/api/luts/${encodeURIComponent(name)}`);
+  const text = await resp.text();
+  return parseCubeLUT(text);
+}
+
+/**
+ * 解析 .cube LUT 文件内容
+ * @param {string} text - LUT 文件文本内容
+ * @returns {Object} { size: number, data: Float32Array }
+ */
+export function parseCubeLUT(text) {
+  const lines = text.split('\n');
+  let size = 33; // Default
+  const data = [];
+  
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;
+    
+    if (line.startsWith('LUT_3D_SIZE')) {
+      size = parseInt(line.split(/\s+/)[1]);
+      continue;
+    }
+    
+    // Data lines
+    const parts = line.split(/\s+/).map(parseFloat);
+    if (parts.length >= 3 && !isNaN(parts[0])) {
+      data.push(parts[0], parts[1], parts[2]);
+    }
+  }
+  
+  return { size, data: new Float32Array(data) };
+}

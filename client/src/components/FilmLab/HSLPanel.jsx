@@ -35,7 +35,7 @@ const CHANNEL_NAMES = {
 /**
  * 单通道滑块组
  */
-function ChannelSliders({ channel, params, onChange, onMouseDown }) {
+function ChannelSliders({ channel, params, onChange, onMouseDown, showLabel = true }) {
   const color = CHANNEL_COLORS[channel];
   const name = CHANNEL_NAMES[channel];
   const channelParams = params?.[channel] || { hue: 0, saturation: 0, luminance: 0 };
@@ -45,31 +45,33 @@ function ChannelSliders({ channel, params, onChange, onMouseDown }) {
   };
   
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div style={{ marginBottom: showLabel ? 8 : 0 }}>
       {/* 通道标签 */}
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: 8,
-        marginBottom: 4,
-        padding: '2px 6px',
-        background: color.bg,
-        borderRadius: 3,
-        width: 'fit-content'
-      }}>
-        <span style={{ 
-          fontSize: 11, 
-          fontWeight: 600, 
-          color: color.text,
-          textTransform: 'uppercase',
-          letterSpacing: 0.5
+      {showLabel && (
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 8,
+          marginBottom: 4,
+          padding: '2px 6px',
+          background: color.bg,
+          borderRadius: 3,
+          width: 'fit-content'
         }}>
-          {name}
-        </span>
-      </div>
+          <span style={{ 
+            fontSize: 11, 
+            fontWeight: 600, 
+            color: color.text,
+            textTransform: 'uppercase',
+            letterSpacing: 0.5
+          }}>
+            {name}
+          </span>
+        </div>
+      )}
       
       {/* 三个滑块 */}
-      <div style={{ paddingLeft: 4 }}>
+      <div style={{ paddingLeft: showLabel ? 4 : 0 }}>
         <HSLSlider
           label="Hue"
           value={channelParams.hue}
@@ -202,7 +204,7 @@ export default function HSLPanel({
           color: '#fff',
           letterSpacing: 0.5
         }}>
-          HSL 调整
+          HSL Adjustment
         </span>
         <div style={{ display: 'flex', gap: 4 }}>
           {/* 视图模式切换 */}
@@ -278,19 +280,27 @@ export default function HSLPanel({
             alignItems: 'center',
             marginBottom: 6
           }}>
-            <span style={{ 
-              fontSize: 11, 
-              fontWeight: 600, 
-              color: CHANNEL_COLORS[expandedChannel].bg 
+            <div style={{ 
+              padding: '2px 6px',
+              background: CHANNEL_COLORS[expandedChannel].bg,
+              borderRadius: 3,
             }}>
-              {CHANNEL_NAMES[expandedChannel]}
-            </span>
+              <span style={{ 
+                fontSize: 11, 
+                fontWeight: 600, 
+                color: CHANNEL_COLORS[expandedChannel].text,
+                textTransform: 'uppercase',
+                letterSpacing: 0.5
+              }}>
+                {CHANNEL_NAMES[expandedChannel]}
+              </span>
+            </div>
             <button
               className="iv-btn-icon"
               onClick={() => handleResetChannel(expandedChannel)}
               style={{ fontSize: 9, padding: '1px 4px' }}
             >
-              重置
+              ↺
             </button>
           </div>
           <ChannelSliders
@@ -298,6 +308,7 @@ export default function HSLPanel({
             params={hslParams}
             onChange={handleChannelChange}
             onMouseDown={pushToHistory}
+            showLabel={false}
           />
         </div>
       )}
@@ -318,13 +329,21 @@ export default function HSLPanel({
                 alignItems: 'center',
                 marginBottom: 4
               }}>
-                <span style={{ 
-                  fontSize: 11, 
-                  fontWeight: 600, 
-                  color: CHANNEL_COLORS[channel].bg 
+                <div style={{ 
+                  padding: '2px 6px',
+                  background: CHANNEL_COLORS[channel].bg,
+                  borderRadius: 3,
                 }}>
-                  {CHANNEL_NAMES[channel]}
-                </span>
+                  <span style={{ 
+                    fontSize: 11, 
+                    fontWeight: 600, 
+                    color: CHANNEL_COLORS[channel].text,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5
+                  }}>
+                    {CHANNEL_NAMES[channel]}
+                  </span>
+                </div>
                 <button
                   className="iv-btn-icon"
                   onClick={() => handleResetChannel(channel)}
@@ -338,6 +357,7 @@ export default function HSLPanel({
                 params={hslParams}
                 onChange={handleChannelChange}
                 onMouseDown={pushToHistory}
+                showLabel={false}
               />
             </div>
           ))}

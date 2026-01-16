@@ -126,7 +126,7 @@ function ToneControl({
             color: '#888',
             marginBottom: 2
           }}>
-            <span>色相</span>
+            <span>Hue</span>
             <span style={{ fontFamily: 'monospace' }}>{hue}°</span>
           </div>
           <input
@@ -162,7 +162,7 @@ function ToneControl({
             color: '#888',
             marginBottom: 2
           }}>
-            <span>饱和度</span>
+            <span>Saturation</span>
             <span style={{ fontFamily: 'monospace' }}>{saturation}</span>
           </div>
           <input
@@ -298,14 +298,14 @@ export default function SplitToningPanel({
           color: '#fff',
           letterSpacing: 0.5
         }}>
-          分离色调
+          Split Toning
         </span>
         <div style={{ display: 'flex', gap: 4 }}>
           {/* 预设按钮 */}
           <button
             className="iv-btn-icon"
             onClick={() => setShowPresets(!showPresets)}
-            title="预设"
+            title="Presets"
             style={{ fontSize: 10, padding: '2px 6px' }}
           >
             ★
@@ -315,7 +315,7 @@ export default function SplitToningPanel({
             <button
               className="iv-btn-icon"
               onClick={handleReset}
-              title="重置"
+              title="Reset"
               style={{ fontSize: 10, padding: '2px 6px', color: '#f88' }}
             >
               ↺
@@ -337,7 +337,7 @@ export default function SplitToningPanel({
             color: '#888', 
             marginBottom: 6 
           }}>
-            选择预设
+            Select a split toning preset:
           </div>
           <div style={{ 
             display: 'flex', 
@@ -367,7 +367,7 @@ export default function SplitToningPanel({
       
       {/* 高光控制 */}
       <ToneControl
-        label="高光"
+        label="Highlights"
         hue={params.highlights.hue}
         saturation={params.highlights.saturation}
         onHueChange={(v) => updateHighlights('hue', v)}
@@ -385,7 +385,7 @@ export default function SplitToningPanel({
       
       {/* 中间调控制 */}
       <ToneControl
-        label="中间调"
+        label="Midtones"
         hue={params.midtones.hue}
         saturation={params.midtones.saturation}
         onHueChange={(v) => updateMidtones('hue', v)}
@@ -403,7 +403,7 @@ export default function SplitToningPanel({
       
       {/* 阴影控制 */}
       <ToneControl
-        label="阴影"
+        label="Shadows"
         hue={params.shadows.hue}
         saturation={params.shadows.saturation}
         onHueChange={(v) => updateShadows('hue', v)}
@@ -425,7 +425,7 @@ export default function SplitToningPanel({
           color: '#888',
           marginBottom: 4
         }}>
-          <span>阴影 ← 平衡 → 高光</span>
+          <span>Shadows ← Balance → Highlights</span>
           <span style={{ fontFamily: 'monospace' }}>{params.balance}</span>
         </div>
         <input

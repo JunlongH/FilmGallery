@@ -234,7 +234,15 @@ class RenderCore {
       b = applyInversion(b, p);
     }
 
-    // ③ 白平衡 (White Balance)
+    // ③ 3D LUT (Moved to Step 3 to support Inversion LUTs acting on base image)
+    if (luts.lut1) {
+      [r, g, b] = this._sampleLUT3D(r, g, b, luts.lut1, luts.lut1Intensity);
+    }
+    if (luts.lut2) {
+      [r, g, b] = this._sampleLUT3D(r, g, b, luts.lut2, luts.lut2Intensity);
+    }
+
+    // ④ 白平衡 (White Balance)
     r *= luts.rBal;
     g *= luts.gBal;
     b *= luts.bBal;
@@ -270,14 +278,6 @@ class RenderCore {
     // ⑦ 分离色调
     if (p.splitToning && !isDefaultSplitTone(p.splitToning)) {
       [r, g, b] = applySplitTone(r, g, b, p.splitToning);
-    }
-
-    // ⑧ 3D LUT
-    if (luts.lut1) {
-      [r, g, b] = this._sampleLUT3D(r, g, b, luts.lut1, luts.lut1Intensity);
-    }
-    if (luts.lut2) {
-      [r, g, b] = this._sampleLUT3D(r, g, b, luts.lut2, luts.lut2Intensity);
     }
 
     return [
