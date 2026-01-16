@@ -7,6 +7,8 @@ import { packLUT3DForWebGL } from '@filmgallery/shared';
 
 // Debug flag - set to true during development for detailed logging
 const DEBUG_WEBGL = false;
+const DEBUG_LUT = false;
+const DEBUG_LUT_OUTPUT = false;
 
 // Helper: Check if HSL params are default (all zeros)
 function isDefaultHSLParams(hslParams) {
@@ -54,6 +56,18 @@ function createProgram(gl, vsSource, fsSource) {
     gl.deleteProgram(prog);
     throw new Error('Program link error: ' + msg);
   }
+  
+  // Debug: 检查所有 active uniforms (仅在调试模式下)
+  if (DEBUG_WEBGL) {
+    console.log('[FilmLabWebGL] Program created successfully. Checking active uniforms...');
+    const numUniforms = gl.getProgramParameter(prog, gl.ACTIVE_UNIFORMS);
+    console.log('[FilmLabWebGL] Number of active uniforms:', numUniforms);
+    for (let i = 0; i < numUniforms; i++) {
+      const info = gl.getActiveUniform(prog, i);
+      console.log(`  - Uniform ${i}: name="${info.name}", type=${info.type}, size=${info.size}`);
+    }
+  }
+  
   return prog;
 }
 
@@ -69,15 +83,43 @@ export function isWebGLAvailable() {
 // Process an image on the given canvas using WebGL. The canvas will be sized to image dimensions.
 export function processImageWebGL(canvas, image, params = {}) {
   if (!canvas) return;
-  const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+  
+  // 尝试使用 webgl2 以支持更多选项
+  let gl = canvas.getContext('webgl2', { 
+    preserveDrawingBuffer: true,
+    premultipliedAlpha: false,
+    alpha: true,
+    desynchronized: false,
+    colorSpace: 'srgb'  // 明确指定颜色空间
+  });
+  
+  // 回退到 webgl
+  if (!gl) {
+    gl = canvas.getContext('webgl', { 
+      preserveDrawingBuffer: true,
+      premultipliedAlpha: false,
+      colorSpace: 'srgb'
+    }) || canvas.getContext('experimental-webgl', {
+      preserveDrawingBuffer: true,
+      premultipliedAlpha: false
+    });
+  }
+  
   if (!gl) throw new Error('WebGL not available');
+  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Using:', gl.getParameter(gl.VERSION));
 
   // Simple cache per-canvas to reuse programs and textures
+  // SHADER_VERSION is checked below to invalidate cache when shader code changes
   if (!processImageWebGL._cache) processImageWebGL._cache = new WeakMap();
+  
+  // Get or create cache for this canvas
   let cache = processImageWebGL._cache.get(canvas);
   if (!cache) {
     cache = {};
     processImageWebGL._cache.set(canvas, cache);
+    if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Created new cache for canvas');
+  } else {
+    if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Reusing existing cache, shaderVersion:', cache.shaderVersion);
   }
 
   // Rotate-then-crop pre-processing via 2D canvas for geometry parity with CPU/export
@@ -89,7 +131,7 @@ export function processImageWebGL(canvas, image, params = {}) {
     const s2 = document.createElement('canvas');
     s2.width = Math.max(1, Math.round(image.width * scale));
     s2.height = Math.max(1, Math.round(image.height * scale));
-    const g2 = s2.getContext('2d');
+    const g2 = s2.getContext('2d', { colorSpace: 'srgb', willReadFrequently: false });
     // draw scaled
     g2.drawImage(image, 0, 0, image.width, image.height, 0, 0, s2.width, s2.height);
     srcImage = s2;
@@ -103,7 +145,7 @@ export function processImageWebGL(canvas, image, params = {}) {
   const r2d = document.createElement('canvas');
   r2d.width = rotW;
   r2d.height = rotH;
-  const rg = r2d.getContext('2d');
+  const rg = r2d.getContext('2d', { colorSpace: 'srgb', willReadFrequently: false });
   rg.translate(rotW / 2, rotH / 2);
   rg.rotate(rad);
   rg.drawImage(srcImage, -srcImage.width / 2, -srcImage.height / 2);
@@ -125,7 +167,7 @@ export function processImageWebGL(canvas, image, params = {}) {
     const c2d = document.createElement('canvas');
     c2d.width = cw;
     c2d.height = ch;
-    const g2 = c2d.getContext('2d');
+    const g2 = c2d.getContext('2d', { colorSpace: 'srgb', willReadFrequently: false });
     g2.drawImage(srcImage, cx, cy, cw, ch, 0, 0, cw, ch);
     srcImage = c2d;
     outW = cw;
@@ -147,6 +189,8 @@ export function processImageWebGL(canvas, image, params = {}) {
       gl_Position = vec4(a_pos, 0.0, 1.0);
     }
   `;
+
+  // SHADER_BUILD_ID: 2026-01-16-v28 - Fixed pipeline order (LUT at end)
 
   // Fragment shader with optional curve and 3D LUT support
   const fsSource = `
@@ -569,16 +613,10 @@ export function processImageWebGL(canvas, image, params = {}) {
       
       vec3 c = col;
 
-      // ③ Apply 3D LUT if enabled (MOVED EARLY to support Inversion LUTs)
-      if (u_useLut3d == 1) {
-        vec3 lutColor = sampleLUT3D(c);
-        c = mix(c, lutColor, u_lutIntensity);
-      }
-
-      // Apply gains (White Balance)
+      // ③ Apply gains (White Balance)
       c = c * u_gains;
 
-      // Tone Mapping: Exposure
+      // ④ Tone Mapping: Exposure
       c = c * pow(2.0, u_exposure);
 
       // Tone Mapping: Contrast
@@ -591,7 +629,7 @@ export function processImageWebGL(canvas, image, params = {}) {
       c.g = applyTone(c.g, u_highlights, u_shadows, u_whites, u_blacks);
       c.b = applyTone(c.b, u_highlights, u_shadows, u_whites, u_blacks);
 
-      // Apply curves if enabled (match CPU order: RGB curve first, then channel curves)
+      // ⑤ Apply curves if enabled (match CPU order: RGB curve first, then channel curves)
       if (u_useCurves == 1) {
         // First apply RGB combined curve
         c.r = sampleCurve(u_curveRGB, c.r);
@@ -613,13 +651,34 @@ export function processImageWebGL(canvas, image, params = {}) {
         c = applySplitToning(c);
       }
 
+      // ⑧ Apply 3D LUT if enabled (at the END to match CPU pipeline order)
+      if (u_useLut3d == 1) {
+        vec3 lutColor = sampleLUT3D(c);
+        c = mix(c, lutColor, u_lutIntensity);
+      }
+
       gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
     }
   `;
 
+  // Shader version for cache invalidation - increment this when shader code changes
+  // Note: Version 102 - Removed debug visual indicators
+  const SHADER_VERSION = 102;
+  
   // Build or reuse program
-  if (!cache.program) {
+  if (DEBUG_WEBGL) {
+    console.log('[FilmLabWebGL] SHADER_VERSION:', SHADER_VERSION, 'cache.shaderVersion:', cache.shaderVersion);
+  }
+  if (!cache.program || cache.shaderVersion !== SHADER_VERSION) {
+    if (cache.program) {
+      gl.deleteProgram(cache.program);
+      console.log('[FilmLabWebGL] Recompiling shader due to version change:', cache.shaderVersion, '->', SHADER_VERSION);
+    } else {
+      console.log('[FilmLabWebGL] Compiling shader for the first time, version:', SHADER_VERSION);
+    }
     cache.program = createProgram(gl, vsSource, fsSource);
+    cache.shaderVersion = SHADER_VERSION;
+    cache.locs = null; // Clear cached uniform locations
   }
   const program = cache.program;
   gl.useProgram(program);
@@ -647,68 +706,86 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 16, 8);
 
   // Create or reuse texture from image
+  // 重要：必须先激活 TEXTURE0 再绑定图像纹理，因为着色器期望图像在纹理单元 0
   if (!cache.imageTex) cache.imageTex = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, cache.imageTex);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, srcImage);
 
-  // Uniform locations
-  const locs = cache.locs || {};
-  if (!cache.locs) {
-    cache.locs = locs;
-    locs.u_image = gl.getUniformLocation(program, 'u_image');
-    locs.u_inverted = gl.getUniformLocation(program, 'u_inverted');
-    locs.u_inversionMode = gl.getUniformLocation(program, 'u_inversionMode');
-    locs.u_gains = gl.getUniformLocation(program, 'u_gains');
-    locs.u_exposure = gl.getUniformLocation(program, 'u_exposure');
-    locs.u_contrast = gl.getUniformLocation(program, 'u_contrast');
-    locs.u_highlights = gl.getUniformLocation(program, 'u_highlights');
-    locs.u_shadows = gl.getUniformLocation(program, 'u_shadows');
-    locs.u_whites = gl.getUniformLocation(program, 'u_whites');
-    locs.u_blacks = gl.getUniformLocation(program, 'u_blacks');
-    // Film Curve uniforms
-    locs.u_filmCurveEnabled = gl.getUniformLocation(program, 'u_filmCurveEnabled');
-    locs.u_filmCurveGamma = gl.getUniformLocation(program, 'u_filmCurveGamma');
-    locs.u_filmCurveDMin = gl.getUniformLocation(program, 'u_filmCurveDMin');
-    locs.u_filmCurveDMax = gl.getUniformLocation(program, 'u_filmCurveDMax');
-    locs.u_curveRGB = gl.getUniformLocation(program, 'u_curveRGB');
-    locs.u_curveR = gl.getUniformLocation(program, 'u_curveR');
-    locs.u_curveG = gl.getUniformLocation(program, 'u_curveG');
-    locs.u_curveB = gl.getUniformLocation(program, 'u_curveB');
-    locs.u_useCurves = gl.getUniformLocation(program, 'u_useCurves');
-    locs.u_lut3d = gl.getUniformLocation(program, 'u_lut3d');
-    locs.u_useLut3d = gl.getUniformLocation(program, 'u_useLut3d');
-    locs.u_lutSize = gl.getUniformLocation(program, 'u_lutSize');
-    locs.u_lutIntensity = gl.getUniformLocation(program, 'u_lutIntensity'); // 新增：LUT 强度
-    // HSL uniforms
-    locs.u_useHSL = gl.getUniformLocation(program, 'u_useHSL');
-    locs.u_hslRed = gl.getUniformLocation(program, 'u_hslRed');
-    locs.u_hslOrange = gl.getUniformLocation(program, 'u_hslOrange');
-    locs.u_hslYellow = gl.getUniformLocation(program, 'u_hslYellow');
-    locs.u_hslGreen = gl.getUniformLocation(program, 'u_hslGreen');
-    locs.u_hslCyan = gl.getUniformLocation(program, 'u_hslCyan');
-    locs.u_hslBlue = gl.getUniformLocation(program, 'u_hslBlue');
-    locs.u_hslPurple = gl.getUniformLocation(program, 'u_hslPurple');
-    locs.u_hslMagenta = gl.getUniformLocation(program, 'u_hslMagenta');
-    // Split Toning uniforms
-    locs.u_useSplitTone = gl.getUniformLocation(program, 'u_useSplitTone');
-    locs.u_highlightHue = gl.getUniformLocation(program, 'u_highlightHue');
-    locs.u_highlightSat = gl.getUniformLocation(program, 'u_highlightSat');
-    locs.u_midtoneHue = gl.getUniformLocation(program, 'u_midtoneHue');
-    locs.u_midtoneSat = gl.getUniformLocation(program, 'u_midtoneSat');
-    locs.u_shadowHue = gl.getUniformLocation(program, 'u_shadowHue');
-    locs.u_shadowSat = gl.getUniformLocation(program, 'u_shadowSat');
-    locs.u_splitBalance = gl.getUniformLocation(program, 'u_splitBalance');
+  // Uniform locations - 每次强制重新获取，因为 cache 每次都是新的
+  const locs = {};
+  cache.locs = locs;
+  
+  locs.u_image = gl.getUniformLocation(program, 'u_image');
+  locs.u_inverted = gl.getUniformLocation(program, 'u_inverted');
+  locs.u_inversionMode = gl.getUniformLocation(program, 'u_inversionMode');
+  locs.u_gains = gl.getUniformLocation(program, 'u_gains');
+  locs.u_exposure = gl.getUniformLocation(program, 'u_exposure');
+  locs.u_contrast = gl.getUniformLocation(program, 'u_contrast');
+  locs.u_highlights = gl.getUniformLocation(program, 'u_highlights');
+  locs.u_shadows = gl.getUniformLocation(program, 'u_shadows');
+  locs.u_whites = gl.getUniformLocation(program, 'u_whites');
+  locs.u_blacks = gl.getUniformLocation(program, 'u_blacks');
+  // Film Curve uniforms
+  locs.u_filmCurveEnabled = gl.getUniformLocation(program, 'u_filmCurveEnabled');
+  locs.u_filmCurveGamma = gl.getUniformLocation(program, 'u_filmCurveGamma');
+  locs.u_filmCurveDMin = gl.getUniformLocation(program, 'u_filmCurveDMin');
+  locs.u_filmCurveDMax = gl.getUniformLocation(program, 'u_filmCurveDMax');
+  locs.u_curveRGB = gl.getUniformLocation(program, 'u_curveRGB');
+  locs.u_curveR = gl.getUniformLocation(program, 'u_curveR');
+  locs.u_curveG = gl.getUniformLocation(program, 'u_curveG');
+  locs.u_curveB = gl.getUniformLocation(program, 'u_curveB');
+  locs.u_useCurves = gl.getUniformLocation(program, 'u_useCurves');
+  locs.u_lut3d = gl.getUniformLocation(program, 'u_lut3d');
+  locs.u_useLut3d = gl.getUniformLocation(program, 'u_useLut3d');
+  locs.u_lutSize = gl.getUniformLocation(program, 'u_lutSize');
+  locs.u_lutIntensity = gl.getUniformLocation(program, 'u_lutIntensity');
+  // HSL uniforms
+  locs.u_useHSL = gl.getUniformLocation(program, 'u_useHSL');
+  locs.u_hslRed = gl.getUniformLocation(program, 'u_hslRed');
+  locs.u_hslOrange = gl.getUniformLocation(program, 'u_hslOrange');
+  locs.u_hslYellow = gl.getUniformLocation(program, 'u_hslYellow');
+  locs.u_hslGreen = gl.getUniformLocation(program, 'u_hslGreen');
+  locs.u_hslCyan = gl.getUniformLocation(program, 'u_hslCyan');
+  locs.u_hslBlue = gl.getUniformLocation(program, 'u_hslBlue');
+  locs.u_hslPurple = gl.getUniformLocation(program, 'u_hslPurple');
+  locs.u_hslMagenta = gl.getUniformLocation(program, 'u_hslMagenta');
+  // Split Toning uniforms
+  locs.u_useSplitTone = gl.getUniformLocation(program, 'u_useSplitTone');
+  locs.u_highlightHue = gl.getUniformLocation(program, 'u_highlightHue');
+  locs.u_highlightSat = gl.getUniformLocation(program, 'u_highlightSat');
+  locs.u_midtoneHue = gl.getUniformLocation(program, 'u_midtoneHue');
+  locs.u_midtoneSat = gl.getUniformLocation(program, 'u_midtoneSat');
+  locs.u_shadowHue = gl.getUniformLocation(program, 'u_shadowHue');
+  locs.u_shadowSat = gl.getUniformLocation(program, 'u_shadowSat');
+  locs.u_splitBalance = gl.getUniformLocation(program, 'u_splitBalance');
+  
+  // Debug: 打印关键 LUT uniform locations
+  if (DEBUG_LUT) {
+    console.log('[FilmLabWebGL] LUT uniform locations:',
+      'u_lut3d=', locs.u_lut3d,
+      'u_useLut3d=', locs.u_useLut3d,
+      'u_lutSize=', locs.u_lutSize,
+      'u_lutIntensity=', locs.u_lutIntensity);
   }
 
   // Bind image texture to unit 0
   gl.uniform1i(locs.u_image, 0);
 
   const inverted = params.inverted ? 1 : 0;
+  if (DEBUG_WEBGL) {
+    console.log('[FilmLabWebGL] u_inverted:', inverted, 'params.inverted:', params.inverted);
+    console.log('[FilmLabWebGL] locs.u_inverted:', locs.u_inverted);
+    if (locs.u_inverted === null) {
+      console.error('[FilmLabWebGL] ERROR: u_inverted uniform location is NULL!');
+    }
+  }
   gl.uniform1i(locs.u_inverted, inverted);
   
   const mode = params.inversionMode === 'log' ? 1 : 0;
@@ -767,7 +844,7 @@ export function processImageWebGL(canvas, image, params = {}) {
     const tRGB = uploadCurve('curveRGB', curves.rgb);
     const tR = uploadCurve('curveR', curves.red);
     const tG = uploadCurve('curveG', curves.green);
-    const tB = uploadCurve('curveGB', curves.blue) || uploadCurve('curveB', curves.blue);
+    const tB = uploadCurve('curveB', curves.blue);
 
     // bind uniforms to texture units 1..4
     if (tRGB) { gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tRGB); gl.uniform1i(locs.u_curveRGB, 1); }
@@ -791,27 +868,83 @@ export function processImageWebGL(canvas, image, params = {}) {
     const w = size;
     const h = size * size;
 
+    // LUT 调试日志
+    if (DEBUG_LUT) {
+      console.log('[FilmLabWebGL] LUT Debug:');
+      console.log('  - size:', size, 'texture:', w, 'x', h);
+      console.log('  - intensity:', intensity);
+      console.log('  - dataF length:', dataF.length, 'expected:', size*size*size*3);
+      console.log('  - dataF[0..8]:', Array.from(dataF.slice(0, 9)).map(v => v.toFixed(3)));
+      console.log('  - buf[0..15] (first pixel):', Array.from(buf.slice(0, 16)));
+      // 验证几个关键位置
+      const testIdx = size; // 第二行第一个像素
+      console.log(`  - buf[${testIdx*4}..${testIdx*4+3}] (row 1, col 0):`, Array.from(buf.slice(testIdx*4, testIdx*4+4)));
+      
+      // 测试采样：用 CPU 方式验证几个关键颜色点
+      // getLUT3DIndex(r, g, b, size) = r + g*size + b*size²
+      const getLUT3DIndex = (r, g, b) => r + g * size + b * size * size;
+      const testColors = [
+        { r: 0, g: 0, b: 0, name: 'black' },
+        { r: size-1, g: size-1, b: size-1, name: 'white' },
+        { r: size-1, g: 0, b: 0, name: 'red' },
+        { r: 0, g: size-1, b: 0, name: 'green' },
+        { r: 0, g: 0, b: size-1, name: 'blue' },
+        { r: Math.floor(size/2), g: Math.floor(size/2), b: Math.floor(size/2), name: 'mid-gray' }
+      ];
+      
+      for (const tc of testColors) {
+        const srcIdx = getLUT3DIndex(tc.r, tc.g, tc.b) * 3;
+        const texRow = tc.g + tc.b * size;
+        const texCol = tc.r;
+        const bufIdx = (texRow * size + texCol) * 4;
+        console.log(`  - ${tc.name} (r=${tc.r}, g=${tc.g}, b=${tc.b}):`,
+          `srcIdx=${srcIdx}, dataF=[${dataF[srcIdx]?.toFixed(3)}, ${dataF[srcIdx+1]?.toFixed(3)}, ${dataF[srcIdx+2]?.toFixed(3)}]`,
+          `bufIdx=${bufIdx}, buf=[${buf[bufIdx]}, ${buf[bufIdx+1]}, ${buf[bufIdx+2]}]`,
+          `texUV=(${(texCol + 0.5) / size}, ${(texRow + 0.5) / (size * size)})`);
+      }
+    }
+
     if (!cache.lut3Tex) cache.lut3Tex = gl.createTexture();
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D, cache.lut3Tex);
-    // 关键修复：LUT 纹理不需要翻转 Y 轴
-    // 之前继承了图像上传时设置的 UNPACK_FLIP_Y_WEBGL = true，导致 LUT 数据被垂直翻转
-    // 这会使 Blue 切片顺序颠倒，Green 轴反向，产生严重的色彩偏差
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+    // 重要：LUT 纹理不能使用 FLIP_Y！
+    // 因为采样公式 y = (g + b * size) / (size * size) 假设数据按原始顺序存储
+    // 图像纹理用 FLIP_Y = true 是因为图像 Y 轴向下，但 LUT 不需要翻转
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
-    // 恢复翻转设置，以便后续图像上传正常工作
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    // 使用 RGBA8 而不是 RGBA，避免 sRGB 自动转换（LUT数据应该是线性的）
+    const internalFormat = gl.RGBA8 || gl.RGBA;
+    gl.texImage2D(gl.TEXTURE_2D, 0, internalFormat, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    
+    // 诊断：检查 uniform location 是否有效
+    if (DEBUG_LUT) {
+      console.log('  - locs.u_lut3d:', locs.u_lut3d, 'locs.u_useLut3d:', locs.u_useLut3d, 
+                  'locs.u_lutSize:', locs.u_lutSize, 'locs.u_lutIntensity:', locs.u_lutIntensity);
+      if (locs.u_lut3d === null) {
+        console.error('[FilmLabWebGL] ERROR: u_lut3d uniform not found in shader!');
+      }
+    }
+    
     gl.uniform1i(locs.u_lut3d, 5);
     gl.uniform1i(locs.u_useLut3d, 1);
     gl.uniform1i(locs.u_lutSize, size);
-    gl.uniform1f(locs.u_lutIntensity, intensity); // 设置 LUT 强度
+    gl.uniform1f(locs.u_lutIntensity, intensity);
+    
+    if (DEBUG_LUT) {
+      console.log('  - u_useLut3d: 1, u_lutSize:', size, 'u_lutIntensity:', intensity);
+    }
   } else {
     gl.uniform1i(locs.u_useLut3d, 0);
     gl.uniform1f(locs.u_lutIntensity, 0.0);
+    if (DEBUG_LUT && params.lut3) {
+      console.log('[FilmLabWebGL] LUT skipped - invalid data:', params.lut3);
+    }
   }
 
   // HSL Adjustments
@@ -877,15 +1010,41 @@ export function processImageWebGL(canvas, image, params = {}) {
     gl.uniform1i(locs.u_useSplitTone, 0);
   }
 
+  // 重要：在绘制前确保所有纹理都绑定到正确的纹理单元
+  // 这是必需的，因为之前的绑定操作可能改变了 WebGL 状态
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, cache.imageTex);
+  if (cache.lut3Tex && params.lut3) {
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, cache.lut3Tex);
+  }
+
   // Draw
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
-  // Debug: Sample center pixel to verify rendering output
-  const debugPixels = new Uint8Array(4);
-  const centerX = Math.floor(canvas.width / 2);
-  const centerY = Math.floor(canvas.height / 2);
-  gl.readPixels(centerX, centerY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, debugPixels);
-  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Center pixel after rendering:', debugPixels, `at (${centerX}, ${centerY})`);
+  // Debug: Sample multiple pixels to verify rendering output
+  if (DEBUG_WEBGL) {
+    const centerX = Math.floor(canvas.width / 2);
+    const centerY = Math.floor(canvas.height / 2);
+    
+    // Center pixel
+    const centerPixels = new Uint8Array(4);
+    gl.readPixels(centerX, centerY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, centerPixels);
+    
+    // Top-left pixel (corner)
+    const topLeftPixels = new Uint8Array(4);
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, topLeftPixels);
+    
+    // Right-top corner (should show LUT debug color if enabled)
+    const topRightPixels = new Uint8Array(4);
+    gl.readPixels(canvas.width - 1, canvas.height - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, topRightPixels);
+    
+    console.log('[FilmLabWebGL] DEBUG: readPixels - Center:', Array.from(centerPixels), 
+      'TopLeft:', Array.from(topLeftPixels), 
+      'TopRight:', Array.from(topRightPixels));
+    console.log('[FilmLabWebGL] DEBUG: Canvas size:', canvas.width, 'x', canvas.height);
+    console.log('[FilmLabWebGL] DEBUG: If inverted, center should be [255,0,0,255] (red) but user sees cyan!');
+  }
 
   // Cleanup (unbind)
   gl.bindTexture(gl.TEXTURE_2D, null);

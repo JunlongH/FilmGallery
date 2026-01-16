@@ -11,7 +11,6 @@ import {
   RenderCore,
   computeWBGains,
   solveTempTintFromSample,
-  PREVIEW_MAX_WIDTH_SERVER,
   PREVIEW_MAX_WIDTH_CLIENT,
   EXPORT_MAX_WIDTH,
   DEFAULT_HSL_PARAMS,
@@ -129,9 +128,8 @@ export default function FilmLab({
   const [lut2, setLut2] = useState(null);
   const [lutExportSize, setLutExportSize] = useState(33); // 33 or 65
   const [useGPU, setUseGPU] = useState(isWebGLAvailable());
-  const [remoteImg, setRemoteImg] = useState(null);
-  const remoteUrlRef = useRef(null);
-  const previewRequestIdRef = useRef(0); // Track request sequence to prevent stale responses
+  // Note: Server preview (remoteImg) has been removed in favor of client-side WebGL/CPU rendering
+  // This eliminates LUT color mismatch issues and reduces network overhead
 
   // Compare Mode
   // compareMode: 'off' | 'original' | 'split'
@@ -158,8 +156,6 @@ export default function FilmLab({
   useEffect(() => {
     processedCanvasRef.current = null;
     lastWebglParamsRef.current = null;
-    // 同时清除远程预览缓存
-    setRemoteImg(null);
     
     // 关键修复：当切换到正片模式时，强制将 inverted 状态设为 false
     // 这确保 UI 状态与有效反转状态同步，避免状态不一致导致的闪烁
@@ -320,9 +316,6 @@ export default function FilmLab({
       persistPresets(next);
     }
   };
-
-  // Cleanup object URL on unmount
-  useEffect(() => () => { if (remoteUrlRef.current) { URL.revokeObjectURL(remoteUrlRef.current); remoteUrlRef.current = null; } }, []);
 
   const applyPreset = (preset) => {
     if (!preset) return;
@@ -571,14 +564,14 @@ export default function FilmLab({
   useEffect(() => {
     if (!canvasRef.current) return;
     // Trigger redraw when:
-    // 1. remoteImg changes (server responded)
-    // 2. geometry/compare mode changes
-    // 3. webglParams changes (for instant local WebGL preview while dragging)
+    // 1. geometry/compare mode changes
+    // 2. webglParams changes (for instant local WebGL/CPU preview)
+    // Note: Server preview has been removed - all rendering is now client-side
     if (processRafRef.current) cancelAnimationFrame(processRafRef.current);
     processRafRef.current = requestAnimationFrame(() => { processImage(); });
     return () => { if (processRafRef.current) { cancelAnimationFrame(processRafRef.current); processRafRef.current = null; } };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remoteImg, rotation, orientation, isCropping, isRotating, webglParams]);
+  }, [rotation, orientation, isCropping, isRotating, webglParams]);
 
   // Render original (unprocessed) image for compare modes when geometry changes or image loads
   useEffect(() => {
@@ -699,8 +692,8 @@ export default function FilmLab({
     tempCanvas.height = canvas.height;
     
     // 计算transform参数
-    // 使用与显示路径相同的maxWidth，确保坐标系一致
-    const maxWidth = (remoteImg && !isCropping) ? PREVIEW_MAX_WIDTH_SERVER : PREVIEW_MAX_WIDTH_CLIENT;
+    // 使用客户端预览宽度（服务器预览已移除）
+    const maxWidth = PREVIEW_MAX_WIDTH_CLIENT;
     const scale = Math.min(1, maxWidth / image.width);
     const totalRotation = rotation + orientation;
     const rad = (totalRotation * Math.PI) / 180;
@@ -779,7 +772,7 @@ export default function FilmLab({
     if (isPickingWB) {
       // WB Picker: The clicked point should become neutral gray
       // Sample from the RENDERED canvas (already has all effects applied)
-      const renderedCtx = canvas.getContext('2d', { willReadFrequently: true });
+      const renderedCtx = canvas.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' });
       const renderedData = renderedCtx.getImageData(
         Math.max(0, Math.floor(clickX - 1)),
         Math.max(0, Math.floor(clickY - 1)),
@@ -827,7 +820,7 @@ export default function FilmLab({
     // Regular color picker - sample from the rendered canvas directly
     if (isPicking) {
       // Get pixel directly from the displayed canvas at click location
-      const renderedCtx = canvas.getContext('2d', { willReadFrequently: true });
+      const renderedCtx = canvas.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' });
       const renderedData = renderedCtx.getImageData(
         Math.max(0, Math.floor(clickX - 1)),
         Math.max(0, Math.floor(clickY - 1)),
@@ -862,55 +855,24 @@ export default function FilmLab({
   // ============================================================================
   // Three rendering paths:
   // 1. Server Preview (remoteImg): Use pre-rendered image from server (fastest)
-  // 2. WebGL Path (useGPU): GPU-accelerated processing (fast, real-time)
-  // 3. CPU Path: Fallback pixel-by-pixel processing (slower, most compatible)
+  // ============================================================================
+  // processImage - Unified client-side rendering
+  // ============================================================================
+  // Rendering paths:
+  // 1. WebGL Path (useGPU): GPU-accelerated processing (fast, real-time)
+  // 2. CPU Path: Fallback pixel-by-pixel processing (slower, most compatible)
+  // Note: Server preview has been removed - see comment block after this function
   const processImage = () => {
     const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    // Nothing to render if neither preview nor base image is ready
-    if (!remoteImg && !image) return;
-    
-    // console.log('[processImage] Called. remoteImg src:', remoteImg?.src?.substring(0, 50), 'inverted state:', inverted); (Commented out to reduce noise)
-    
-    // ========================================================================
-    // Path 1: Server Preview (use when params match cached server response)
-    // ========================================================================
-    // If we have a server-rendered preview, just paint it and compute histogram
-    // BUT: Skip if webglParams changed (user is dragging slider) - use local WebGL for instant feedback
-    // Also skip if cropping, as remoteImg might be cropped.
-    const paramsMatchServer = lastWebglParamsRef.current === webglParams;
-    if (remoteImg && !isCropping && paramsMatchServer) {
-      canvas.width = remoteImg.naturalWidth || remoteImg.width;
-      canvas.height = remoteImg.naturalHeight || remoteImg.height;
-      ctx.drawImage(remoteImg, 0, 0);
-      
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      const histRGB = new Array(256).fill(0), histR = new Array(256).fill(0), histG = new Array(256).fill(0), histB = new Array(256).fill(0);
-      let maxCount = 0;
-      const stride = 2; const width = canvas.width; const height = canvas.height;
-      for (let y = 0; y < height; y+=1) {
-        for (let x = 0; x < width; x+=1) {
-          if ((x % stride) || (y % stride)) continue;
-          const idx = (y * width + x) * 4;
-          const r = data[idx], g = data[idx+1], b = data[idx+2];
-          histR[r]++; histG[g]++; histB[b]++;
-          const lum = Math.round(0.299*r + 0.587*g + 0.114*b);
-          histRGB[lum]++;
-          maxCount = Math.max(maxCount, histR[r], histG[g], histB[b], histRGB[lum]);
-        }
-      }
-      if (maxCount > 0) {
-        for (let i=0;i<256;i++){ histRGB[i]/=maxCount; histR[i]/=maxCount; histG[i]/=maxCount; histB[i]/=maxCount; }
-      }
-      setHistograms({ rgb: histRGB, red: histR, green: histG, blue: histB });
-      return;
-    }
+    // 重要：指定 colorSpace 为 srgb 以匹配 WebGL 输出
+    const ctx = canvas.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' });
+    // Nothing to render if base image is not ready
+    if (!image) return;
     
     // ========================================================================
-    // Path 2 & 3: Client-side rendering (WebGL or CPU)
+    // Client-side rendering (WebGL or CPU)
     // ========================================================================
-    if (!image || !geometry) return;
+    if (!geometry) return;
     const { rotatedW, rotatedH, rad, scaledW, scaledH } = geometry;
 
     // In crop mode, show full rotated image. Outside crop mode, preview committed crop.
@@ -936,12 +898,17 @@ export default function FilmLab({
              useDirectDraw = true;
              webglSuccess = true;
           } else {
+              // 使用临时 canvas 进行 WebGL 渲染
               const webglCanvas = document.createElement('canvas');
-              const { gains } = webglParams;
               
+              const { gains, lut1: wpLut1, lut2: wpLut2 } = webglParams;
+              
+              // 重要：使用 webglParams 中的 lut1/lut2 而不是直接使用状态变量
+              // 这确保我们使用的是触发此次渲染的正确 LUT 数据
               let combinedLUT = null;
-              if ((lut1 && lut1.intensity > 0) || (lut2 && lut2.intensity > 0)) {
-                 combinedLUT = buildCombinedLUT(lut1, lut2);
+              if ((wpLut1 && wpLut1.intensity > 0) || (wpLut2 && wpLut2.intensity > 0)) {
+                 // 合并两个 LUT（如果都存在）或直接使用单个 LUT
+                 combinedLUT = buildCombinedLUT(wpLut1, wpLut2);
               }
               
               // Pass rotation and crop parameters to WebGL for correct geometry
@@ -978,6 +945,7 @@ export default function FilmLab({
               lastWebglParamsRef.current = webglParams;
               sourceForDraw = webglCanvas;
               useDirectDraw = true;
+              webglSuccess = true;  // 重要：必须设置，否则后续的调试代码不会执行
           }
        } catch(e) {
           webglSuccess = false;
@@ -990,6 +958,8 @@ export default function FilmLab({
         // WebGL path: canvas is already processed, rotated and cropped
         canvas.width = sourceForDraw.width;
         canvas.height = sourceForDraw.height;
+        
+        // Draw WebGL result to display canvas
         ctx.drawImage(sourceForDraw, 0, 0);
     } else {
         // CPU path: apply transforms manually
@@ -1121,56 +1091,20 @@ export default function FilmLab({
     }
   } // <-- Close processImage function
 
-  // Request remote preview from backend high-precision pipeline (debounced)
-  const previewTimerRef = useRef(null);
-  useEffect(() => {
-    if (!photoId) return;
-    if (previewTimerRef.current) clearTimeout(previewTimerRef.current);
-    
-    // Increment request ID to track this request
-    const requestId = ++previewRequestIdRef.current;
-    
-    previewTimerRef.current = setTimeout(async () => {
-      try {
-        // Always send committedCrop for preview. During crop mode, server keeps showing last commit.
-        // 关键修复：使用 getEffectiveInverted 计算有效反转状态
-        // 这确保服务器预览请求与本地 WebGL 渲染使用相同的反转逻辑
-        const effectiveInvertedForPreview = getEffectiveInverted(sourceType, inverted);
-        const params = { 
-          inverted: effectiveInvertedForPreview, inversionMode, filmType, 
-          filmCurveEnabled, filmCurveProfile, // New film curve params
-          exposure, contrast, highlights, shadows, whites, blacks, 
-          temp, tint, red, green, blue, 
-          rotation, orientation, cropRect: committedCrop, curves,
-          hslParams, splitToning // HSL and Split Toning params
-        };
-        const res = await filmlabPreview({ photoId, params, maxWidth: 1400, sourceType });
-        
-        // Check if this is still the latest request
-        if (requestId !== previewRequestIdRef.current) {
-          return;
-        }
-        
-        if (!res || !res.ok) { return; }
-        // Create object URL and load image for canvas draw
-        if (remoteUrlRef.current) URL.revokeObjectURL(remoteUrlRef.current);
-        const url = URL.createObjectURL(res.blob);
-        remoteUrlRef.current = url;
-        const img = new Image();
-        img.onload = () => { 
-          // Double-check request ID in onload callback
-          if (requestId !== previewRequestIdRef.current) {
-            URL.revokeObjectURL(url);
-            return;
-          }
-          setRemoteImg(img); 
-        };
-        img.onerror = (e) => { console.error('[Preview Request] Image load error:', e); };
-        img.src = url;
-      } catch (e) { console.error('[Preview Request] Exception:', e); }
-    }, 180);
-    return () => { if (previewTimerRef.current) { clearTimeout(previewTimerRef.current); previewTimerRef.current = null; } };
-  }, [photoId, inverted, inversionMode, filmType, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, committedCrop, curves, hslParams, splitToning, sourceType]);
+  // ============================================================================
+  // Server Preview - REMOVED
+  // ============================================================================
+  // The server preview feature has been removed because:
+  // 1. LUT parameters were not sent to server, causing color mismatches
+  // 2. WebGL/CPU client-side rendering is fast enough for real-time preview
+  // 3. Reduces network overhead and complexity
+  // 4. Eliminates synchronization issues between server and client rendering
+  //
+  // If server preview needs to be re-enabled in the future:
+  // - LUT data must be serialized and sent with preview requests
+  // - Server must deserialize and apply LUTs via RenderCore
+  // - Consider network overhead (~130KB per LUT)
+  // ============================================================================
 
   const renderOriginal = () => {
     if (!image || !origCanvasRef.current) return;

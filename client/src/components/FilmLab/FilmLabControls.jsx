@@ -397,14 +397,15 @@ export default function FilmLabControls({
       
       <div style={{ background: '#252525', padding: 10, borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: sourceType === 'positive' ? 0.5 : 1 }}>
             <input 
               type="checkbox" 
               checked={inverted} 
               onChange={e => { pushToHistory(); setInverted(e.target.checked); }} 
               id="chk-invert"
+              disabled={sourceType === 'positive'}
             />
-            <label htmlFor="chk-invert" style={{ fontWeight: 500, fontSize: 13, cursor: 'pointer' }}>Invert Negative</label>
+            <label htmlFor="chk-invert" style={{ fontWeight: 500, fontSize: 13, cursor: sourceType === 'positive' ? 'not-allowed' : 'pointer' }}>Invert Negative</label>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
