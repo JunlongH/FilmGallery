@@ -18,7 +18,7 @@ import {
   DEFAULT_SPLIT_TONE_PARAMS,
   getEffectiveInverted,
   buildCombinedLUT,
-  packLUT3DForWebGL,
+  // packLUT3DForWebGL - used in FilmLabWebGL.js, not here
 } from '@filmgallery/shared';
 
 // ============================================================================
@@ -30,7 +30,7 @@ import {
 
 // Calculate the maximum inscribed rectangle (no black corners) after rotation
 
-// buildCombinedLUT 和 packLUT3DForWebGL 现在从 shared 模块导入
+// buildCombinedLUT 从 shared 模块导入，packLUT3DForWebGL 在 FilmLabWebGL.js 中使用
 
 export default function FilmLab({ 
   imageUrl, 

@@ -9,7 +9,6 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [showInverter, setShowInverter] = useState(false);
-  const [isNegativeMode, setIsNegativeMode] = useState(false);
   const [dialog, setDialog] = useState({ isOpen: false, type: 'alert', title: '', message: '', onConfirm: null });
   const dragging = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
@@ -176,12 +175,22 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
     positive: !!(img.positive_rel_path)
   };
 
+  // 获取第一个可用的源类型
+  const getFirstAvailableSourceType = () => {
+    if (availableSources.original) return 'original';
+    if (availableSources.negative) return 'negative';
+    if (availableSources.positive) return 'positive';
+    return 'original'; // fallback
+  };
+
   // 源类型选择器弹窗
   const handleFilmLabClick = () => {
     // 如果只有一种源可用，直接打开FilmLab
     const availableCount = Object.values(availableSources).filter(Boolean).length;
     if (availableCount <= 1) {
-      setIsNegativeMode(true);
+      // 【修复】设置正确的源类型，而不是使用默认值
+      const sourceType = getFirstAvailableSourceType();
+      setFilmLabSourceType(sourceType);
       setShowInverter(true);
       return;
     }
@@ -192,7 +201,6 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   const openFilmLabWithSource = (sourceType) => {
     setFilmLabSourceType(sourceType);
     setShowSourceSelector(false);
-    setIsNegativeMode(sourceType !== 'positive');
     setShowInverter(true);
   };
 
@@ -241,7 +249,7 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
           photoId={img.id}
           sourceType={filmLabSourceType}
           onPhotoUpdate={onPhotoUpdate}
-          onClose={() => { setShowInverter(false); setIsNegativeMode(false); }} 
+          onClose={() => { setShowInverter(false); }} 
           // PhotoSwitcher 相关 props
           photos={images}
           showPhotoSwitcher={images.length > 1}
@@ -283,7 +291,6 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
                       if (res.error) throw new Error(res.error);
                       if (onPhotoUpdate) onPhotoUpdate();
                       setShowInverter(false);
-                      setIsNegativeMode(false);
                   } catch (e) {
                       console.error(e);
                       showAlert('Error', 'Failed to save positive: ' + (e.message || e));
