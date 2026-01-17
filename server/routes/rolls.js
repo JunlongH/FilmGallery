@@ -57,6 +57,15 @@ router.post('/', (req, res) => {
       const camera_equip_id = body.camera_equip_id ? Number(body.camera_equip_id) : null;
       const lens_equip_id = body.lens_equip_id ? Number(body.lens_equip_id) : null;
       const flash_equip_id = body.flash_equip_id ? Number(body.flash_equip_id) : null;
+      const film_back_equip_id = body.film_back_equip_id ? Number(body.film_back_equip_id) : null;
+      // Scanner/Digitization info (roll level)
+      const scanner_equip_id = body.scanner_equip_id ? Number(body.scanner_equip_id) : null;
+      const scan_resolution = body.scan_resolution ? Number(body.scan_resolution) : null;
+      const scan_software = body.scan_software || null;
+      const scan_lab = body.scan_lab || null;
+      const scan_date = body.scan_date || null;
+      const scan_cost = body.scan_cost ? Number(body.scan_cost) : null;
+      const scan_notes = body.scan_notes || null;
       let filmId = filmIdRaw;
       let filmIso = null;
       const notes = body.notes || null;
@@ -98,29 +107,50 @@ router.post('/', (req, res) => {
       }
 
       // ==============================
-      // FIXED LENS CAMERA HANDLING
+      // FIXED LENS CAMERA & FORMAT HANDLING
       // ==============================
       // If the selected camera has a fixed lens, enforce implicit lens:
       // - Set lens_equip_id to NULL (lens is derived from camera)
       // - Optionally set legacy text for backward compatibility
+      // Also look up camera's format for roll inheritance
       let finalLensEquipId = lens_equip_id;
       let finalLensText = lens;
+      let rollFormat = null;
       
       if (camera_equip_id) {
         try {
-          const camRow = await getAsync('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', [camera_equip_id]);
-          if (camRow && camRow.has_fixed_lens === 1) {
+          const camRow = await getAsync(`
+            SELECT c.has_fixed_lens, c.fixed_lens_focal_length, c.fixed_lens_max_aperture, f.name as format_name
+            FROM equip_cameras c
+            LEFT JOIN ref_film_formats f ON c.format_id = f.id
+            WHERE c.id = ?
+          `, [camera_equip_id]);
+          if (camRow) {
+            // Inherit camera format for the roll
+            if (camRow.format_name) {
+              rollFormat = camRow.format_name;
+              console.log(`[CREATE ROLL] Camera format: ${rollFormat}`);
+            }
             // Fixed lens camera: nullify explicit lens, set text for backward compat
-            finalLensEquipId = null;
-            finalLensText = `${camRow.fixed_lens_focal_length}mm f/${camRow.fixed_lens_max_aperture}`;
-            console.log(`[CREATE ROLL] Fixed lens camera detected. Setting implicit lens: ${finalLensText}`);
+            if (camRow.has_fixed_lens === 1) {
+              finalLensEquipId = null;
+              finalLensText = `${camRow.fixed_lens_focal_length}mm f/${camRow.fixed_lens_max_aperture}`;
+              console.log(`[CREATE ROLL] Fixed lens camera detected. Setting implicit lens: ${finalLensText}`);
+            }
           }
         } catch (camErr) {
-          console.warn('[CREATE ROLL] Failed to check camera fixed lens status', camErr.message);
+          console.warn('[CREATE ROLL] Failed to check camera fixed lens/format status', camErr.message);
         }
       }
 
-      const sql = `INSERT INTO rolls (title, start_date, end_date, camera, lens, photographer, filmId, film_type, notes, film_item_id, camera_equip_id, lens_equip_id, flash_equip_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+      const sql = `INSERT INTO rolls (
+        title, start_date, end_date, camera, lens, photographer, 
+        filmId, film_type, notes, film_item_id, 
+        camera_equip_id, lens_equip_id, flash_equip_id,
+        scanner_equip_id, scan_resolution, scan_software, 
+        scan_lab, scan_date, scan_cost, scan_notes,
+        format, film_back_equip_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
       // ==============================
       // ATOMIC CREATE (DB + FILES)
@@ -221,7 +251,14 @@ router.post('/', (req, res) => {
 
         // Begin transaction AFTER validation so we can fully rollback.
         await runAsync('BEGIN');
-        const rollInsertRes = await runAsync(sql, [title, start_date, end_date, camera, finalLensText, photographer, filmId, film_type, notes, film_item_id, camera_equip_id, finalLensEquipId, flash_equip_id]);
+        const rollInsertRes = await runAsync(sql, [
+          title, start_date, end_date, camera, finalLensText, photographer, 
+          filmId, film_type, notes, film_item_id, 
+          camera_equip_id, finalLensEquipId, flash_equip_id,
+          scanner_equip_id, scan_resolution, scan_software,
+          scan_lab, scan_date, scan_cost, scan_notes,
+          rollFormat, film_back_equip_id
+        ]);
         rollId = rollInsertRes?.lastID;
         if (!rollId) throw new Error('Failed to create roll');
 
@@ -560,6 +597,7 @@ router.post('/', (req, res) => {
           if (locationId) rollLocationIds.add(locationId);
 
           // Prepare scanner info for DB (if detected as scanner source)
+          // Priority: Photo EXIF > Roll default fields
           const scanDbInfo = scannerInfo ? scanExifService.formatForDatabase(scannerInfo) : {};
 
           stagedPhotos.push({
@@ -587,15 +625,15 @@ router.post('/', (req, res) => {
             isoForPhoto,
             latitudeForPhoto,
             longitudeForPhoto,
-            // Scanner info
-            scannerEquipId: scanDbInfo.scanner_equip_id || null,
-            scanResolution: scanDbInfo.scan_resolution || null,
-            scanSoftware: scanDbInfo.scan_software || null,
-            scanDate: scanDbInfo.scan_date || null,
-            scanBitDepth: scanDbInfo.scan_bit_depth || null,
-            sourceMake: scanDbInfo.source_make || null,
-            sourceModel: scanDbInfo.source_model || null,
-            sourceSoftware: scanDbInfo.source_software || null,
+            // Scanner info: EXIF优先，roll字段回退
+            scannerEquipId: scanDbInfo.scanner_equip_id || scanner_equip_id || null,
+            scanResolution: scanDbInfo.scan_resolution || scan_resolution || null,
+            scanSoftware: scanDbInfo.scan_software || scan_software || null,
+            scanDate: scanDbInfo.scan_date || scan_date || null,
+            scanBitDepth: scanDbInfo.scan_bit_depth || null, // 只来自EXIF
+            sourceMake: scanDbInfo.source_make || null, // 只来自EXIF
+            sourceModel: scanDbInfo.source_model || null, // 只来自EXIF
+            sourceSoftware: scanDbInfo.source_software || null, // 只来自EXIF
           });
 
         }
@@ -946,6 +984,12 @@ router.get('/:id', async (req, res) => {
              flash.model AS flash_equip_model,
              flash.guide_number AS flash_equip_gn,
              flash.image_path AS flash_equip_image,
+             scanner.name AS scanner_equip_name,
+             scanner.brand AS scanner_equip_brand,
+             scanner.model AS scanner_equip_model,
+             scanner.type AS scanner_equip_type,
+             scanner.max_resolution AS scanner_equip_max_resolution,
+             scanner.image_path AS scanner_equip_image,
              -- Dynamic display fields: Equipment → Implicit Fixed Lens → Legacy Text
              COALESCE(cam.brand || ' ' || cam.model, rolls.camera) AS display_camera,
              COALESCE(
@@ -960,6 +1004,7 @@ router.get('/:id', async (req, res) => {
       LEFT JOIN equip_cameras cam ON rolls.camera_equip_id = cam.id
       LEFT JOIN equip_lenses lens ON rolls.lens_equip_id = lens.id
       LEFT JOIN equip_flashes flash ON rolls.flash_equip_id = flash.id
+      LEFT JOIN equip_scanners scanner ON rolls.scanner_equip_id = scanner.id
       WHERE rolls.id = ?
     `;
     const row = await getAsync(sql, [id]);
@@ -1063,7 +1108,7 @@ router.delete('/:id/preset', async (req, res) => {
 // PUT /api/rolls/:id
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  let { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
+  let { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id, scan_resolution, scan_software, scan_lab, scan_date, scan_cost, scan_notes, format, film_back_equip_id } = req.body;
   if (start_date !== undefined && end_date !== undefined) {
     const sd = new Date(start_date);
     const ed = new Date(end_date);
@@ -1094,7 +1139,7 @@ router.put('/:id', async (req, res) => {
   // Build dynamic UPDATE query to only update provided fields
   const updates = [];
   const values = [];
-  const fieldMap = { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id };
+  const fieldMap = { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id, scan_resolution, scan_software, scan_lab, scan_date, scan_cost, scan_notes, format, film_back_equip_id };
   
   for (const [key, val] of Object.entries(fieldMap)) {
     if (val !== undefined) {

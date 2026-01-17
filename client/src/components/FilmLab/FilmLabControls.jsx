@@ -248,6 +248,8 @@ function FilmCurveProfileSelector({
 }
 
 export default function FilmLabControls({
+  onFinishBatchParams,
+  currentParams,
   photoId,  // 照片 ID，用于自动边缘检测
   sourceType = 'original', // 源类型: 'original' | 'negative' | 'positive'
   inverted, setInverted,
@@ -316,11 +318,20 @@ export default function FilmLabControls({
   const [lutSelectorIndex, setLutSelectorIndex] = React.useState(1); // 1 or 2
   
   const handleSavePresetClick = () => {
-    if (!presetName.trim()) return;
+    if (!presetName.trim()) {
+      alert("请输入预设名称");
+      return;
+    }
     onSavePreset(presetName.trim());
     setPresetName('');
   };
   const isDuplicateName = presets.some(p => p.name === presetName.trim());
+  
+  const handleApplyWrapper = (p) => {
+    setPresetName(p.name); // Auto-fill name for easier updating
+    onApplyPreset(p);
+  };
+
   const cycleCompare = (mode) => {
     // helper for toggles
     if (compareMode === mode) setCompareMode('off'); else setCompareMode(mode);
@@ -368,36 +379,52 @@ export default function FilmLabControls({
             {currentSource.icon} {currentSource.label}
           </span>
         </div>
+        
+        {/* Top Actions: Normal Mode vs Batch Mode */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <button className="iv-btn iv-btn-primary" onClick={handleSave} style={{ padding: '4px 12px' }} title="保存处理结果到正片库（始终写入JPEG）">SAVE</button>
-          <button className="iv-btn" onClick={onHighQualityExport} disabled={highQualityBusy} style={{ padding: '4px 12px', background: highQualityBusy ? '#555' : '#444', borderColor: highQualityBusy ? '#666' : '#555' }} title="服务器基于原始高位深扫描生成高质量正片">
-            {highQualityBusy ? 'EXPORTING…' : 'HQ EXPORT'}
-          </button>
-          {typeof window !== 'undefined' && window.__electron && (
-            <button className="iv-btn" onClick={onGpuExport} disabled={gpuBusy} style={{ padding: '4px 12px' }} title="Electron+WebGL GPU 导出（离线工作窗口）">
-              {gpuBusy ? 'GPU…' : 'GPU EXPORT'}
-            </button>
+          {onFinishBatchParams ? (
+             <button 
+               className="iv-btn iv-btn-primary" 
+               onClick={() => onFinishBatchParams(currentParams)} 
+               style={{ padding: '6px 16px', background: '#2196F3', borderColor: '#1976D2', fontWeight: 600 }} 
+             >
+               ✓ FINISH PARAMETERS
+             </button>
+          ) : (
+            <>
+              <button className="iv-btn iv-btn-primary" onClick={handleSave} style={{ padding: '4px 12px' }} title="保存处理结果到正片库（始终写入JPEG）">SAVE</button>
+              <button className="iv-btn" onClick={onHighQualityExport} disabled={highQualityBusy} style={{ padding: '4px 12px', background: highQualityBusy ? '#555' : '#444', borderColor: highQualityBusy ? '#666' : '#555' }} title="服务器基于原始高位深扫描生成高质量正片">
+                {highQualityBusy ? 'EXPORTING…' : 'HQ EXPORT'}
+              </button>
+              {typeof window !== 'undefined' && window.__electron && (
+                <button className="iv-btn" onClick={onGpuExport} disabled={gpuBusy} style={{ padding: '4px 12px' }} title="Electron+WebGL GPU 导出（离线工作窗口）">
+                  {gpuBusy ? 'GPU…' : 'GPU EXPORT'}
+                </button>
+              )}
+            </>
           )}
           <button className="iv-btn-icon" onClick={onClose} style={{ fontSize: 20 }}>×</button>
         </div>
       </div>
 
-      {/* Save As (non-destructive) */}
-      <div style={{ display:'flex', flexDirection:'column', gap:8, background:'#252525', padding:10, borderRadius:6 }}>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <span style={{ fontSize:11, fontWeight:600, color:'#aaa' }}>SAVE AS</span>
-          <div style={{ display:'flex', gap:6, alignItems:'center' }}>
-            <label style={{ fontSize:10, color:'#aaa' }}>Format</label>
-            <select value={exportFormat} onChange={(e)=>setExportFormat(e.target.value)} style={{ background:'#333', color:'#eee', border:'1px solid #444', fontSize:10, borderRadius:3, padding:'2px 4px' }}>
-              <option value="jpeg">JPEG</option>
-              <option value="tiff16">TIFF 16-bit</option>
-              <option value="both">Both</option>
-            </select>
-            <button className="iv-btn" onClick={handleDownload} style={{ padding: '4px 12px' }} title="下载当前处理结果（不写入正片库）">DOWNLOAD</button>
+      {/* Save As (non-destructive) - HIDE IN BATCH MODE */}
+      {!onFinishBatchParams && (
+        <div style={{ display:'flex', flexDirection:'column', gap:8, background:'#252525', padding:10, borderRadius:6 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontSize:11, fontWeight:600, color:'#aaa' }}>SAVE AS</span>
+            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              <label style={{ fontSize:10, color:'#aaa' }}>Format</label>
+              <select value={exportFormat} onChange={(e)=>setExportFormat(e.target.value)} style={{ background:'#333', color:'#eee', border:'1px solid #444', fontSize:10, borderRadius:3, padding:'2px 4px' }}>
+                <option value="jpeg">JPEG</option>
+                <option value="tiff16">TIFF 16-bit</option>
+                <option value="both">Both</option>
+              </select>
+              <button className="iv-btn" onClick={handleDownload} style={{ padding: '4px 12px' }} title="下载当前处理结果（不写入正片库）">DOWNLOAD</button>
+            </div>
           </div>
+          <div style={{ fontSize:10, color:'#666', lineHeight:1.4 }}>“SAVE” 写入正片库（JPEG）。 “SAVE AS”/“DOWNLOAD” 为临时文件，可选择格式，不改变库。</div>
         </div>
-        <div style={{ fontSize:10, color:'#666', lineHeight:1.4 }}>“SAVE” 写入正片库（JPEG）。 “SAVE AS”/“DOWNLOAD” 为临时文件，可选择格式，不改变库。</div>
-      </div>
+      )}
       
       <div style={{ background: '#252525', padding: 10, borderRadius: 6, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -800,9 +827,8 @@ export default function FilmLabControls({
             />
             <button
               className="iv-btn"
-              disabled={!presetName.trim()}
               onClick={handleSavePresetClick}
-              style={{ fontSize: 11, whiteSpace: 'nowrap' }}
+              style={{ fontSize: 11, whiteSpace: 'nowrap', opacity: !presetName.trim() ? 0.7 : 1 }}
             >SAVE</button>
           </div>
           {presetName && isDuplicateName && (
@@ -815,7 +841,7 @@ export default function FilmLabControls({
             {presets.map(p => (
               <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#1d1d1d', padding: '6px 8px', borderRadius: 4 }}>
                 <div style={{ flex: 1, fontSize: 11, color: '#ddd', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.name}</div>
-                <button className="iv-btn" style={{ fontSize: 10, padding: '4px 6px' }} onClick={() => onApplyPreset(p)}>APPLY</button>
+                <button className="iv-btn" style={{ fontSize: 10, padding: '4px 6px' }} onClick={() => handleApplyWrapper(p)}>APPLY</button>
                 <button className="iv-btn" style={{ fontSize: 10, padding: '4px 6px' }} onClick={() => onApplyPresetToRoll(p)}>ROLL</button>
                 <button className="iv-btn iv-btn-danger" style={{ fontSize: 10, padding: '4px 6px' }} onClick={() => onDeletePreset(p.name)}>✕</button>
               </div>

@@ -782,6 +782,51 @@ export async function uploadScannerImage(id, file) {
   return res.json();
 }
 
+// ========================================
+// FILM BACKS API
+// ========================================
+
+export async function getFilmBacks(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return jsonFetch(`/api/equipment/film-backs${qs ? '?' + qs : ''}`);
+}
+
+export async function getFilmBack(id) {
+  return jsonFetch(`/api/equipment/film-backs/${id}`);
+}
+
+export async function createFilmBack(data) {
+  return jsonFetch('/api/equipment/film-backs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function updateFilmBack(id, data) {
+  return jsonFetch(`/api/equipment/film-backs/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteFilmBack(id, hard = false) {
+  return jsonFetch(`/api/equipment/film-backs/${id}${hard ? '?permanent=true' : ''}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function uploadFilmBackImage(id, file) {
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch(`${API_BASE}/api/equipment/film-backs/${id}/image`, {
+    method: 'POST',
+    body: fd
+  });
+  return res.json();
+}
+
 // Get compatible lenses for a camera (based on mount)
 export async function getCompatibleLenses(cameraId) {
   return jsonFetch(`/api/equipment/compatible-lenses/${cameraId}`);

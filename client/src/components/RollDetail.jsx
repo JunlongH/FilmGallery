@@ -44,6 +44,8 @@ export default function RollDetail() {
   const [showRawImportWizard, setShowRawImportWizard] = useState(false);
   // Replaced inline upload state
   const [showUploadModal, setShowUploadModal] = useState(false);
+  // Batch Render Callback State
+  const [batchRenderCallback, setBatchRenderCallback] = useState(null);
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -184,6 +186,23 @@ export default function RollDetail() {
     }
   }
 
+  // Handle opening FilmLab for batch parameter adjustment
+  const handleOpenFilmLabForBatch = (callback) => {
+    // 1. Hide the batch modal
+    setShowBatchRenderModal(false);
+    // 2. Save the callback
+    setBatchRenderCallback(() => callback);
+    // 3. Open the first selected photo (or first photo) in ImageViewer
+    if (multiSelect && selectedPhotos.length > 0) {
+      const firstId = selectedPhotos[0].id;
+      const index = photos.findIndex(p => p.id === firstId);
+      if (index !== -1) setSelectedPhotoIndex(index);
+      else setSelectedPhotoIndex(0);
+    } else {
+      setSelectedPhotoIndex(0); // Default to first photo
+    }
+  };
+
   async function handleEditClick() {
     // Always fetch fresh films list when entering edit mode
     try {
@@ -212,7 +231,14 @@ export default function RollDetail() {
       purchase_cost: roll.purchase_cost || '',
       develop_cost: roll.develop_cost || '',
       purchase_channel: roll.purchase_channel || '',
-      develop_note: roll.develop_note || ''
+      develop_note: roll.develop_note || '',
+      scanner_equip_id: roll.scanner_equip_id || null,
+      scan_resolution: roll.scan_resolution || '',
+      scan_software: roll.scan_software || '',
+      scan_lab: roll.scan_lab || '',
+      scan_date: roll.scan_date || '',
+      scan_cost: roll.scan_cost || '',
+      scan_notes: roll.scan_notes || ''
     });
     setSelectedCamera(null); // reset camera selection
     setSelectedLocations(Array.isArray(roll.locations) ? roll.locations.slice() : []);
@@ -612,16 +638,25 @@ export default function RollDetail() {
             })}
             index={selectedPhotoIndex}
             viewMode={viewMode}
-            onClose={() => setSelectedPhotoIndex(null)}
+            onClose={() => { 
+               setSelectedPhotoIndex(null); 
+               // If returning from batch param selection, reopen the modal
+               if (batchRenderCallback) {
+                 setShowBatchRenderModal(true);
+                 setBatchRenderCallback(null);
+               }
+            }}
             onPhotoUpdate={() => {
                queryClient.invalidateQueries(['rollPhotos', id]);
                queryClient.invalidateQueries(['roll', id]);
             }}
             roll={roll}
+            batchRenderCallback={batchRenderCallback}
           />
         )}
         {showBatchSidebar && multiSelect && selectedPhotos.length > 0 && (
           <PhotoDetailsSidebar 
+            key={`batch-${selectedPhotos.map(p=>p.id).join(',')}`}
             photos={selectedPhotos}
             roll={roll}
             onClose={() => setShowBatchSidebar(false)}
@@ -736,6 +771,30 @@ export default function RollDetail() {
                 <textarea className="fg-textarea" style={{ minHeight:80 }} value={editData.notes} onChange={e=>setEditData({...editData, notes:e.target.value})} />
               </div>
             </section>
+            <section className="fg-sidepanel-section">
+              <div className="fg-section-label">Scanning Info</div>
+              <div className="fg-separator" />
+              <div className="fg-sidepanel-groupGrid cols-2">
+                <div className="fg-field">
+                  <label className="fg-label">Scanner</label>
+                  <EquipmentSelector 
+                    type="scanner" 
+                    value={editData.scanner_equip_id} 
+                    onChange={(id) => setEditData(d=>({...d, scanner_equip_id: id}))}
+                    placeholder="Select scanner..."
+                  />
+                </div>
+                <input className="fg-input" placeholder="Scan Lab" value={editData.scan_lab} onChange={e=>setEditData(d=>({...d, scan_lab:e.target.value}))} />
+                <input className="fg-input" type="date" placeholder="Scan Date" value={editData.scan_date} onChange={e=>setEditData(d=>({...d, scan_date:e.target.value}))} lang="en-US" />
+                <input className="fg-input" type="number" placeholder="Resolution (DPI)" value={editData.scan_resolution} onChange={e=>setEditData(d=>({...d, scan_resolution:e.target.value}))} />
+                <input className="fg-input" placeholder="Scan Software" value={editData.scan_software} onChange={e=>setEditData(d=>({...d, scan_software:e.target.value}))} />
+                <input className="fg-input" type="number" placeholder="Scan Cost" value={editData.scan_cost} onChange={e=>setEditData(d=>({...d, scan_cost:e.target.value}))} />
+              </div>
+              <div className="fg-field" style={{ marginTop:12 }}>
+                <label className="fg-label">Scan Notes</label>
+                <textarea className="fg-textarea" style={{ minHeight:60 }} placeholder="Scan parameters, issues, etc..." value={editData.scan_notes} onChange={e=>setEditData(d=>({...d, scan_notes:e.target.value}))} />
+              </div>
+            </section>
             <section className="fg-sidepanel-section" style={{ marginTop:'auto' }}>
               <div className="fg-separator" />
               <div className="fg-sidepanel-actions">
@@ -763,6 +822,7 @@ export default function RollDetail() {
         selectedPhotos={multiSelect ? selectedPhotos : []}
         allPhotos={photos}
         onComplete={handleBatchExportComplete}
+        onOpenFilmLab={handleOpenFilmLabForBatch}
       />
 
       {/* 批量下载模态框 */}

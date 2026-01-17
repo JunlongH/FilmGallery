@@ -18,6 +18,15 @@ try {
   piexif = null;
 }
 
+// 使用 exiftool-vendored 处理完整的 EXIF/XMP 写入
+let exiftool;
+try {
+  exiftool = require('exiftool-vendored').exiftool;
+} catch (e) {
+  console.warn('[ExifService] exiftool-vendored not installed, XMP writing will be limited');
+  exiftool = null;
+}
+
 // ============================================================================
 // 常量定义
 // ============================================================================
@@ -62,6 +71,26 @@ const DEFAULT_EXIF_OPTIONS = {
   gps: true,          // GPS 位置
   description: true,  // 描述/备注
   scanner: true,      // 扫描仪/数字化信息
+};
+
+/**
+ * 胶片格式对应的画幅宽度 (mm)
+ * 用于计算 35mm 等效焦距
+ */
+const FORMAT_WIDTH_MM = {
+  '135': 36,              // 标准 35mm
+  '35mm': 36,
+  'Half Frame': 24,       // 半格
+  'APS': 30.2,            // APS
+  '110': 17,              // 110 格式
+  '127': 40,              // 127 格式
+  '120': 60,              // 中画幅 (按 6x6 计算)
+  '220': 60,              // 中画幅 (同 120)
+  'Large Format 4x5': 127, // 大画幅 4x5
+  '4x5': 127,
+  'Large Format 8x10': 254, // 大画幅 8x10
+  '8x10': 254,
+  'Instant': 79,          // 拍立得
 };
 
 // ============================================================================
@@ -230,8 +259,8 @@ function decimalToDMS(decimal) {
 
 /**
  * 从数据库记录构建 EXIF 数据
- * @param {Object} photo - 照片记录
- * @param {Object} roll - 卷记录
+ * @param {Object} photo - 照片记录 (包含完整的 JOIN 数据)
+ * @param {Object} roll - 卷记录 (可选，当 photo 已包含 roll 数据时可为 null)
  * @param {Object} [options] - 选项
  * @returns {Object} EXIF 数据对象
  */
@@ -239,19 +268,52 @@ function buildExifData(photo, roll, options = {}) {
   const opts = { ...DEFAULT_EXIF_OPTIONS, ...options };
   const exif = {};
   
-  // 相机/镜头信息
+  // 相机/镜头信息 - 优先使用设备表数据
   if (opts.camera) {
-    // 从 roll 或 photo 获取相机信息
-    const cameraStr = photo.camera || roll?.camera;
-    if (cameraStr) {
-      const { make, model } = parseCameraString(cameraStr);
+    // 从设备表获取相机信息，回退到文本字段
+    const cameraName = photo.photo_camera_name || photo.roll_camera_name || photo.camera || photo.roll_camera || roll?.camera;
+    const cameraBrand = photo.photo_camera_brand || photo.roll_camera_brand;
+    const cameraModel = photo.photo_camera_model || photo.roll_camera_model;
+    
+    if (cameraBrand || cameraModel) {
+      // 使用设备表的结构化数据
+      if (cameraBrand) exif.Make = cameraBrand;
+      if (cameraModel) exif.Model = cameraModel;
+    } else if (cameraName) {
+      // 回退到解析相机字符串
+      const { make, model } = parseCameraString(cameraName);
       if (make) exif.Make = make;
       if (model) exif.Model = model;
     }
     
-    // 镜头信息
-    if (photo.lens) {
-      exif.LensModel = photo.lens;
+    // 镜头信息 - 优先使用设备表数据
+    const lensName = photo.photo_lens_name || photo.roll_lens_name || photo.lens || photo.roll_lens;
+    const lensBrand = photo.photo_lens_brand || photo.roll_lens_brand;
+    const lensModel = photo.photo_lens_model || photo.roll_lens_model;
+    
+    // 对于 PS 机固定镜头，从相机获取镜头信息
+    let fixedLensFocal = null;
+    if (photo.has_fixed_lens || photo.roll_has_fixed_lens) {
+      fixedLensFocal = photo.fixed_lens_focal_length || photo.roll_fixed_lens_focal;
+    }
+    
+    // 镜头品牌 - 直接使用 lensBrand
+    if (lensBrand) {
+      exif.LensMake = lensBrand;
+    }
+    
+    // 镜头型号
+    if (lensBrand && lensModel) {
+      exif.LensModel = `${lensBrand} ${lensModel}`;
+    } else if (lensModel) {
+      exif.LensModel = lensModel;
+    } else if (lensName) {
+      exif.LensModel = lensName;
+    }
+    
+    // 如果是固定镜头相机且没有单独镜头信息
+    if (fixedLensFocal && !exif.LensModel && cameraName) {
+      exif.LensModel = `${cameraName} ${fixedLensFocal}mm`;
     }
   }
   
@@ -269,15 +331,26 @@ function buildExifData(photo, roll, options = {}) {
       exif.ExposureTime = shutter;
     }
     
-    // ISO
-    if (photo.iso) {
-      exif.ISOSpeedRatings = parseInt(photo.iso);
+    // ISO - 优先使用照片 ISO，回退到胶片 ISO
+    const isoValue = photo.iso || photo.film_iso;
+    if (isoValue) {
+      exif.ISOSpeedRatings = parseInt(isoValue);
     }
     
     // 焦距
     const focal = parseFocalLength(photo.focal_length);
     if (focal) {
       exif.FocalLength = focal;
+      
+      // 计算 35mm 等效焦距
+      // 使用胶片格式或相机格式确定画幅宽度
+      const filmFormat = photo.film_format || photo.roll_format || roll?.format;
+      if (filmFormat) {
+        const formatWidth = FORMAT_WIDTH_MM[filmFormat] || FORMAT_WIDTH_MM[filmFormat.split(' ')[0]] || 36;
+        // 35mm 等效焦距 = 实际焦距 × (36 / 画幅宽度)
+        const cropFactor = 36 / formatWidth;
+        exif.FocalLengthIn35mmFormat = Math.round(focal * cropFactor);
+      }
     }
   }
   
@@ -315,7 +388,7 @@ function buildExifData(photo, roll, options = {}) {
       exif.UserComment = photo.notes;
     }
     
-    const photographer = photo.photographer || roll?.photographer;
+    const photographer = photo.photographer || photo.roll_photographer || roll?.photographer;
     if (photographer) {
       exif.Artist = photographer;
       exif.Copyright = `© ${new Date().getFullYear()} ${photographer}`;
@@ -323,12 +396,40 @@ function buildExifData(photo, roll, options = {}) {
   }
   
   // 软件标识
-  exif.Software = 'FilmGallery';
+  exif.Software = 'FilmGallery v1.9.1';
+  
+  // 胶片信息 (用于 XMP)
+  if (photo.film_name || photo.film_type) {
+    exif.FilmName = photo.film_name || photo.film_type;
+  }
+  if (photo.film_brand) {
+    exif.FilmBrand = photo.film_brand;
+  }
+  if (photo.film_iso) {
+    exif.FilmISO = photo.film_iso;
+  }
+  if (photo.film_format) {
+    exif.FilmFormat = photo.film_format;
+  }
+  if (photo.film_process) {
+    exif.FilmProcess = photo.film_process;
+  }
+  
+  // 冲洗信息 (用于 XMP)
+  if (photo.develop_lab) {
+    exif.DevelopLab = photo.develop_lab;
+  }
+  if (photo.develop_process) {
+    exif.DevelopProcess = photo.develop_process;
+  }
+  if (photo.develop_date) {
+    exif.DevelopDate = photo.develop_date;
+  }
   
   // 扫描仪/数字化信息
   // 注意: piexifjs 不支持 XMP，这些字段会存储在 EXIF 对象中供 XMP 写入使用
   if (opts.scanner) {
-    // 原始源设备信息 (扫描仪制造商/型号)
+    // 原始源设备信息 (扫描仪制造商/型号) - 来自 EXIF 提取
     if (photo.source_make) {
       exif.ScannerMake = photo.source_make;
     }
@@ -350,10 +451,18 @@ function buildExifData(photo, roll, options = {}) {
       exif.ScanDate = photo.scan_date;
     }
     
-    // 扫描仪设备信息 (如果关联了设备)
-    if (photo.scanner_equip_id && photo.scanner_equip) {
-      exif.ScannerEquipment = photo.scanner_equip.name;
-      exif.ScannerType = photo.scanner_equip.type;
+    // 扫描仪设备信息 (从 JOIN 查询获取)
+    if (photo.scanner_name) {
+      exif.ScannerEquipment = photo.scanner_name;
+    }
+    if (photo.scanner_brand) {
+      exif.ScannerEquipBrand = photo.scanner_brand;
+    }
+    if (photo.scanner_model) {
+      exif.ScannerEquipModel = photo.scanner_model;
+    }
+    if (photo.scanner_type) {
+      exif.ScannerType = photo.scanner_type;
     }
   }
   
@@ -494,6 +603,200 @@ async function readExif(filePath) {
   }
 }
 
+/**
+ * 使用 exiftool-vendored 写入完整的 EXIF/XMP 数据
+ * 支持标准 EXIF、IPTC 和 XMP 自定义命名空间 (FilmGallery)
+ * 
+ * @param {string} filePath - 图片文件路径
+ * @param {Object} exifData - EXIF 数据对象 (由 buildExifData 返回)
+ * @param {Object} [options] - 额外选项
+ * @param {string[]} [options.keywords] - 关键词/标签
+ * @param {string} [options.rollTitle] - 卷标题
+ * @returns {Promise<boolean>} 写入是否成功
+ */
+async function writeExifWithExiftool(filePath, exifData, options = {}) {
+  if (!exiftool) {
+    console.warn('[ExifService] exiftool-vendored not available, falling back to piexif');
+    // 回退到 piexif (不支持 XMP)
+    await writeExif(filePath, exifData);
+    return true;
+  }
+  
+  try {
+    // 构建 exiftool 格式的写入数据
+    const writeData = {};
+    
+    // ========== 标准 EXIF 标签 ==========
+    // 相机信息
+    if (exifData.Make) writeData.Make = exifData.Make;
+    if (exifData.Model) writeData.Model = exifData.Model;
+    if (exifData.LensModel) writeData.LensModel = exifData.LensModel;
+    if (exifData.LensMake) writeData.LensMake = exifData.LensMake;
+    
+    // 拍摄参数
+    if (exifData.FNumber) writeData.FNumber = exifData.FNumber;
+    if (exifData.ExposureTime) {
+      // 转换分数为字符串
+      if (typeof exifData.ExposureTime === 'object') {
+        writeData.ExposureTime = `${exifData.ExposureTime.numerator}/${exifData.ExposureTime.denominator}`;
+      } else {
+        writeData.ExposureTime = exifData.ExposureTime;
+      }
+    }
+    if (exifData.ISOSpeedRatings) writeData.ISO = exifData.ISOSpeedRatings;
+    if (exifData.FocalLength) writeData.FocalLength = exifData.FocalLength;
+    
+    // 日期时间
+    if (exifData.DateTimeOriginal) {
+      writeData.DateTimeOriginal = exifData.DateTimeOriginal;
+      writeData.CreateDate = exifData.DateTimeOriginal;
+    }
+    
+    // GPS
+    if (exifData.GPSLatitude) {
+      // exiftool 接受十进制度数
+      const latDMS = exifData.GPSLatitude;
+      const lat = latDMS[0][0] + latDMS[1][0] / 60 + latDMS[2][0] / latDMS[2][1] / 3600;
+      const latSign = exifData.GPSLatitudeRef === 'S' ? -1 : 1;
+      writeData.GPSLatitude = lat * latSign;
+    }
+    if (exifData.GPSLongitude) {
+      const lonDMS = exifData.GPSLongitude;
+      const lon = lonDMS[0][0] + lonDMS[1][0] / 60 + lonDMS[2][0] / lonDMS[2][1] / 3600;
+      const lonSign = exifData.GPSLongitudeRef === 'W' ? -1 : 1;
+      writeData.GPSLongitude = lon * lonSign;
+    }
+    
+    // 描述信息
+    if (exifData.ImageDescription) writeData.ImageDescription = exifData.ImageDescription;
+    if (exifData.UserComment) writeData.UserComment = exifData.UserComment;
+    if (exifData.Artist) writeData.Artist = exifData.Artist;
+    if (exifData.Copyright) writeData.Copyright = exifData.Copyright;
+    if (exifData.Software) writeData.Software = exifData.Software;
+    
+    // ========== IPTC/XMP 关键词 ==========
+    const keywords = options.keywords || [];
+    if (exifData.FilmName) keywords.push(exifData.FilmName);
+    if (exifData.DevelopLab) keywords.push(exifData.DevelopLab);
+    if (keywords.length > 0) {
+      writeData.Subject = keywords;
+      writeData.Keywords = keywords;
+    }
+    
+    // ========== 构建综合描述 ==========
+    const descParts = [];
+    if (exifData.ImageDescription) descParts.push(exifData.ImageDescription);
+    if (options.rollTitle) descParts.push(`Roll: ${options.rollTitle}`);
+    
+    // 胶片信息
+    const filmParts = [];
+    if (exifData.FilmBrand) filmParts.push(exifData.FilmBrand);
+    if (exifData.FilmName) filmParts.push(exifData.FilmName);
+    if (exifData.FilmISO) filmParts.push(`ISO ${exifData.FilmISO}`);
+    if (exifData.FilmFormat) filmParts.push(exifData.FilmFormat);
+    if (filmParts.length > 0) {
+      descParts.push(`Film: ${filmParts.join(' ')}`);
+    }
+    
+    // 冲洗信息
+    const developParts = [];
+    if (exifData.DevelopLab) developParts.push(`Lab: ${exifData.DevelopLab}`);
+    if (exifData.DevelopProcess) developParts.push(`Process: ${exifData.DevelopProcess}`);
+    if (exifData.DevelopDate) developParts.push(`Date: ${exifData.DevelopDate}`);
+    if (developParts.length > 0) {
+      descParts.push(`Develop: ${developParts.join(', ')}`);
+    }
+    
+    if (descParts.length > 1) {
+      writeData.ImageDescription = descParts.join(' | ');
+    }
+    
+    // UserComment 包含更详细信息
+    const userCommentParts = [];
+    if (filmParts.length > 0) userCommentParts.push(`Film: ${filmParts.join(' ')}`);
+    if (exifData.LensModel) userCommentParts.push(`Lens: ${exifData.LensModel}`);
+    if (developParts.length > 0) userCommentParts.push(developParts.join(', '));
+    if (userCommentParts.length > 0) {
+      writeData.UserComment = userCommentParts.join(' | ');
+    }
+    
+    // ========== XMP-FilmGallery 自定义命名空间 ==========
+    // 扫描仪/数字化信息
+    if (exifData.ScannerMake) {
+      writeData['XMP-FilmGallery:ScannerMake'] = exifData.ScannerMake;
+    }
+    if (exifData.ScannerModel) {
+      writeData['XMP-FilmGallery:ScannerModel'] = exifData.ScannerModel;
+    }
+    if (exifData.ScannerSoftware) {
+      writeData['XMP-FilmGallery:ScanSoftware'] = exifData.ScannerSoftware;
+    }
+    if (exifData.ScanResolution) {
+      writeData['XMP-FilmGallery:ScanResolution'] = exifData.ScanResolution;
+    }
+    if (exifData.ScanBitDepth) {
+      writeData['XMP-FilmGallery:ScanBitDepth'] = exifData.ScanBitDepth;
+    }
+    if (exifData.ScanDate) {
+      writeData['XMP-FilmGallery:ScanDate'] = exifData.ScanDate;
+    }
+    
+    // 扫描仪设备信息 (来自设备库)
+    if (exifData.ScannerEquipment) {
+      writeData['XMP-FilmGallery:ScannerEquipment'] = exifData.ScannerEquipment;
+    }
+    if (exifData.ScannerEquipBrand) {
+      writeData['XMP-FilmGallery:ScannerEquipBrand'] = exifData.ScannerEquipBrand;
+    }
+    if (exifData.ScannerEquipModel) {
+      writeData['XMP-FilmGallery:ScannerEquipModel'] = exifData.ScannerEquipModel;
+    }
+    if (exifData.ScannerType) {
+      writeData['XMP-FilmGallery:ScannerType'] = exifData.ScannerType;
+    }
+    
+    // 胶片信息 (XMP)
+    if (exifData.FilmName) {
+      writeData['XMP-FilmGallery:FilmName'] = exifData.FilmName;
+    }
+    if (exifData.FilmBrand) {
+      writeData['XMP-FilmGallery:FilmBrand'] = exifData.FilmBrand;
+    }
+    if (exifData.FilmISO) {
+      writeData['XMP-FilmGallery:FilmISO'] = exifData.FilmISO;
+    }
+    if (exifData.FilmFormat) {
+      writeData['XMP-FilmGallery:FilmFormat'] = exifData.FilmFormat;
+    }
+    if (exifData.FilmProcess) {
+      writeData['XMP-FilmGallery:FilmProcess'] = exifData.FilmProcess;
+    }
+    
+    // 冲洗信息 (XMP)
+    if (exifData.DevelopLab) {
+      writeData['XMP-FilmGallery:DevelopLab'] = exifData.DevelopLab;
+    }
+    if (exifData.DevelopProcess) {
+      writeData['XMP-FilmGallery:DevelopProcess'] = exifData.DevelopProcess;
+    }
+    if (exifData.DevelopDate) {
+      writeData['XMP-FilmGallery:DevelopDate'] = exifData.DevelopDate;
+    }
+    
+    console.log('[ExifService] Writing EXIF with exiftool:', Object.keys(writeData).length, 'tags');
+    
+    // 写入 EXIF
+    await exiftool.write(filePath, writeData, ['-overwrite_original']);
+    
+    console.log('[ExifService] ✅ EXIF write successful');
+    return true;
+    
+  } catch (err) {
+    console.error('[ExifService] exiftool write failed:', err);
+    return false;
+  }
+}
+
 // ============================================================================
 // 模块导出
 // ============================================================================
@@ -506,6 +809,7 @@ module.exports = {
   // 核心功能
   buildExifData,
   writeExif,
+  writeExifWithExiftool,
   readExif,
   
   // 辅助函数

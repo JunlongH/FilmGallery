@@ -29,6 +29,13 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
     latitude: base?.latitude,
     longitude: base?.longitude,
   });
+  const [scannerEquipId, setScannerEquipId] = useState(base?.scanner_equip_id || roll?.scanner_equip_id || null);
+  const [scanResolution, setScanResolution] = useState(base?.scan_resolution || roll?.scan_resolution || '');
+  const [scanSoftware, setScanSoftware] = useState(base?.scan_software || roll?.scan_software || '');
+  const [scanLab, setScanLab] = useState(base?.scan_lab || roll?.scan_lab || '');
+  const [scanDate, setScanDate] = useState(base?.scan_date || roll?.scan_date || '');
+  const [scanCost, setScanCost] = useState(base?.scan_cost || roll?.scan_cost || '');
+  const [scanNotes, setScanNotes] = useState(base?.scan_notes || roll?.scan_notes || '');
   const [options, setOptions] = useState({ cameras: [], lenses: [], photographers: [] });
 
   // Load metadata options for autocomplete
@@ -59,6 +66,13 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       latitude: base.latitude,
       longitude: base.longitude,
     });
+    setScannerEquipId(base.scanner_equip_id || roll?.scanner_equip_id || null);
+    setScanResolution(base.scan_resolution || roll?.scan_resolution || '');
+    setScanSoftware(base.scan_software || roll?.scan_software || '');
+    setScanLab(base.scan_lab || roll?.scan_lab || '');
+    setScanDate(base.scan_date || roll?.scan_date || '');
+    setScanCost(base.scan_cost || roll?.scan_cost || '');
+    setScanNotes(base.scan_notes || roll?.scan_notes || '');
   }, [base, roll]);
 
   async function handleSave() {
@@ -78,7 +92,14 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       photographer: photographer || null,
       aperture: aperture !== '' ? parseFloat(aperture) : null,
       shutter_speed: shutterSpeed || null,
-      iso: iso !== '' ? parseInt(iso) : null
+      iso: iso !== '' ? parseInt(iso) : null,
+      scanner_equip_id: scannerEquipId || null,
+      scan_resolution: scanResolution || null,
+      scan_software: scanSoftware || null,
+      scan_lab: scanLab || null,
+      scan_date: scanDate || null,
+      scan_cost: scanCost || null,
+      scan_notes: scanNotes || null
     };
     try {
       const targets = isBatch ? photos : [photo];
@@ -282,6 +303,46 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
             }}
             placeholder="Search address or type detail..."
           />
+        </div>
+      </section>
+
+      <section className="fg-sidepanel-section">
+        <div className="fg-section-label">Scanning Info</div>
+        <div className="fg-separator" />
+        <div className="fg-sidepanel-groupGrid cols-2">
+          <div className="fg-field">
+            <label className="fg-label">Scanner</label>
+            <EquipmentSelector 
+              type="scanner" 
+              value={scannerEquipId} 
+              onChange={(id) => setScannerEquipId(id)}
+              placeholder="Select scanner..."
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Lab</label>
+            <input className="fg-input" placeholder="e.g. Film Lab, Home scan" value={scanLab} onChange={e=>setScanLab(e.target.value)} />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Date</label>
+            <input className="fg-input" type="date" value={scanDate} onChange={e=>setScanDate(e.target.value)} lang="en-US" />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Resolution (DPI)</label>
+            <input className="fg-input" type="number" placeholder="e.g. 3200, 4800" value={scanResolution} onChange={e=>setScanResolution(e.target.value)} />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Software</label>
+            <input className="fg-input" placeholder="e.g. VueScan, Epson Scan 2" value={scanSoftware} onChange={e=>setScanSoftware(e.target.value)} />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Cost</label>
+            <input className="fg-input" type="number" placeholder="0.00" value={scanCost} onChange={e=>setScanCost(e.target.value)} />
+          </div>
+        </div>
+        <div className="fg-field" style={{ marginTop: 8 }}>
+          <label className="fg-label">Scan Notes</label>
+          <textarea className="fg-textarea" style={{ minHeight: 60, resize: 'vertical' }} placeholder="Scan parameters, issues, etc..." value={scanNotes} onChange={e=>setScanNotes(e.target.value)} />
         </div>
       </section>
 

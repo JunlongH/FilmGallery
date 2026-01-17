@@ -10,7 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const db = require('../db');
 const { uploadsDir } = require('../config/paths');
-const { buildExifData, writeExif } = require('./exif-service');
+const { buildExifData, writeExif, writeExifWithExiftool } = require('./exif-service');
 
 // ============================================================================
 // 常量定义
@@ -41,16 +41,44 @@ const NAMING_PATTERNS = {
 // ============================================================================
 
 /**
- * 获取照片记录及相关信息
+ * 获取照片记录及相关信息 (包含设备、胶片、扫描仪信息)
  * @param {number} photoId - 照片 ID
  * @returns {Promise<Object|null>}
  */
 async function getPhotoWithRoll(photoId) {
   return new Promise((resolve, reject) => {
     const sql = `
-      SELECT p.*, r.title as roll_title, r.film_type, r.camera, r.photographer as roll_photographer
+      SELECT p.*, r.title as roll_title, r.film_type, r.camera as roll_camera, r.lens as roll_lens,
+             r.photographer as roll_photographer, r.start_date as roll_start_date,
+             r.develop_lab, r.develop_process, r.develop_date, r.develop_note,
+             -- Film info
+             COALESCE(f.name, r.film_type) AS film_name,
+             f.brand AS film_brand, f.iso AS film_iso, f.format AS film_format,
+             f.category AS film_category, f.process AS film_process,
+             -- Photo equipment
+             pcam.name AS photo_camera_name, pcam.brand AS photo_camera_brand, pcam.model AS photo_camera_model,
+             pcam.has_fixed_lens, pcam.fixed_lens_focal_length, pcam.fixed_lens_max_aperture,
+             plens.name AS photo_lens_name, plens.brand AS photo_lens_brand, plens.model AS photo_lens_model,
+             plens.focal_length_min AS photo_lens_focal_min, plens.focal_length_max AS photo_lens_focal_max,
+             plens.max_aperture AS photo_lens_max_aperture,
+             -- Roll equipment (fallback)
+             rcam.name AS roll_camera_name, rcam.brand AS roll_camera_brand, rcam.model AS roll_camera_model,
+             rcam.has_fixed_lens AS roll_has_fixed_lens, rcam.fixed_lens_focal_length AS roll_fixed_lens_focal,
+             rcam.fixed_lens_max_aperture AS roll_fixed_lens_aperture,
+             rlens.name AS roll_lens_name, rlens.brand AS roll_lens_brand, rlens.model AS roll_lens_model,
+             rlens.focal_length_min AS roll_lens_focal_min, rlens.focal_length_max AS roll_lens_focal_max,
+             rlens.max_aperture AS roll_lens_max_aperture,
+             -- Scanner info
+             pscan.name AS scanner_name, pscan.brand AS scanner_brand, pscan.model AS scanner_model,
+             pscan.type AS scanner_type
       FROM photos p
-      JOIN rolls r ON p.roll_id = r.id
+      JOIN rolls r ON r.id = p.roll_id
+      LEFT JOIN films f ON f.id = r.filmId
+      LEFT JOIN equip_cameras pcam ON p.camera_equip_id = pcam.id
+      LEFT JOIN equip_lenses plens ON p.lens_equip_id = plens.id
+      LEFT JOIN equip_cameras rcam ON r.camera_equip_id = rcam.id
+      LEFT JOIN equip_lenses rlens ON r.lens_equip_id = rlens.id
+      LEFT JOIN equip_scanners pscan ON p.scanner_equip_id = pscan.id
       WHERE p.id = ?
     `;
     db.get(sql, [photoId], (err, row) => {
@@ -61,7 +89,7 @@ async function getPhotoWithRoll(photoId) {
 }
 
 /**
- * 批量获取照片记录
+ * 批量获取照片记录 (包含设备、胶片、扫描仪信息)
  * @param {number[]} photoIds - 照片 ID 列表
  * @returns {Promise<Object[]>}
  */
@@ -71,9 +99,37 @@ async function getPhotosWithRoll(photoIds) {
   return new Promise((resolve, reject) => {
     const placeholders = photoIds.map(() => '?').join(',');
     const sql = `
-      SELECT p.*, r.title as roll_title, r.film_type, r.camera, r.photographer as roll_photographer
+      SELECT p.*, r.title as roll_title, r.film_type, r.camera as roll_camera, r.lens as roll_lens,
+             r.photographer as roll_photographer, r.start_date as roll_start_date,
+             r.develop_lab, r.develop_process, r.develop_date, r.develop_note,
+             -- Film info
+             COALESCE(f.name, r.film_type) AS film_name,
+             f.brand AS film_brand, f.iso AS film_iso, f.format AS film_format,
+             f.category AS film_category, f.process AS film_process,
+             -- Photo equipment
+             pcam.name AS photo_camera_name, pcam.brand AS photo_camera_brand, pcam.model AS photo_camera_model,
+             pcam.has_fixed_lens, pcam.fixed_lens_focal_length, pcam.fixed_lens_max_aperture,
+             plens.name AS photo_lens_name, plens.brand AS photo_lens_brand, plens.model AS photo_lens_model,
+             plens.focal_length_min AS photo_lens_focal_min, plens.focal_length_max AS photo_lens_focal_max,
+             plens.max_aperture AS photo_lens_max_aperture,
+             -- Roll equipment (fallback)
+             rcam.name AS roll_camera_name, rcam.brand AS roll_camera_brand, rcam.model AS roll_camera_model,
+             rcam.has_fixed_lens AS roll_has_fixed_lens, rcam.fixed_lens_focal_length AS roll_fixed_lens_focal,
+             rcam.fixed_lens_max_aperture AS roll_fixed_lens_aperture,
+             rlens.name AS roll_lens_name, rlens.brand AS roll_lens_brand, rlens.model AS roll_lens_model,
+             rlens.focal_length_min AS roll_lens_focal_min, rlens.focal_length_max AS roll_lens_focal_max,
+             rlens.max_aperture AS roll_lens_max_aperture,
+             -- Scanner info
+             pscan.name AS scanner_name, pscan.brand AS scanner_brand, pscan.model AS scanner_model,
+             pscan.type AS scanner_type
       FROM photos p
-      JOIN rolls r ON p.roll_id = r.id
+      JOIN rolls r ON r.id = p.roll_id
+      LEFT JOIN films f ON f.id = r.filmId
+      LEFT JOIN equip_cameras pcam ON p.camera_equip_id = pcam.id
+      LEFT JOIN equip_lenses plens ON p.lens_equip_id = plens.id
+      LEFT JOIN equip_cameras rcam ON r.camera_equip_id = rcam.id
+      LEFT JOIN equip_lenses rlens ON r.lens_equip_id = rlens.id
+      LEFT JOIN equip_scanners pscan ON p.scanner_equip_id = pscan.id
       WHERE p.id IN (${placeholders})
     `;
     db.all(sql, photoIds, (err, rows) => {
@@ -209,14 +265,29 @@ async function prepareDownload(options) {
   // 复制文件
   fs.copyFileSync(sourcePath, tempPath);
 
-  // 构建并写入 EXIF
-  const exifData = buildExifData(photo, { 
-    camera: photo.camera,
-    photographer: photo.roll_photographer 
-  }, exifOptions);
+  // 构建并写入 EXIF (photo 现在包含完整的 JOIN 数据)
+  const exifData = buildExifData(photo, null, exifOptions);
+  
+  // 获取关键词 (tags)
+  const tags = await new Promise((resolve, reject) => {
+    db.all('SELECT t.name FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.photo_id = ?', 
+      [photoId], (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows ? rows.map(r => r.name) : []);
+      });
+  }).catch(() => []);
   
   try {
-    await writeExif(tempPath, exifData);
+    // 只对 JPEG 文件写入完整的 EXIF/XMP
+    if (['.jpg', '.jpeg'].includes(ext.toLowerCase())) {
+      await writeExifWithExiftool(tempPath, exifData, {
+        keywords: tags,
+        rollTitle: photo.roll_title
+      });
+    } else {
+      // 对非 JPEG 文件使用基本 EXIF 写入
+      await writeExif(tempPath, exifData);
+    }
   } catch (e) {
     console.error('[DownloadService] Failed to write EXIF:', e.message);
     // 即使 EXIF 写入失败，也返回文件
@@ -293,15 +364,24 @@ async function batchDownload(photoIds, type, outputDir, options = {}) {
       // 复制文件
       fs.copyFileSync(sourcePath, outputPath);
 
-      // 写入 EXIF
+      // 写入 EXIF (photo 现在包含完整的 JOIN 数据)
       if (shouldWriteExif && (ext.toLowerCase() === '.jpg' || ext.toLowerCase() === '.jpeg')) {
-        const exifData = buildExifData(photo, {
-          camera: photo.camera,
-          photographer: photo.roll_photographer
-        }, exifOptions);
+        const exifData = buildExifData(photo, null, exifOptions);
+        
+        // 获取关键词 (tags)
+        const tags = await new Promise((resolve, reject) => {
+          db.all('SELECT t.name FROM photo_tags pt JOIN tags t ON t.id = pt.tag_id WHERE pt.photo_id = ?', 
+            [photoId], (err, rows) => {
+              if (err) reject(err);
+              else resolve(rows ? rows.map(r => r.name) : []);
+            });
+        }).catch(() => []);
         
         try {
-          await writeExif(outputPath, exifData);
+          await writeExifWithExiftool(outputPath, exifData, {
+            keywords: tags,
+            rollTitle: photo.roll_title
+          });
         } catch (e) {
           console.error(`[DownloadService] Failed to write EXIF for photo ${photoId}:`, e.message);
           // 继续处理，不中断

@@ -16,6 +16,7 @@ import {
   getLenses, createLens, updateLens, deleteLens, uploadLensImage,
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
   getScanners, createScanner, updateScanner, deleteScanner, uploadScannerImage,
+  getFilmBacks, createFilmBack, updateFilmBack, deleteFilmBack, uploadFilmBackImage,
   getFilms, createFilm, updateFilm, deleteFilm, getFilmConstants,
   getEquipmentConstants, buildUploadUrl, getRolls
 } from '../api';
@@ -28,6 +29,7 @@ const TABS = [
   { key: 'cameras', label: '📷 Cameras', icon: '📷' },
   { key: 'lenses', label: '🔭 Lenses', icon: '🔭' },
   { key: 'flashes', label: '⚡ Flashes', icon: '⚡' },
+  { key: 'film-backs', label: '📦 Film Backs', icon: '📦' },
   { key: 'scanners', label: '🖨️ Scanners', icon: '🖨️' },
   { key: 'films', label: '🎞️ Films', icon: '🎞️' }
 ];
@@ -58,6 +60,7 @@ export default function EquipmentManager() {
         case 'cameras': data = await getCameras(); break;
         case 'lenses': data = await getLenses(); break;
         case 'flashes': data = await getFlashes(); break;
+        case 'film-backs': data = await getFilmBacks(); break;
         case 'scanners': data = await getScanners(); break;
         case 'films': data = await getFilms(); break;
         default: data = [];
@@ -88,6 +91,7 @@ export default function EquipmentManager() {
         case 'cameras': created = await createCamera(data); break;
         case 'lenses': created = await createLens(data); break;
         case 'flashes': created = await createFlash(data); break;
+        case 'film-backs': created = await createFilmBack(data); break;
         case 'scanners': created = await createScanner(data); break;
         case 'films': created = await createFilm(data); break;
         default: return;
@@ -109,6 +113,7 @@ export default function EquipmentManager() {
         case 'cameras': updated = await updateCamera(id, data); break;
         case 'lenses': updated = await updateLens(id, data); break;
         case 'flashes': updated = await updateFlash(id, data); break;
+        case 'film-backs': updated = await updateFilmBack(id, data); break;
         case 'scanners': updated = await updateScanner(id, data); break;
         case 'films': updated = await updateFilm({ id, ...data }); break;
         default: return;
@@ -128,6 +133,7 @@ export default function EquipmentManager() {
         case 'cameras': await deleteCamera(id); break;
         case 'lenses': await deleteLens(id); break;
         case 'flashes': await deleteFlash(id); break;
+        case 'film-backs': await deleteFilmBack(id); break;
         case 'scanners': await deleteScanner(id); break;
         case 'films': await deleteFilm(id); break;
         default: return;
@@ -148,6 +154,7 @@ export default function EquipmentManager() {
         case 'cameras': await uploadCameraImage(id, file); break;
         case 'lenses': await uploadLensImage(id, file); break;
         case 'flashes': await uploadFlashImage(id, file); break;
+        case 'film-backs': await uploadFilmBackImage(id, file); break;
         case 'scanners': await uploadScannerImage(id, file); break;
         default: return;
       }
@@ -305,6 +312,8 @@ function DetailView({ type, item, filmConstants, onEdit, onDelete, onImageUpload
           filter = { lens_equip_id: item.id };
         } else if (type === 'flashes') {
           filter = { flash_equip_id: item.id };
+        } else if (type === 'film-backs') {
+          filter = { film_back_equip_id: item.id };
         } else if (type === 'scanners') {
           filter = { scanner_equip_id: item.id };
         } else if (type === 'films') {
@@ -466,6 +475,22 @@ function DetailView({ type, item, filmConstants, onEdit, onDelete, onImageUpload
           
           {/* Flash-specific */}
           {item.guide_number && <DetailRow label="Guide Number" value={item.guide_number} />}
+          
+          {/* Film Back-specific */}
+          {type === 'film-backs' && (
+            <>
+              {item.format && <DetailRow label="Format" value={item.format} />}
+              {item.sub_format && <DetailRow label="Sub-format" value={item.sub_format} />}
+              {(item.frame_width_mm && item.frame_height_mm) && (
+                <DetailRow label="Frame Size" value={`${item.frame_width_mm}×${item.frame_height_mm}mm`} />
+              )}
+              {item.frames_per_roll && <DetailRow label="Frames/Roll" value={item.frames_per_roll} />}
+              {item.mount_type && <DetailRow label="Mount Type" value={item.mount_type} />}
+              {item.magazine_type && <DetailRow label="Magazine" value={item.magazine_type} />}
+              {item.is_motorized === 1 && <DetailRow label="Motorized" value="Yes" />}
+              {item.has_dark_slide === 1 && <DetailRow label="Dark Slide" value="Yes" />}
+            </>
+          )}
           
           {/* Common fields */}
           {item.serial_number && <DetailRow label="Serial #" value={item.serial_number} />}
@@ -1102,6 +1127,121 @@ function FormFields({ type, form, onChange, constants }) {
                 onChange={e => onChange('has_infrared_cleaning', e.target.checked ? 1 : 0)}
               />
               Has Infrared Dust/Scratch Removal (ICE/iSRD)
+            </label>
+          </div>
+        </>
+      )}
+
+      {/* Film Back fields */}
+      {type === 'film-backs' && (
+        <>
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Format</label>
+              <select
+                value={form.format || '120'}
+                onChange={e => onChange('format', e.target.value)}
+              >
+                <option value="120">120</option>
+                <option value="220">220</option>
+                <option value="135">135 (35mm)</option>
+              </select>
+            </div>
+            <div className="form-row">
+              <label>Sub-format (Frame Size)</label>
+              <select
+                value={form.sub_format || ''}
+                onChange={e => {
+                  const val = e.target.value;
+                  onChange('sub_format', val);
+                  // Auto-fill dimensions
+                  const subFmt = constants?.filmBackSubFormats?.find(f => f.value === val);
+                  if (subFmt) {
+                    onChange('frame_width_mm', subFmt.width_mm);
+                    onChange('frame_height_mm', subFmt.height_mm);
+                    onChange('frames_per_roll', subFmt.frames);
+                  }
+                }}
+              >
+                <option value="">Select Sub-format...</option>
+                {constants?.filmBackSubFormats?.map(f => (
+                  <option key={f.value} value={f.value}>{f.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
+          <div className="form-row-inline">
+            <div className="form-row">
+              <label>Frame Width (mm)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={form.frame_width_mm || ''}
+                onChange={e => onChange('frame_width_mm', parseFloat(e.target.value) || null)}
+              />
+            </div>
+            <div className="form-row">
+              <label>Frame Height (mm)</label>
+              <input
+                type="number"
+                step="0.1"
+                value={form.frame_height_mm || ''}
+                onChange={e => onChange('frame_height_mm', parseFloat(e.target.value) || null)}
+              />
+            </div>
+            <div className="form-row">
+              <label>Frames per Roll</label>
+              <input
+                type="number"
+                value={form.frames_per_roll || ''}
+                onChange={e => onChange('frames_per_roll', parseInt(e.target.value) || null)}
+              />
+            </div>
+          </div>
+
+          <div className="form-row">
+            <label>Mount Type</label>
+            <select
+              value={form.mount_type || ''}
+              onChange={e => onChange('mount_type', e.target.value)}
+            >
+              <option value="">Select Mount...</option>
+              {constants?.filmBackMounts?.map(m => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-row">
+            <label>Magazine Type</label>
+            <input
+              type="text"
+              value={form.magazine_type || ''}
+              onChange={e => onChange('magazine_type', e.target.value)}
+              placeholder="e.g., A12, A16, Insert"
+            />
+          </div>
+
+          <div className="form-row checkbox-row">
+            <label>
+              <input
+                type="checkbox"
+                checked={form.is_motorized === 1 || form.is_motorized === true}
+                onChange={e => onChange('is_motorized', e.target.checked ? 1 : 0)}
+              />
+              Motorized Film Advance
+            </label>
+          </div>
+
+          <div className="form-row checkbox-row">
+            <label>
+              <input
+                type="checkbox"
+                checked={form.has_dark_slide !== 0 && form.has_dark_slide !== false}
+                onChange={e => onChange('has_dark_slide', e.target.checked ? 1 : 0)}
+              />
+              Has Dark Slide (for mid-roll changes)
             </label>
           </div>
         </>

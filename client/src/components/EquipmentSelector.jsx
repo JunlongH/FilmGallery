@@ -11,7 +11,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { getCameras, getLenses, getFlashes, getCompatibleLenses, createCamera, createLens, createFlash } from '../api';
+import { getCameras, getLenses, getFlashes, getScanners, getFilmBacks, getCompatibleLenses, createCamera, createLens, createFlash, createScanner, createFilmBack } from '../api';
 import { buildUploadUrl } from '../api';
 import '../styles/forms.css';
 import '../styles/equipment-selector.css';
@@ -38,11 +38,25 @@ const EQUIPMENT_CONFIG = {
     label: 'Flash',
     placeholder: 'Select flash...',
     icon: '⚡'
+  },
+  scanner: {
+    fetchAll: getScanners,
+    create: createScanner,
+    label: 'Scanner',
+    placeholder: 'Select scanner...',
+    icon: '🖨️'
+  },
+  'film-back': {
+    fetchAll: getFilmBacks,
+    create: createFilmBack,
+    label: 'Film Back',
+    placeholder: 'Select film back...',
+    icon: '📦'
   }
 };
 
 export default function EquipmentSelector({
-  type = 'camera', // 'camera' | 'lens' | 'flash'
+  type = 'camera', // 'camera' | 'lens' | 'flash' | 'scanner' | 'film-back'
   value = null,     // equipment ID or null
   onChange,         // (id, item) => void
   cameraId = null,  // for lens: filter by camera's mount

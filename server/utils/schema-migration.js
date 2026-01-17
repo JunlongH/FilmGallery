@@ -86,8 +86,12 @@ function runSchemaMigration() {
         `CREATE TABLE IF NOT EXISTS presets (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
-          params TEXT NOT NULL,
-          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          category TEXT,
+          description TEXT,
+          params TEXT,
+          params_json TEXT,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME
         )`,
         `CREATE TABLE IF NOT EXISTS roll_gear (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -245,7 +249,14 @@ function runSchemaMigration() {
         // Films
         { table: 'films', col: 'category', type: 'TEXT' },
         { table: 'films', col: 'thumbPath', type: 'TEXT' },
-        { table: 'films', col: 'updatedAt', type: 'DATETIME' }
+        { table: 'films', col: 'updatedAt', type: 'DATETIME' },
+        
+        // Presets
+        { table: 'presets', col: 'category', type: 'TEXT' },
+        { table: 'presets', col: 'description', type: 'TEXT' },
+        { table: 'presets', col: 'params', type: 'TEXT' },
+        { table: 'presets', col: 'params_json', type: 'TEXT' },
+        { table: 'presets', col: 'updated_at', type: 'DATETIME' }
       ];
 
       for (const { table, col, type } of columns) {
@@ -306,6 +317,24 @@ function runSchemaMigration() {
       // Fix: Ensure folderName
       await run(`UPDATE rolls SET folderName = CAST(id AS TEXT) WHERE folderName IS NULL OR folderName = ''`);
 
+      // Migrate old presets.params to presets.params_json
+      log("Checking presets migration...");
+      try {
+        const oldPresets = await all("SELECT id, params FROM presets WHERE params IS NOT NULL AND params_json IS NULL");
+        if (oldPresets.length > 0) {
+          log(`Migrating ${oldPresets.length} presets from params to params_json`);
+          for (const p of oldPresets) {
+            await run("UPDATE presets SET params_json = ? WHERE id = ?", [p.params, p.id]);
+          }
+        }
+      } catch (e) {
+        // Column doesn't exist or other error, ignore
+        log(`Presets migration note: ${e.message}`);
+      }
+
+      // Seed default presets if none exist
+      await seedDefaultPresets(run, all, log);
+
       log('Schema migration completed.');
       db.close();
       resolve();
@@ -319,3 +348,247 @@ function runSchemaMigration() {
 }
 
 module.exports = { runSchemaMigration };
+
+// ============================================================================
+// Default FilmLab Presets (seeded on first run)
+// ============================================================================
+async function seedDefaultPresets(run, all, log) {
+  try {
+    const existing = await all("SELECT COUNT(*) as cnt FROM presets");
+    if (existing[0].cnt > 0) {
+      log(`Presets table already has ${existing[0].cnt} presets, skipping seed.`);
+      return;
+    }
+  } catch (e) {
+    log(`Cannot check presets count: ${e.message}`);
+    return;
+  }
+
+  log("Seeding default FilmLab presets...");
+
+  // Base params template (neutral starting point for positive film)
+  const basePositiveParams = {
+    inverted: false,
+    inversionMode: 'linear',
+    exposure: 0,
+    contrast: 0,
+    highlights: 0,
+    shadows: 0,
+    whites: 0,
+    blacks: 0,
+    temp: 0,
+    tint: 0,
+    red: 1,
+    green: 1,
+    blue: 1,
+    curves: {
+      rgb: [{x:0,y:0},{x:255,y:255}],
+      red: [{x:0,y:0},{x:255,y:255}],
+      green: [{x:0,y:0},{x:255,y:255}],
+      blue: [{x:0,y:0},{x:255,y:255}]
+    },
+    hslParams: {
+      hue: { red: 0, orange: 0, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 },
+      saturation: { red: 0, orange: 0, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 },
+      luminance: { red: 0, orange: 0, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 }
+    },
+    splitToning: {
+      highlightHue: 0, highlightSaturation: 0,
+      shadowHue: 0, shadowSaturation: 0,
+      balance: 0
+    },
+    filmCurveEnabled: false,
+    filmCurveProfile: 'default',
+    lut1: null,
+    lut2: null
+  };
+
+  const defaultPresets = [
+    {
+      name: 'Neutral',
+      category: 'positive',
+      description: 'No adjustments - clean starting point',
+      params: { ...basePositiveParams }
+    },
+    {
+      name: 'Vivid Colors',
+      category: 'positive',
+      description: 'Enhanced saturation and contrast for vibrant images',
+      params: {
+        ...basePositiveParams,
+        contrast: 15,
+        highlights: -10,
+        shadows: 10,
+        hslParams: {
+          ...basePositiveParams.hslParams,
+          saturation: { red: 15, orange: 20, yellow: 15, green: 15, aqua: 10, blue: 20, purple: 15, magenta: 10 }
+        }
+      }
+    },
+    {
+      name: 'Soft Portrait',
+      category: 'positive',
+      description: 'Flattering skin tones with soft contrast',
+      params: {
+        ...basePositiveParams,
+        contrast: -10,
+        highlights: -15,
+        shadows: 15,
+        temp: 8,
+        hslParams: {
+          ...basePositiveParams.hslParams,
+          saturation: { red: -10, orange: -5, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 },
+          luminance: { red: 5, orange: 10, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 }
+        }
+      }
+    },
+    {
+      name: 'Warm Sunset',
+      category: 'positive',
+      description: 'Warm golden hour tones',
+      params: {
+        ...basePositiveParams,
+        temp: 25,
+        tint: 5,
+        contrast: 10,
+        highlights: -20,
+        shadows: 5,
+        splitToning: {
+          highlightHue: 45,
+          highlightSaturation: 20,
+          shadowHue: 30,
+          shadowSaturation: 15,
+          balance: 10
+        }
+      }
+    },
+    {
+      name: 'Cool Blue Hour',
+      category: 'positive',
+      description: 'Cool blue tones for twilight scenes',
+      params: {
+        ...basePositiveParams,
+        temp: -20,
+        tint: -5,
+        contrast: 5,
+        blacks: 5,
+        splitToning: {
+          highlightHue: 210,
+          highlightSaturation: 15,
+          shadowHue: 240,
+          shadowSaturation: 20,
+          balance: -10
+        }
+      }
+    },
+    {
+      name: 'Classic Film Look',
+      category: 'positive',
+      description: 'Lifted blacks and faded highlights for vintage feel',
+      params: {
+        ...basePositiveParams,
+        contrast: -5,
+        blacks: -15,
+        highlights: -10,
+        curves: {
+          rgb: [{x:0,y:20},{x:30,y:40},{x:225,y:235},{x:255,y:245}],
+          red: [{x:0,y:0},{x:255,y:255}],
+          green: [{x:0,y:0},{x:255,y:255}],
+          blue: [{x:0,y:5},{x:255,y:250}]
+        }
+      }
+    },
+    {
+      name: 'High Contrast B&W',
+      category: 'positive',
+      description: 'Desaturated with punchy contrast',
+      params: {
+        ...basePositiveParams,
+        contrast: 30,
+        highlights: -10,
+        shadows: -10,
+        whites: 10,
+        blacks: 10,
+        hslParams: {
+          ...basePositiveParams.hslParams,
+          saturation: { red: -100, orange: -100, yellow: -100, green: -100, aqua: -100, blue: -100, purple: -100, magenta: -100 }
+        }
+      }
+    },
+    {
+      name: 'Matte Film',
+      category: 'positive',
+      description: 'Modern matte look with lifted shadows',
+      params: {
+        ...basePositiveParams,
+        contrast: 5,
+        blacks: -20,
+        shadows: 15,
+        curves: {
+          rgb: [{x:0,y:25},{x:60,y:70},{x:255,y:255}],
+          red: [{x:0,y:0},{x:255,y:255}],
+          green: [{x:0,y:0},{x:255,y:255}],
+          blue: [{x:0,y:0},{x:255,y:255}]
+        }
+      }
+    },
+    {
+      name: 'Cross Process',
+      category: 'positive',
+      description: 'Cross-processed color shift effect',
+      params: {
+        ...basePositiveParams,
+        contrast: 15,
+        curves: {
+          rgb: [{x:0,y:0},{x:255,y:255}],
+          red: [{x:0,y:10},{x:128,y:140},{x:255,y:245}],
+          green: [{x:0,y:0},{x:128,y:128},{x:255,y:255}],
+          blue: [{x:0,y:20},{x:128,y:115},{x:255,y:235}]
+        },
+        hslParams: {
+          ...basePositiveParams.hslParams,
+          saturation: { red: 10, orange: 5, yellow: 10, green: -10, aqua: 15, blue: 20, purple: 5, magenta: 0 }
+        }
+      }
+    },
+    {
+      name: 'Cinematic Teal & Orange',
+      category: 'positive',
+      description: 'Hollywood-style color grading',
+      params: {
+        ...basePositiveParams,
+        contrast: 10,
+        highlights: -5,
+        shadows: 5,
+        splitToning: {
+          highlightHue: 40,
+          highlightSaturation: 25,
+          shadowHue: 200,
+          shadowSaturation: 30,
+          balance: 0
+        },
+        hslParams: {
+          ...basePositiveParams.hslParams,
+          hue: { red: 0, orange: -5, yellow: 0, green: 0, aqua: 10, blue: 5, purple: 0, magenta: 0 },
+          saturation: { red: 0, orange: 15, yellow: 0, green: -20, aqua: 20, blue: 15, purple: 0, magenta: 0 }
+        }
+      }
+    }
+  ];
+
+  for (const preset of defaultPresets) {
+    try {
+      const paramsJson = JSON.stringify(preset.params);
+      // Write to both params and params_json for compatibility with old schema
+      await run(
+        "INSERT INTO presets (name, category, description, params, params_json) VALUES (?, ?, ?, ?, ?)",
+        [preset.name, preset.category, preset.description, paramsJson, paramsJson]
+      );
+      log(`  Created preset: ${preset.name}`);
+    } catch (e) {
+      log(`  Failed to create preset ${preset.name}: ${e.message}`);
+    }
+  }
+
+  log(`Seeded ${defaultPresets.length} default presets.`);
+}

@@ -213,8 +213,12 @@ CREATE TABLE IF NOT EXISTS photo_tags (
 CREATE TABLE IF NOT EXISTS presets (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  params TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  category TEXT,
+  description TEXT,
+  params TEXT,
+  params_json TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME
 );
 `;
 

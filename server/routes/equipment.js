@@ -6,6 +6,7 @@
  * - Lenses (equip_lenses)
  * - Flashes (equip_flashes)
  * - Scanners (equip_scanners)
+ * - Film Backs (equip_film_backs)
  * - Film Formats (ref_film_formats)
  * 
  * Also provides:
@@ -20,7 +21,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { uploadsDir } = require('../config/paths');
-const { CAMERA_TYPES, LENS_MOUNTS, SCANNER_TYPES } = require('../utils/equipment-migration');
+const { CAMERA_TYPES, LENS_MOUNTS, SCANNER_TYPES, FILM_BACK_SUB_FORMATS, FILM_BACK_MOUNTS, FILM_FORMATS } = require('../utils/equipment-migration');
 
 // Ensure equipment images directory exists
 const equipImagesDir = path.join(uploadsDir, 'equipment');
@@ -83,6 +84,7 @@ router.get('/constants', (req, res) => {
     cameraTypes: CAMERA_TYPES,
     lensMounts: LENS_MOUNTS,
     scannerTypes: SCANNER_TYPES,
+    filmFormats: FILM_FORMATS,
     focusTypes: ['manual', 'auto', 'hybrid'],
     conditions: ['mint', 'excellent', 'good', 'fair', 'poor'],
     statuses: ['owned', 'sold', 'wishlist', 'borrowed'],
@@ -92,7 +94,10 @@ router.get('/constants', (req, res) => {
     magnificationRatios: ['1:1', '1:2', '1:3', '1:4', '1:5', '1:10'],
     // Scanner-specific constants
     sensorTypes: ['CCD', 'CMOS', 'PMT'],
-    bitDepths: [8, 12, 14, 16, 24, 48]
+    bitDepths: [8, 12, 14, 16, 24, 48],
+    // Film back constants (2026-01-17)
+    filmBackSubFormats: FILM_BACK_SUB_FORMATS,
+    filmBackMounts: FILM_BACK_MOUNTS
   });
 });
 
@@ -690,7 +695,7 @@ router.post('/scanners', async (req, res) => {
     const {
       name, brand, model, type, max_resolution, sensor_type, supported_formats,
       has_infrared_cleaning, bit_depth, default_software,
-      camera_equip_id, macro_lens_id, copy_stand_model,
+      camera_equip_id, lens_equip_id,
       serial_number, purchase_date, purchase_price, condition, notes, status
     } = req.body;
 
@@ -700,15 +705,15 @@ router.post('/scanners', async (req, res) => {
       INSERT INTO equip_scanners (
         name, brand, model, type, max_resolution, sensor_type, supported_formats,
         has_infrared_cleaning, bit_depth, default_software,
-        camera_equip_id, macro_lens_id, copy_stand_model,
+        camera_equip_id, lens_equip_id,
         serial_number, purchase_date, purchase_price, condition, notes, status,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [
       name, brand || null, model || null, type || null, max_resolution || null, 
       sensor_type || null, supported_formats || null,
       has_infrared_cleaning ? 1 : 0, bit_depth || null, default_software || null,
-      camera_equip_id || null, macro_lens_id || null, copy_stand_model || null,
+      camera_equip_id || null, lens_equip_id || null,
       serial_number || null, purchase_date || null, purchase_price || null, 
       condition || null, notes || null, status || 'owned'
     ]);
@@ -727,7 +732,7 @@ router.put('/scanners/:id', async (req, res) => {
     const fields = [
       'name', 'brand', 'model', 'type', 'max_resolution', 'sensor_type', 'supported_formats',
       'has_infrared_cleaning', 'bit_depth', 'default_software',
-      'camera_equip_id', 'macro_lens_id', 'copy_stand_model',
+      'camera_equip_id', 'lens_equip_id',
       'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
     ];
 
@@ -793,6 +798,169 @@ router.post('/scanners/:id/image', upload.single('image'), async (req, res) => {
     res.json({ image_path: relativePath });
   } catch (err) {
     console.error('[EQUIPMENT] Error uploading scanner image:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========================================
+// FILM BACKS
+// ========================================
+
+router.get('/film-backs', async (req, res) => {
+  try {
+    const { format, mount_type, status, includeDeleted } = req.query;
+    
+    let sql = `SELECT * FROM equip_film_backs WHERE 1=1`;
+    const params = [];
+
+    if (!includeDeleted) {
+      sql += ` AND deleted_at IS NULL`;
+    }
+    if (format) {
+      sql += ` AND format = ?`;
+      params.push(format);
+    }
+    if (mount_type) {
+      sql += ` AND mount_type = ?`;
+      params.push(mount_type);
+    }
+    if (status) {
+      sql += ` AND status = ?`;
+      params.push(status);
+    }
+
+    sql += ` ORDER BY brand, name`;
+
+    const filmBacks = await allAsync(sql, params);
+    res.json(filmBacks);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error fetching film backs:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/film-backs/:id', async (req, res) => {
+  try {
+    const filmBack = await getAsync(`SELECT * FROM equip_film_backs WHERE id = ?`, [req.params.id]);
+    if (!filmBack) return res.status(404).json({ error: 'Film back not found' });
+    res.json(filmBack);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error fetching film back:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/film-backs', async (req, res) => {
+  try {
+    const {
+      name, brand, model,
+      format, sub_format, frame_width_mm, frame_height_mm, frames_per_roll,
+      compatible_cameras, mount_type,
+      magazine_type, is_motorized, has_dark_slide,
+      serial_number, purchase_date, purchase_price, condition, notes, status
+    } = req.body;
+
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+
+    const result = await runAsync(`
+      INSERT INTO equip_film_backs (
+        name, brand, model,
+        format, sub_format, frame_width_mm, frame_height_mm, frames_per_roll,
+        compatible_cameras, mount_type,
+        magazine_type, is_motorized, has_dark_slide,
+        serial_number, purchase_date, purchase_price, condition, notes, status,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `, [
+      name, brand || null, model || null,
+      format || '120', sub_format || null, frame_width_mm || null, frame_height_mm || null, frames_per_roll || null,
+      compatible_cameras || null, mount_type || null,
+      magazine_type || null, is_motorized ? 1 : 0, has_dark_slide !== false ? 1 : 0,
+      serial_number || null, purchase_date || null, purchase_price || null,
+      condition || null, notes || null, status || 'owned'
+    ]);
+
+    const filmBack = await getAsync(`SELECT * FROM equip_film_backs WHERE id = ?`, [result.lastID]);
+    res.status(201).json(filmBack);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error creating film back:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/film-backs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const fields = [
+      'name', 'brand', 'model',
+      'format', 'sub_format', 'frame_width_mm', 'frame_height_mm', 'frames_per_roll',
+      'compatible_cameras', 'mount_type',
+      'magazine_type', 'is_motorized', 'has_dark_slide',
+      'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
+    ];
+
+    const updates = [];
+    const params = [];
+    
+    for (const field of fields) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        let value = req.body[field];
+        // Handle boolean fields
+        if (field === 'is_motorized' || field === 'has_dark_slide') {
+          value = value ? 1 : 0;
+        }
+        params.push(value);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(id);
+
+    await runAsync(`UPDATE equip_film_backs SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    const filmBack = await getAsync(`SELECT * FROM equip_film_backs WHERE id = ?`, [id]);
+    res.json(filmBack);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error updating film back:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/film-backs/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permanent } = req.query;
+
+    if (permanent === 'true') {
+      await runAsync(`DELETE FROM equip_film_backs WHERE id = ?`, [id]);
+    } else {
+      await runAsync(`UPDATE equip_film_backs SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
+    }
+    
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[EQUIPMENT] Error deleting film back:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Film back image upload
+router.post('/film-backs/:id/image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    
+    const relativePath = `equipment/${req.file.filename}`;
+    await runAsync(`UPDATE equip_film_backs SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
+      [relativePath, req.params.id]);
+    
+    res.json({ image_path: relativePath });
+  } catch (err) {
+    console.error('[EQUIPMENT] Error uploading film back image:', err);
     res.status(500).json({ error: err.message });
   }
 });

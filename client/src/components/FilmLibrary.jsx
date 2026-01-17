@@ -18,6 +18,7 @@ export default function FilmLibrary() {
   // Inventory state
   // 默认展示所有库存记录（All），而不是仅 In Stock
   const [inventoryStatusFilter, setInventoryStatusFilter] = useState('all');
+  const [formatFilter, setFormatFilter] = useState(''); // Format filter for film items
   const [batchForm, setBatchForm] = useState({
     order_date: new Date().toISOString().slice(0, 10),
     channel: '',
@@ -69,6 +70,9 @@ export default function FilmLibrary() {
   const films = Array.isArray(filmsData) ? filmsData : [];
   const allFilmItems = filmItemsData && Array.isArray(filmItemsData.items) ? filmItemsData.items : [];
 
+  // Get unique formats from films for filter dropdown
+  const availableFormats = [...new Set(films.map(f => f.format).filter(Boolean))].sort();
+
   // Calculate counts
   const statusCounts = allFilmItems.reduce((acc, item) => {
     acc[item.status] = (acc[item.status] || 0) + 1;
@@ -76,10 +80,18 @@ export default function FilmLibrary() {
   }, {});
   const totalCount = allFilmItems.length;
 
-  // Filter for display
-  const filmItems = inventoryStatusFilter === 'all' 
+  // Filter for display - apply both status and format filters
+  let filmItems = inventoryStatusFilter === 'all' 
     ? allFilmItems 
     : allFilmItems.filter(item => item.status === inventoryStatusFilter);
+  
+  // Apply format filter
+  if (formatFilter) {
+    filmItems = filmItems.filter(item => {
+      const film = films.find(f => f.id === item.film_id);
+      return film && film.format === formatFilter;
+    });
+  }
 
   const getFilmThumbUrl = (path) => {
     if (!path) return null;
@@ -205,7 +217,7 @@ export default function FilmLibrary() {
 
       {/* Inventory Tab Content */}
       <>
-        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             {STATUS_FILTERS.map(opt => (
               <button
@@ -218,6 +230,24 @@ export default function FilmLibrary() {
                 {opt.label}
               </button>
             ))}
+            {/* Format filter dropdown */}
+            <select
+              value={formatFilter}
+              onChange={e => setFormatFilter(e.target.value)}
+              style={{ 
+                fontSize: 12, 
+                padding: '4px 8px', 
+                borderRadius: 4, 
+                border: '1px solid #cbd5e1',
+                background: formatFilter ? '#e0f2fe' : 'white',
+                cursor: 'pointer'
+              }}
+            >
+              <option value="">All Formats</option>
+              {availableFormats.map(fmt => (
+                <option key={fmt} value={fmt}>{fmt === '135' ? '35mm (135)' : fmt === '120' ? 'Medium (120)' : fmt}</option>
+              ))}
+            </select>
           </div>
           <button
             type="button"

@@ -75,6 +75,38 @@ const SCANNER_TYPES = [
   'Lab Scanner',       // 冲洗店/专业实验室设备
   'Other'
 ];
+
+/**
+ * Film back sub-formats (medium format frame sizes)
+ */
+const FILM_BACK_SUB_FORMATS = [
+  { value: '645', label: '6x4.5 (645)', width_mm: 56, height_mm: 41.5, frames: 15 },
+  { value: '6x6', label: '6x6', width_mm: 56, height_mm: 56, frames: 12 },
+  { value: '6x7', label: '6x7', width_mm: 56, height_mm: 70, frames: 10 },
+  { value: '6x8', label: '6x8', width_mm: 56, height_mm: 76, frames: 9 },
+  { value: '6x9', label: '6x9', width_mm: 56, height_mm: 84, frames: 8 },
+  { value: '6x12', label: '6x12', width_mm: 56, height_mm: 112, frames: 6 },
+  { value: '6x17', label: '6x17', width_mm: 56, height_mm: 168, frames: 4 }
+];
+
+/**
+ * Film back mount types
+ */
+const FILM_BACK_MOUNTS = [
+  'Hasselblad V',
+  'Mamiya RB67',
+  'Mamiya RZ67',
+  'Mamiya 645',
+  'Pentax 645',
+  'Pentax 67',
+  'Bronica ETR',
+  'Bronica SQ',
+  'Bronica GS-1',
+  'Rollei SL66',
+  'Graflex',
+  'Universal'
+];
+
 function runEquipmentMigration() {
   return new Promise(async (resolve, reject) => {
     const dbPath = getDbPath();
@@ -116,6 +148,20 @@ function runEquipmentMigration() {
         else res(row);
       });
     });
+
+    // Helper function to safely add column if not exists
+    const safeAddColumn = async (table, column, type) => {
+      try {
+        await run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+        log(`Added column ${table}.${column}`);
+      } catch (err) {
+        if (err.message.includes('duplicate column')) {
+          // Column already exists, silently skip
+        } else {
+          throw err;
+        }
+      }
+    };
 
     try {
       // ========================================
@@ -288,44 +334,92 @@ function runEquipmentMigration() {
       log('Scanners table ready');
 
       // ========================================
+      // 2e. FILM BACKS TABLE (2026-01-17)
+      // ========================================
+      await run(`CREATE TABLE IF NOT EXISTS equip_film_backs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        brand TEXT,
+        model TEXT,
+        
+        -- Format info
+        format TEXT,
+        sub_format TEXT,
+        frame_width_mm REAL,
+        frame_height_mm REAL,
+        frames_per_roll INTEGER,
+        
+        -- Compatibility
+        compatible_cameras TEXT,
+        mount_type TEXT,
+        
+        -- Magazine type
+        magazine_type TEXT,
+        is_motorized INTEGER DEFAULT 0,
+        has_dark_slide INTEGER DEFAULT 1,
+        
+        -- Purchase/ownership
+        serial_number TEXT,
+        purchase_date TEXT,
+        purchase_price REAL,
+        condition TEXT,
+        notes TEXT,
+        image_path TEXT,
+        status TEXT DEFAULT 'owned',
+        
+        -- Timestamps
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        deleted_at DATETIME
+      )`);
+      log('Film backs table ready');
+
+      // ========================================
       // 3. ADD FOREIGN KEY COLUMNS TO EXISTING TABLES
       // ========================================
 
       // Add equipment ID columns to rolls
-      await run(`ALTER TABLE rolls ADD COLUMN camera_equip_id INTEGER REFERENCES equip_cameras(id)`);
-      await run(`ALTER TABLE rolls ADD COLUMN lens_equip_id INTEGER REFERENCES equip_lenses(id)`);
-      await run(`ALTER TABLE rolls ADD COLUMN flash_equip_id INTEGER REFERENCES equip_flashes(id)`);
+      await safeAddColumn('rolls', 'camera_equip_id', 'INTEGER REFERENCES equip_cameras(id)');
+      await safeAddColumn('rolls', 'lens_equip_id', 'INTEGER REFERENCES equip_lenses(id)');
+      await safeAddColumn('rolls', 'flash_equip_id', 'INTEGER REFERENCES equip_flashes(id)');
+      
+      // Add format column to rolls (derived from camera format)
+      await safeAddColumn('rolls', 'format', 'TEXT');
+      await safeAddColumn('rolls', 'film_back_equip_id', 'INTEGER REFERENCES equip_film_backs(id)');
 
       // Add equipment ID columns to photos  
-      await run(`ALTER TABLE photos ADD COLUMN camera_equip_id INTEGER REFERENCES equip_cameras(id)`);
-      await run(`ALTER TABLE photos ADD COLUMN lens_equip_id INTEGER REFERENCES equip_lenses(id)`);
-      await run(`ALTER TABLE photos ADD COLUMN flash_equip_id INTEGER REFERENCES equip_flashes(id)`);
+      await safeAddColumn('photos', 'camera_equip_id', 'INTEGER REFERENCES equip_cameras(id)');
+      await safeAddColumn('photos', 'lens_equip_id', 'INTEGER REFERENCES equip_lenses(id)');
+      await safeAddColumn('photos', 'flash_equip_id', 'INTEGER REFERENCES equip_flashes(id)');
+
 
       // ========================================
       // 3c. ADD SCANNER COLUMNS TO ROLLS AND PHOTOS (2026-01-17)
       // ========================================
       
       // Scanner info for rolls (default scanner per roll)
-      await run(`ALTER TABLE rolls ADD COLUMN scanner_equip_id INTEGER REFERENCES equip_scanners(id)`);
-      await run(`ALTER TABLE rolls ADD COLUMN scan_resolution INTEGER`);
-      await run(`ALTER TABLE rolls ADD COLUMN scan_software TEXT`);
-      await run(`ALTER TABLE rolls ADD COLUMN scan_lab TEXT`);
-      await run(`ALTER TABLE rolls ADD COLUMN scan_date DATE`);
-      await run(`ALTER TABLE rolls ADD COLUMN scan_cost REAL`);
-      await run(`ALTER TABLE rolls ADD COLUMN scan_notes TEXT`);
+      await safeAddColumn('rolls', 'scanner_equip_id', 'INTEGER REFERENCES equip_scanners(id)');
+      await safeAddColumn('rolls', 'scan_resolution', 'INTEGER');
+      await safeAddColumn('rolls', 'scan_software', 'TEXT');
+      await safeAddColumn('rolls', 'scan_lab', 'TEXT');
+      await safeAddColumn('rolls', 'scan_date', 'DATE');
+      await safeAddColumn('rolls', 'scan_cost', 'REAL');
+      await safeAddColumn('rolls', 'scan_notes', 'TEXT');
       
       // Scanner info for photos (per-photo scan metadata)
-      await run(`ALTER TABLE photos ADD COLUMN scanner_equip_id INTEGER REFERENCES equip_scanners(id)`);
-      await run(`ALTER TABLE photos ADD COLUMN scan_resolution INTEGER`);
-      await run(`ALTER TABLE photos ADD COLUMN scan_software TEXT`);
-      await run(`ALTER TABLE photos ADD COLUMN scan_date DATETIME`);
-      await run(`ALTER TABLE photos ADD COLUMN scan_bit_depth INTEGER`);
-      await run(`ALTER TABLE photos ADD COLUMN scan_notes TEXT`);
+      await safeAddColumn('photos', 'scanner_equip_id', 'INTEGER REFERENCES equip_scanners(id)');
+      await safeAddColumn('photos', 'scan_resolution', 'INTEGER');
+      await safeAddColumn('photos', 'scan_software', 'TEXT');
+      await safeAddColumn('photos', 'scan_lab', 'TEXT');
+      await safeAddColumn('photos', 'scan_date', 'DATETIME');
+      await safeAddColumn('photos', 'scan_cost', 'REAL');
+      await safeAddColumn('photos', 'scan_bit_depth', 'INTEGER');
+      await safeAddColumn('photos', 'scan_notes', 'TEXT');
       
       // Source metadata (original EXIF from scan file)
-      await run(`ALTER TABLE photos ADD COLUMN source_make TEXT`);
-      await run(`ALTER TABLE photos ADD COLUMN source_model TEXT`);
-      await run(`ALTER TABLE photos ADD COLUMN source_software TEXT`);
+      await safeAddColumn('photos', 'source_make', 'TEXT');
+      await safeAddColumn('photos', 'source_model', 'TEXT');
+      await safeAddColumn('photos', 'source_software', 'TEXT');
       
       log('Scanner columns added to rolls and photos');
 
@@ -620,4 +714,12 @@ function runEquipmentMigration() {
   });
 }
 
-module.exports = { runEquipmentMigration, CAMERA_TYPES, FILM_FORMATS, LENS_MOUNTS, SCANNER_TYPES };
+module.exports = { 
+  runEquipmentMigration, 
+  CAMERA_TYPES, 
+  FILM_FORMATS, 
+  LENS_MOUNTS, 
+  SCANNER_TYPES,
+  FILM_BACK_SUB_FORMATS,
+  FILM_BACK_MOUNTS
+};

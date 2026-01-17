@@ -38,6 +38,7 @@ export default function FilmLab({
   imageUrl, 
   onClose, 
   onSave, 
+  onFinishBatchParams,
   rollId, 
   photoId, 
   onPhotoUpdate,
@@ -290,9 +291,26 @@ export default function FilmLab({
 
   const savePreset = async (name) => {
     if (!name) return;
+    
+    // Serialize LUTs (Float32Array -> Array) for JSON storage
+    const serializeLut = (lut) => {
+      if (!lut) return null;
+      return {
+        ...lut,
+        data: lut.data ? Array.from(lut.data) : null
+      };
+    };
+
     const params = {
       inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
-      temp, tint, red, green, blue, curves: JSON.parse(JSON.stringify(curves))
+      temp, tint, red, green, blue, curves: JSON.parse(JSON.stringify(curves)),
+      // New Features
+      hslParams,
+      splitToning,
+      filmCurveEnabled,
+      filmCurveProfile,
+      lut1: serializeLut(lut1),
+      lut2: serializeLut(lut2)
     };
 
     const existing = presets.find(p => p.name === name);
@@ -339,6 +357,24 @@ export default function FilmLab({
     setGreen(params.green);
     setBlue(params.blue);
     setCurves(JSON.parse(JSON.stringify(params.curves)));
+    
+    // New Params
+    setHslParams(params.hslParams || DEFAULT_HSL_PARAMS);
+    setSplitToning(params.splitToning || DEFAULT_SPLIT_TONE_PARAMS);
+    setFilmCurveEnabled(!!params.filmCurveEnabled);
+    if (params.filmCurveProfile) setFilmCurveProfile(params.filmCurveProfile);
+
+    // Default to clear LUTs if not in preset, or restore
+    const restoreLut = (l) => {
+      if (!l) return null;
+      // If data is array (from JSON), convert to Float32Array
+      if (l.data && Array.isArray(l.data)) {
+        return { ...l, data: new Float32Array(l.data) };
+      }
+      return l;
+    };
+    setLut1(restoreLut(params.lut1));
+    setLut2(restoreLut(params.lut2));
   };
 
   const deletePreset = async (name) => {
@@ -2108,6 +2144,10 @@ export default function FilmLab({
         gpuBusy={gpuBusy}
         exportFormat={saveAsFormat}
         setExportFormat={setSaveAsFormat}
+        
+        // Batch Render Support
+        onFinishBatchParams={onFinishBatchParams}
+        currentParams={currentParams}
       />
     </div>
   );

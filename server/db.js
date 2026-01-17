@@ -144,12 +144,16 @@ db.serialize(() => {
     FOREIGN KEY(tag_id) REFERENCES tags(id)
   )`);
   
-  // Add presets table
+  // Add presets table (with category/description for preset organization)
   db.run(`CREATE TABLE IF NOT EXISTS presets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
-    params TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    category TEXT,
+    description TEXT,
+    params TEXT,
+    params_json TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME
   )`);
   
   // Film curve profiles table for custom gamma/dMin/dMax configurations

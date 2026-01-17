@@ -8,21 +8,23 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { category } = req.query;
-    const params = [];
-    let sql = 'SELECT id, name, category, description, params_json, created_at, updated_at FROM presets';
+    const queryParams = [];
+    // Read from both params_json (new) and params (old) for compatibility
+    let sql = 'SELECT id, name, category, description, params_json, params, created_at, updated_at FROM presets';
     if (category) {
       sql += ' WHERE category = ?';
-      params.push(category);
+      queryParams.push(category);
     }
     sql += ' ORDER BY created_at DESC';
 
-    const rows = await allAsync(sql, params);
+    const rows = await allAsync(sql, queryParams);
     const presets = rows.map(r => ({
       id: r.id,
       name: r.name,
       category: r.category || null,
       description: r.description || '',
-      params: safeParseJSON(r.params_json, {}),
+      // Prefer params_json, fallback to params for old data
+      params: safeParseJSON(r.params_json, null) || safeParseJSON(r.params, {}),
       created_at: r.created_at,
       updated_at: r.updated_at,
     }));
@@ -41,8 +43,9 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'name and params are required' });
     }
     const paramsJson = JSON.stringify(params);
-    const sql = 'INSERT INTO presets (name, category, description, params_json) VALUES (?, ?, ?, ?)';
-    const result = await runAsync(sql, [name, category || null, description || null, paramsJson]);
+    // Write to both params and params_json for backward compatibility with old schema
+    const sql = 'INSERT INTO presets (name, category, description, params, params_json) VALUES (?, ?, ?, ?, ?)';
+    const result = await runAsync(sql, [name, category || null, description || null, paramsJson, paramsJson]);
     res.json({
       ok: true,
       id: result.lastID,
@@ -66,8 +69,9 @@ router.put('/:id', async (req, res) => {
       return res.status(400).json({ error: 'name and params are required' });
     }
     const paramsJson = JSON.stringify(params);
-    const sql = 'UPDATE presets SET name = ?, category = ?, description = ?, params_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
-    await runAsync(sql, [name, category || null, description || null, paramsJson, id]);
+    // Write to both params and params_json for backward compatibility
+    const sql = 'UPDATE presets SET name = ?, category = ?, description = ?, params = ?, params_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+    await runAsync(sql, [name, category || null, description || null, paramsJson, paramsJson, id]);
     res.json({ ok: true });
   } catch (err) {
     console.error('Failed to update preset', err.message);

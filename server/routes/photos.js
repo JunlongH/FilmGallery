@@ -270,7 +270,7 @@ router.get('/negatives', async (req, res) => {
 // update photo (adds tags support)
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, altitude, location_name, country, city, camera, lens, photographer, aperture, shutter_speed, iso, camera_equip_id, lens_equip_id, flash_equip_id } = req.body;
+  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, altitude, location_name, country, city, camera, lens, photographer, aperture, shutter_speed, iso, camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id, scan_resolution, scan_software, scan_lab, scan_date, scan_cost, scan_notes } = req.body;
   console.log(`[PUT] Update photo ${id}`, req.body);
 
   const updates = [];
@@ -299,6 +299,14 @@ router.put('/:id', async (req, res) => {
   if (camera_equip_id !== undefined) { updates.push('camera_equip_id=?'); params.push(camera_equip_id); }
   if (lens_equip_id !== undefined) { updates.push('lens_equip_id=?'); params.push(lens_equip_id); }
   if (flash_equip_id !== undefined) { updates.push('flash_equip_id=?'); params.push(flash_equip_id); }
+  // Scanner/Scan info
+  if (scanner_equip_id !== undefined) { updates.push('scanner_equip_id=?'); params.push(scanner_equip_id); }
+  if (scan_resolution !== undefined) { updates.push('scan_resolution=?'); params.push(scan_resolution !== null && scan_resolution !== '' ? parseInt(scan_resolution) : null); }
+  if (scan_software !== undefined) { updates.push('scan_software=?'); params.push(scan_software || null); }
+  if (scan_lab !== undefined) { updates.push('scan_lab=?'); params.push(scan_lab || null); }
+  if (scan_date !== undefined) { updates.push('scan_date=?'); params.push(scan_date || null); }
+  if (scan_cost !== undefined) { updates.push('scan_cost=?'); params.push(scan_cost !== null && scan_cost !== '' ? parseFloat(scan_cost) : null); }
+  if (scan_notes !== undefined) { updates.push('scan_notes=?'); params.push(scan_notes || null); }
 
   if (!updates.length && tags === undefined) {
     return res.json({ updated: 0 });
@@ -1280,7 +1288,7 @@ router.post('/:id/download-with-exif', async (req, res) => {
     }
     
     // Software tag
-    exifData.Software = 'FilmGallery v1.9.0';
+    exifData.Software = 'FilmGallery v1.9.1';
     
     // Scanner/Digitization info (XMP custom namespace)
     // This preserves the original scanner/digitizer metadata

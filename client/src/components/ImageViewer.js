@@ -1,10 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { buildUploadUrl, updatePositiveFromNegative, getSingleDownloadUrl } from '../api';
 import FilmLab from './FilmLab/FilmLab';
 import ModalDialog from './ModalDialog';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
 
-export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUpdate, viewMode = 'positive', roll }) {
+export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUpdate, viewMode = 'positive', roll, batchRenderCallback }) {
   const [i, setI] = useState(index);
   const [scale, setScale] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -18,6 +18,19 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   // FilmLab源图像类型选择
   const [showSourceSelector, setShowSourceSelector] = useState(false);
   const [filmLabSourceType, setFilmLabSourceType] = useState('original'); // 'original' | 'negative' | 'positive'
+
+  // Image Context
+  const img = (images && images.length > i) ? images[i] : null;
+
+  // 检查各源类型是否可用 (wrapped in useMemo to avoid dependency issues)
+  const availableSources = useMemo(() => {
+    if (!img) return { original: false, negative: false, positive: false };
+    return {
+      original: !!(img.original_rel_path || img.negative_rel_path || img.full_rel_path),
+      negative: !!(img.negative_rel_path || img.full_rel_path),
+      positive: !!(img.positive_rel_path)
+    };
+  }, [img]);
 
   useEffect(() => {
     setI(index);
@@ -42,6 +55,21 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
     setOffset({ x: 0, y: 0 });
     setScale(1);
   }, [i]);
+  
+  // Auto-open FilmLab in Batch Mode
+  // Moved up here to avoid conditional hook call (before early return)
+  useEffect(() => {
+    if (batchRenderCallback && img) {
+        // Determine best available source type
+        let bestSource = 'original';
+        if (availableSources.original) bestSource = 'original';
+        else if (availableSources.negative) bestSource = 'negative';
+        else if (availableSources.positive) bestSource = 'positive';
+        
+        setFilmLabSourceType(bestSource);
+        setShowInverter(true);
+    }
+  }, [batchRenderCallback, img, availableSources]);
 
   function onWheel(e) {
     e.preventDefault();
@@ -81,7 +109,7 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
   };
-
+// const img = images[i]; // Moved up for hook dependency
   const showConfirm = (title, message, onConfirm) => {
     setDialog({ 
       isOpen: true, 
@@ -97,7 +125,7 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   };
 
   if (!images || images.length === 0) return null;
-  const img = images[i];
+  // img is already defined above for hook dependencies
   let rawCandidate = null;
 
   // Prefer new positive/negative paths with thumbs; fallback to legacy fields
@@ -166,14 +194,6 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
         }
         return { path: null, valid: false, warning: '无可用的源文件' };
     }
-  };
-
-  // 检查各源类型是否可用
-  // 注意：original 可以回退到 negative_rel_path，因此只要有任何源文件就应该显示 original 选项
-  const availableSources = {
-    original: !!(img.original_rel_path || img.negative_rel_path || img.full_rel_path),
-    negative: !!(img.negative_rel_path || img.full_rel_path),
-    positive: !!(img.positive_rel_path)
   };
 
   // 获取第一个可用的源类型
@@ -251,6 +271,11 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
           sourceType={filmLabSourceType}
           onPhotoUpdate={onPhotoUpdate}
           onClose={() => { setShowInverter(false); }} 
+          onFinishBatchParams={batchRenderCallback ? (params) => {
+              batchRenderCallback(params);
+              setShowInverter(false);
+              onClose();
+          } : null}
           // PhotoSwitcher 相关 props
           photos={images}
           showPhotoSwitcher={images.length > 1}
@@ -499,6 +524,7 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
 
       {showDetails && (
         <PhotoDetailsSidebar
+          key={`photo-details-${img.id}`}
           photo={img}
           roll={roll}
           onClose={() => setShowDetails(false)}

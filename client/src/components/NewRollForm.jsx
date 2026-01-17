@@ -44,6 +44,15 @@ export default function NewRollForm({ onCreated }) {
   const [fileMeta, setFileMeta] = useState({});   // { filename: { date, lens } }
   const [applyShotLog, setApplyShotLog] = useState(false);
   const [showMapper, setShowMapper] = useState(false);
+  
+  // Scanning/Digitization Info
+  const [scannerEquipId, setScannerEquipId] = useState(null);
+  const [scanLab, setScanLab] = useState('');
+  const [scanDate, setScanDate] = useState('');
+  const [scanResolution, setScanResolution] = useState('');
+  const [scanSoftware, setScanSoftware] = useState('');
+  const [scanCost, setScanCost] = useState('');
+  const [scanNotes, setScanNotes] = useState('');
 
   const totalShotLogCount = shotLogs.reduce((acc, cur) => acc + (Number(cur.count || cur.shots || 0) || 0), 0);
 
@@ -189,7 +198,15 @@ export default function NewRollForm({ onCreated }) {
         lens_equip_id: lensEquipId || null,
         photographer, 
         exposures, 
-        notes 
+        notes,
+        // Scanning/Digitization fields
+        scanner_equip_id: scannerEquipId || null,
+        scan_resolution: scanResolution ? Number(scanResolution) : null,
+        scan_software: scanSoftware || null,
+        scan_lab: scanLab || null,
+        scan_date: scanDate || null,
+        scan_cost: scanCost ? Number(scanCost) : null,
+        scan_notes: scanNotes || null
       };
       const fields = useInventory && filmItemId
         ? { ...fieldsBase, film_item_id: filmItemId }
@@ -473,6 +490,82 @@ export default function NewRollForm({ onCreated }) {
             <label className="fg-label">Note</label>
             <input className="fg-input" placeholder="Short note" value={develop.develop_note} onChange={e=>setDevelop(d=>({ ...d, develop_note: e.target.value }))} />
           </div>
+        </div>
+      </section>
+
+      {/* Scanning/Digitization Info Section */}
+      <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--fg-text)', paddingBottom: 10, borderBottom: '2px solid var(--fg-border)' }}>Scanning Info</h3>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div className="fg-field">
+            <label className="fg-label">Scanner</label>
+            <EquipmentSelector 
+              type="scanner" 
+              value={scannerEquipId} 
+              onChange={(id) => setScannerEquipId(id)}
+              placeholder="Select scanner..."
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Lab</label>
+            <input 
+              className="fg-input" 
+              placeholder="e.g. Film Lab, Home scan" 
+              value={scanLab} 
+              onChange={e => setScanLab(e.target.value)} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Date</label>
+            <input 
+              className="fg-input" 
+              type="date" 
+              value={scanDate} 
+              onChange={e => setScanDate(e.target.value)}
+              lang="en-US"
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Resolution (DPI)</label>
+            <input 
+              className="fg-input" 
+              type="number" 
+              step="1" 
+              placeholder="e.g. 3200, 4800" 
+              value={scanResolution} 
+              onChange={e => setScanResolution(e.target.value)} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Software</label>
+            <input 
+              className="fg-input" 
+              placeholder="e.g. VueScan, Epson Scan 2" 
+              value={scanSoftware} 
+              onChange={e => setScanSoftware(e.target.value)} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Scan Cost</label>
+            <input 
+              className="fg-input" 
+              type="number" 
+              step="0.01" 
+              placeholder="0.00" 
+              value={scanCost} 
+              onChange={e => setScanCost(e.target.value)} 
+            />
+          </div>
+        </div>
+        <div className="fg-field">
+          <label className="fg-label">Scan Notes</label>
+          <textarea 
+            className="fg-textarea" 
+            value={scanNotes} 
+            onChange={e => setScanNotes(e.target.value)} 
+            placeholder="Scan parameters, issues, etc..."
+            style={{ minHeight: 70, resize: 'vertical' }} 
+          />
         </div>
       </section>
 
