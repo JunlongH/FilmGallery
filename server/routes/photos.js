@@ -1047,7 +1047,7 @@ router.post('/:id/download-with-exif', async (req, res) => {
   const os = require('os');
   
   try {
-    // Fetch photo with all metadata including roll, film, equipment, and develop info
+    // Fetch photo with all metadata including roll, film, equipment, scanner, and develop info
     const photo = await getAsync(`
       SELECT p.*, r.title as roll_title, r.camera as roll_camera, r.lens as roll_lens, 
              r.photographer as roll_photographer, r.start_date as roll_start_date,
@@ -1068,7 +1068,10 @@ router.post('/:id/download-with-exif', async (req, res) => {
              rcam.fixed_lens_max_aperture AS roll_fixed_lens_aperture,
              rlens.name AS roll_lens_name, rlens.brand AS roll_lens_brand, rlens.model AS roll_lens_model,
              rlens.focal_length_min AS roll_lens_focal_min, rlens.focal_length_max AS roll_lens_focal_max,
-             rlens.max_aperture AS roll_lens_max_aperture
+             rlens.max_aperture AS roll_lens_max_aperture,
+             -- Scanner info
+             pscan.name AS scanner_name, pscan.brand AS scanner_brand, pscan.model AS scanner_model,
+             pscan.type AS scanner_type
       FROM photos p
       JOIN rolls r ON r.id = p.roll_id
       LEFT JOIN films f ON f.id = r.filmId
@@ -1076,6 +1079,7 @@ router.post('/:id/download-with-exif', async (req, res) => {
       LEFT JOIN equip_lenses plens ON p.lens_equip_id = plens.id
       LEFT JOIN equip_cameras rcam ON r.camera_equip_id = rcam.id
       LEFT JOIN equip_lenses rlens ON r.lens_equip_id = rlens.id
+      LEFT JOIN equip_scanners pscan ON p.scanner_equip_id = pscan.id
       WHERE p.id = ?
     `, [id]);
     
@@ -1277,6 +1281,27 @@ router.post('/:id/download-with-exif', async (req, res) => {
     
     // Software tag
     exifData.Software = 'FilmGallery v1.9.0';
+    
+    // Scanner/Digitization info (XMP custom namespace)
+    // This preserves the original scanner/digitizer metadata
+    if (photo.source_make) {
+      exifData['XMP-FilmGallery:ScannerMake'] = photo.source_make;
+    }
+    if (photo.source_model) {
+      exifData['XMP-FilmGallery:ScannerModel'] = photo.source_model;
+    }
+    if (photo.source_software) {
+      exifData['XMP-FilmGallery:ScanSoftware'] = photo.source_software;
+    }
+    if (photo.scan_resolution) {
+      exifData['XMP-FilmGallery:ScanResolution'] = photo.scan_resolution;
+    }
+    if (photo.scan_bit_depth) {
+      exifData['XMP-FilmGallery:ScanBitDepth'] = photo.scan_bit_depth;
+    }
+    if (photo.scan_date) {
+      exifData['XMP-FilmGallery:ScanDate'] = photo.scan_date;
+    }
     
     console.log('[DOWNLOAD-WITH-EXIF] EXIF data to write:', JSON.stringify(exifData, null, 2));
     

@@ -61,6 +61,7 @@ const DEFAULT_EXIF_OPTIONS = {
   datetime: true,     // 日期时间
   gps: true,          // GPS 位置
   description: true,  // 描述/备注
+  scanner: true,      // 扫描仪/数字化信息
 };
 
 // ============================================================================
@@ -323,6 +324,38 @@ function buildExifData(photo, roll, options = {}) {
   
   // 软件标识
   exif.Software = 'FilmGallery';
+  
+  // 扫描仪/数字化信息
+  // 注意: piexifjs 不支持 XMP，这些字段会存储在 EXIF 对象中供 XMP 写入使用
+  if (opts.scanner) {
+    // 原始源设备信息 (扫描仪制造商/型号)
+    if (photo.source_make) {
+      exif.ScannerMake = photo.source_make;
+    }
+    if (photo.source_model) {
+      exif.ScannerModel = photo.source_model;
+    }
+    if (photo.source_software) {
+      exif.ScannerSoftware = photo.source_software;
+    }
+    
+    // 扫描参数
+    if (photo.scan_resolution) {
+      exif.ScanResolution = photo.scan_resolution;
+    }
+    if (photo.scan_bit_depth) {
+      exif.ScanBitDepth = photo.scan_bit_depth;
+    }
+    if (photo.scan_date) {
+      exif.ScanDate = photo.scan_date;
+    }
+    
+    // 扫描仪设备信息 (如果关联了设备)
+    if (photo.scanner_equip_id && photo.scanner_equip) {
+      exif.ScannerEquipment = photo.scanner_equip.name;
+      exif.ScannerType = photo.scanner_equip.type;
+    }
+  }
   
   return exif;
 }

@@ -15,7 +15,7 @@ const RAW_EXTENSIONS = [
   '.dng', '.cr2', '.cr3', '.nef', '.arw', 
   '.raf', '.orf', '.rw2', '.pef', '.srw',
   '.x3f', '.erf', '.mef', '.mos', '.mrw',
-  '.kdc', '.3fr', '.dcr', '.k25', '.qtk'
+  '.kdc', '.3fr', '.fff', '.iiq', '.dcr', '.k25', '.qtk'
 ];
 
 /**
@@ -64,7 +64,9 @@ function getRawFormatInfo(filename) {
     '.mos': { ext: '.mos', name: 'Leaf RAW', manufacturer: 'Leaf' },
     '.mrw': { ext: '.mrw', name: 'Minolta RAW', manufacturer: 'Minolta' },
     '.kdc': { ext: '.kdc', name: 'Kodak Digital Camera', manufacturer: 'Kodak' },
-    '.3fr': { ext: '.3fr', name: 'Hasselblad RAW', manufacturer: 'Hasselblad' },
+    '.3fr': { ext: '.3fr', name: 'Hasselblad 3F RAW', manufacturer: 'Hasselblad' },
+    '.fff': { ext: '.fff', name: 'Hasselblad/Imacon FlexFrame', manufacturer: 'Hasselblad' },
+    '.iiq': { ext: '.iiq', name: 'Phase One IIQ', manufacturer: 'Phase One' },
     '.dcr': { ext: '.dcr', name: 'Kodak RAW', manufacturer: 'Kodak' },
     '.k25': { ext: '.k25', name: 'Kodak DC25', manufacturer: 'Kodak' },
     '.qtk': { ext: '.qtk', name: 'Apple QuickTake', manufacturer: 'Apple' }
@@ -77,7 +79,7 @@ function getRawFormatInfo(filename) {
  * 检测文件类型
  * 
  * @param {string} filename - 文件名或路径
- * @returns {'raw'|'tiff'|'jpeg'|'png'|'unknown'} 文件类型
+ * @returns {'raw'|'tiff'|'bmp'|'jpeg'|'png'|'unknown'} 文件类型
  */
 function detectFileType(filename) {
   if (!filename || typeof filename !== 'string') return 'unknown';
@@ -89,6 +91,7 @@ function detectFileType(filename) {
   
   if (RAW_EXTENSIONS.includes(ext)) return 'raw';
   if (['.tif', '.tiff'].includes(ext)) return 'tiff';
+  if (['.bmp', '.dib'].includes(ext)) return 'bmp';
   if (['.jpg', '.jpeg'].includes(ext)) return 'jpeg';
   if (ext === '.png') return 'png';
   
@@ -103,9 +106,9 @@ function detectFileType(filename) {
  */
 function isBrowserLoadable(filename) {
   const type = detectFileType(filename);
-  // 浏览器通常可以加载 JPEG 和 PNG，部分浏览器支持 TIFF
+  // 浏览器通常可以加载 JPEG、PNG 和 BMP，部分浏览器支持 TIFF
   // RAW 文件需要服务器解码
-  return type === 'jpeg' || type === 'png';
+  return type === 'jpeg' || type === 'png' || type === 'bmp';
 }
 
 /**

@@ -63,6 +63,18 @@ const LENS_MOUNTS = [
   'Mamiya RB/RZ', 'Pentax 645', 'Pentax 67', 'Fixed'
 ];
 
+/**
+ * Scanner types
+ */
+const SCANNER_TYPES = [
+  'Flatbed',           // 平板扫描仪
+  'Film Scanner',      // 专用底片扫描仪 (Nikon Coolscan, Plustek)
+  'Drum Scanner',      // 滚筒扫描仪 (专业高端)
+  'DSLR Scan Rig',     // 数码翻拍 (相机+翻拍架)
+  'Virtual Drum',      // 虚拟滚筒 (Hasselblad Flextight/Imacon)
+  'Lab Scanner',       // 冲洗店/专业实验室设备
+  'Other'
+];
 function runEquipmentMigration() {
   return new Promise(async (resolve, reject) => {
     const dbPath = getDbPath();
@@ -244,6 +256,38 @@ function runEquipmentMigration() {
       log('Flashes table ready');
 
       // ========================================
+      // 2d. SCANNERS TABLE (2026-01-17)
+      // ========================================
+      await run(`CREATE TABLE IF NOT EXISTS equip_scanners (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        brand TEXT,
+        model TEXT,
+        type TEXT,
+        max_resolution INTEGER,
+        sensor_type TEXT,
+        supported_formats TEXT,
+        has_infrared_cleaning INTEGER DEFAULT 0,
+        bit_depth INTEGER,
+        default_software TEXT,
+        camera_equip_id INTEGER,
+        lens_equip_id INTEGER,
+        serial_number TEXT,
+        purchase_date TEXT,
+        purchase_price REAL,
+        condition TEXT,
+        notes TEXT,
+        image_path TEXT,
+        status TEXT DEFAULT 'owned',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME,
+        deleted_at DATETIME,
+        FOREIGN KEY(camera_equip_id) REFERENCES equip_cameras(id),
+        FOREIGN KEY(lens_equip_id) REFERENCES equip_lenses(id)
+      )`);
+      log('Scanners table ready');
+
+      // ========================================
       // 3. ADD FOREIGN KEY COLUMNS TO EXISTING TABLES
       // ========================================
 
@@ -256,6 +300,34 @@ function runEquipmentMigration() {
       await run(`ALTER TABLE photos ADD COLUMN camera_equip_id INTEGER REFERENCES equip_cameras(id)`);
       await run(`ALTER TABLE photos ADD COLUMN lens_equip_id INTEGER REFERENCES equip_lenses(id)`);
       await run(`ALTER TABLE photos ADD COLUMN flash_equip_id INTEGER REFERENCES equip_flashes(id)`);
+
+      // ========================================
+      // 3c. ADD SCANNER COLUMNS TO ROLLS AND PHOTOS (2026-01-17)
+      // ========================================
+      
+      // Scanner info for rolls (default scanner per roll)
+      await run(`ALTER TABLE rolls ADD COLUMN scanner_equip_id INTEGER REFERENCES equip_scanners(id)`);
+      await run(`ALTER TABLE rolls ADD COLUMN scan_resolution INTEGER`);
+      await run(`ALTER TABLE rolls ADD COLUMN scan_software TEXT`);
+      await run(`ALTER TABLE rolls ADD COLUMN scan_lab TEXT`);
+      await run(`ALTER TABLE rolls ADD COLUMN scan_date DATE`);
+      await run(`ALTER TABLE rolls ADD COLUMN scan_cost REAL`);
+      await run(`ALTER TABLE rolls ADD COLUMN scan_notes TEXT`);
+      
+      // Scanner info for photos (per-photo scan metadata)
+      await run(`ALTER TABLE photos ADD COLUMN scanner_equip_id INTEGER REFERENCES equip_scanners(id)`);
+      await run(`ALTER TABLE photos ADD COLUMN scan_resolution INTEGER`);
+      await run(`ALTER TABLE photos ADD COLUMN scan_software TEXT`);
+      await run(`ALTER TABLE photos ADD COLUMN scan_date DATETIME`);
+      await run(`ALTER TABLE photos ADD COLUMN scan_bit_depth INTEGER`);
+      await run(`ALTER TABLE photos ADD COLUMN scan_notes TEXT`);
+      
+      // Source metadata (original EXIF from scan file)
+      await run(`ALTER TABLE photos ADD COLUMN source_make TEXT`);
+      await run(`ALTER TABLE photos ADD COLUMN source_model TEXT`);
+      await run(`ALTER TABLE photos ADD COLUMN source_software TEXT`);
+      
+      log('Scanner columns added to rolls and photos');
 
       // ========================================
       // 3b. ADD GEOLOCATION COLUMNS TO PHOTOS (2026-01-13)
@@ -548,4 +620,4 @@ function runEquipmentMigration() {
   });
 }
 
-module.exports = { runEquipmentMigration, CAMERA_TYPES, FILM_FORMATS, LENS_MOUNTS };
+module.exports = { runEquipmentMigration, CAMERA_TYPES, FILM_FORMATS, LENS_MOUNTS, SCANNER_TYPES };

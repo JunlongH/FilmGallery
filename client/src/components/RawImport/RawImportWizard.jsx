@@ -119,7 +119,7 @@ export default function RawImportWizard({
   const isValidRawFile = useCallback((file) => {
     const ext = file.name.split('.').pop().toLowerCase();
     return supportedFormats.includes(ext) || 
-           ['dng', 'cr2', 'cr3', 'arw', 'nef', 'orf', 'raf', 'rw2', 'pef', 'srw', 'raw', '3fr', 'dcr', 'kdc', 'mrw', 'x3f'].includes(ext);
+           ['dng', 'cr2', 'cr3', 'arw', 'nef', 'orf', 'raf', 'rw2', 'pef', 'srw', 'raw', '3fr', 'fff', 'iiq', 'dcr', 'kdc', 'mrw', 'x3f'].includes(ext);
   }, [supportedFormats]);
 
   // 处理文件选择

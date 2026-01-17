@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db'); // Required for prepared statements in batch insert
 const { recomputeRollSequence } = require('../services/roll-service');
 const { addOrUpdateGear } = require('../services/gear-service');
+const scanExifService = require('../services/scan-exif-service');
 const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
@@ -315,7 +316,7 @@ router.post('/', (req, res) => {
           return insertedId;
         };
 
-        // Prepare statement for insertion (includes date_taken/time_taken + camera/lens/photographer + location)
+        // Prepare statement for insertion (includes date_taken/time_taken + camera/lens/photographer + location + scanner info)
         // NOTE: must be finalized even if we rollback.
         let stmt = null;
         stmt = db.prepare(`INSERT INTO photos (
@@ -325,8 +326,10 @@ router.post('/', (req, res) => {
           is_negative_source, taken_at, date_taken, time_taken,
           location_id, detail_location, country, city,
           camera, lens, photographer, aperture, shutter_speed, iso,
-          latitude, longitude
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+          latitude, longitude,
+          scanner_equip_id, scan_resolution, scan_software, scan_date, scan_bit_depth,
+          source_make, source_model, source_software
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         stmtToFinalize = stmt;
         
         const runInsert = (params) => new Promise((resolve, reject) => {
@@ -383,6 +386,18 @@ router.post('/', (req, res) => {
           // Prepare Source for Sharp (Buffer or Path)
           let processInput = f.tmpPath;
           let rawMetadata = null;
+          let scannerInfo = null;
+
+          // Extract scanner/source info from EXIF for TIFF/JPEG/BMP files
+          // This captures scanner make/model/software for scanned images
+          try {
+            scannerInfo = await scanExifService.extractScannerInfo(f.tmpPath);
+            if (scannerInfo && scannerInfo.isScanner) {
+              console.log(`[CREATE ROLL] Detected scanner file: ${scannerInfo.make} ${scannerInfo.model}`);
+            }
+          } catch (scanErr) {
+            console.warn('[CREATE ROLL] Scanner EXIF extraction failed:', scanErr.message);
+          }
 
           // RAW Handling: If RAW, decode to Buffer (TIFF) first
           if (f.isRaw) {
@@ -544,6 +559,9 @@ router.post('/', (req, res) => {
           const longitudeForPhoto = meta.longitude !== undefined && meta.longitude !== null && meta.longitude !== '' ? Number(meta.longitude) : null;
           if (locationId) rollLocationIds.add(locationId);
 
+          // Prepare scanner info for DB (if detected as scanner source)
+          const scanDbInfo = scannerInfo ? scanExifService.formatForDatabase(scannerInfo) : {};
+
           stagedPhotos.push({
             frameNumber,
             finalName,
@@ -569,6 +587,15 @@ router.post('/', (req, res) => {
             isoForPhoto,
             latitudeForPhoto,
             longitudeForPhoto,
+            // Scanner info
+            scannerEquipId: scanDbInfo.scanner_equip_id || null,
+            scanResolution: scanDbInfo.scan_resolution || null,
+            scanSoftware: scanDbInfo.scan_software || null,
+            scanDate: scanDbInfo.scan_date || null,
+            scanBitDepth: scanDbInfo.scan_bit_depth || null,
+            sourceMake: scanDbInfo.source_make || null,
+            sourceModel: scanDbInfo.source_model || null,
+            sourceSoftware: scanDbInfo.source_software || null,
           });
 
         }
@@ -638,7 +665,16 @@ router.post('/', (req, res) => {
             p.shutterForPhoto,
             p.isoForPhoto,
             p.latitudeForPhoto,
-            p.longitudeForPhoto
+            p.longitudeForPhoto,
+            // Scanner info
+            p.scannerEquipId,
+            p.scanResolution,
+            p.scanSoftware,
+            p.scanDate,
+            p.scanBitDepth,
+            p.sourceMake,
+            p.sourceModel,
+            p.sourceSoftware
           ]);
           inserted.push({
             filename: p.finalName,

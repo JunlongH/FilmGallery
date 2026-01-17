@@ -740,6 +740,48 @@ export async function uploadFlashImage(id, file) {
   return res.json();
 }
 
+// Scanners
+export async function getScanners(params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  return jsonFetch(`/api/equipment/scanners${qs ? '?' + qs : ''}`);
+}
+
+export async function getScanner(id) {
+  return jsonFetch(`/api/equipment/scanners/${id}`);
+}
+
+export async function createScanner(data) {
+  return jsonFetch('/api/equipment/scanners', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function updateScanner(id, data) {
+  return jsonFetch(`/api/equipment/scanners/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+}
+
+export async function deleteScanner(id, hard = false) {
+  return jsonFetch(`/api/equipment/scanners/${id}${hard ? '?permanent=true' : ''}`, {
+    method: 'DELETE'
+  });
+}
+
+export async function uploadScannerImage(id, file) {
+  const fd = new FormData();
+  fd.append('image', file);
+  const res = await fetch(`${API_BASE}/api/equipment/scanners/${id}/image`, {
+    method: 'POST',
+    body: fd
+  });
+  return res.json();
+}
+
 // Get compatible lenses for a camera (based on mount)
 export async function getCompatibleLenses(cameraId) {
   return jsonFetch(`/api/equipment/compatible-lenses/${cameraId}`);

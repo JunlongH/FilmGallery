@@ -15,7 +15,7 @@ import {
   getCameras, createCamera, updateCamera, deleteCamera, uploadCameraImage,
   getLenses, createLens, updateLens, deleteLens, uploadLensImage,
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
-
+  getScanners, createScanner, updateScanner, deleteScanner, uploadScannerImage,
   getFilms, createFilm, updateFilm, deleteFilm, getFilmConstants,
   getEquipmentConstants, buildUploadUrl, getRolls
 } from '../api';
@@ -28,6 +28,7 @@ const TABS = [
   { key: 'cameras', label: '📷 Cameras', icon: '📷' },
   { key: 'lenses', label: '🔭 Lenses', icon: '🔭' },
   { key: 'flashes', label: '⚡ Flashes', icon: '⚡' },
+  { key: 'scanners', label: '🖨️ Scanners', icon: '🖨️' },
   { key: 'films', label: '🎞️ Films', icon: '🎞️' }
 ];
 
@@ -57,6 +58,7 @@ export default function EquipmentManager() {
         case 'cameras': data = await getCameras(); break;
         case 'lenses': data = await getLenses(); break;
         case 'flashes': data = await getFlashes(); break;
+        case 'scanners': data = await getScanners(); break;
         case 'films': data = await getFilms(); break;
         default: data = [];
       }
@@ -86,6 +88,7 @@ export default function EquipmentManager() {
         case 'cameras': created = await createCamera(data); break;
         case 'lenses': created = await createLens(data); break;
         case 'flashes': created = await createFlash(data); break;
+        case 'scanners': created = await createScanner(data); break;
         case 'films': created = await createFilm(data); break;
         default: return;
       }
@@ -106,6 +109,7 @@ export default function EquipmentManager() {
         case 'cameras': updated = await updateCamera(id, data); break;
         case 'lenses': updated = await updateLens(id, data); break;
         case 'flashes': updated = await updateFlash(id, data); break;
+        case 'scanners': updated = await updateScanner(id, data); break;
         case 'films': updated = await updateFilm({ id, ...data }); break;
         default: return;
       }
@@ -124,6 +128,7 @@ export default function EquipmentManager() {
         case 'cameras': await deleteCamera(id); break;
         case 'lenses': await deleteLens(id); break;
         case 'flashes': await deleteFlash(id); break;
+        case 'scanners': await deleteScanner(id); break;
         case 'films': await deleteFilm(id); break;
         default: return;
       }
@@ -143,6 +148,7 @@ export default function EquipmentManager() {
         case 'cameras': await uploadCameraImage(id, file); break;
         case 'lenses': await uploadLensImage(id, file); break;
         case 'flashes': await uploadFlashImage(id, file); break;
+        case 'scanners': await uploadScannerImage(id, file); break;
         default: return;
       }
       // Reload items to get updated image path
@@ -299,6 +305,8 @@ function DetailView({ type, item, filmConstants, onEdit, onDelete, onImageUpload
           filter = { lens_equip_id: item.id };
         } else if (type === 'flashes') {
           filter = { flash_equip_id: item.id };
+        } else if (type === 'scanners') {
+          filter = { scanner_equip_id: item.id };
         } else if (type === 'films') {
           filter = { film_id: item.id };
         }
@@ -1009,6 +1017,91 @@ function FormFields({ type, form, onChange, constants }) {
                 onChange={e => onChange('ttl_compatible', e.target.checked ? 1 : 0)}
               />
               TTL Compatible
+            </label>
+          </div>
+        </>
+      )}
+
+      {/* Scanner-specific fields */}
+      {type === 'scanners' && (
+        <>
+          <div className="form-row">
+            <label>Type</label>
+            <select
+              value={form.type || ''}
+              onChange={e => onChange('type', e.target.value)}
+            >
+              <option value="">Select Type...</option>
+              {constants?.scannerTypes?.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+          
+          <div className="form-row">
+            <label>Max Resolution (DPI)</label>
+            <input
+              type="number"
+              value={form.max_resolution || ''}
+              onChange={e => onChange('max_resolution', parseInt(e.target.value) || null)}
+              placeholder="e.g., 6400"
+            />
+          </div>
+
+          <div className="form-row">
+            <label>Sensor Type</label>
+            <select
+              value={form.sensor_type || ''}
+              onChange={e => onChange('sensor_type', e.target.value)}
+            >
+              <option value="">Select Sensor...</option>
+              {constants?.sensorTypes?.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-row">
+            <label>Bit Depth</label>
+            <select
+              value={form.bit_depth || ''}
+              onChange={e => onChange('bit_depth', parseInt(e.target.value) || null)}
+            >
+              <option value="">Select Bit Depth...</option>
+              {constants?.bitDepths?.map(b => (
+                <option key={b} value={b}>{b}-bit</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-row">
+            <label>Supported Formats</label>
+            <input
+              type="text"
+              value={form.supported_formats || ''}
+              onChange={e => onChange('supported_formats', e.target.value)}
+              placeholder="e.g., 35mm, 120, 4x5"
+            />
+          </div>
+
+          <div className="form-row">
+            <label>Default Software</label>
+            <input
+              type="text"
+              value={form.default_software || ''}
+              onChange={e => onChange('default_software', e.target.value)}
+              placeholder="e.g., SilverFast, VueScan"
+            />
+          </div>
+
+          <div className="form-row checkbox-row">
+            <label>
+              <input
+                type="checkbox"
+                checked={form.has_infrared_cleaning === 1 || form.has_infrared_cleaning === true}
+                onChange={e => onChange('has_infrared_cleaning', e.target.checked ? 1 : 0)}
+              />
+              Has Infrared Dust/Scratch Removal (ICE/iSRD)
             </label>
           </div>
         </>

@@ -547,7 +547,7 @@ export default function NewRollForm({ onCreated }) {
             {/* Hint Text */}
              <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
                 {isOriginalUpload 
-                  ? '支持 RAW 格式 (CR2, NEF, ARW, DNG 等) 及高保真 TIFF/JPG。原始底片将被存档用于 FilmLab 后期处理。'
+                  ? '支持 RAW 格式 (CR2, NEF, ARW, DNG, FFF 等)、扫描仪 BMP/TIFF 及高保真 JPG。原始底片将被存档用于 FilmLab 后期处理。'
                   : '仅支持普通图像格式。不保存原始底片存档。'}
              </div>
           </div>
@@ -557,7 +557,7 @@ export default function NewRollForm({ onCreated }) {
           <input 
             type="file" 
             accept={isOriginalUpload
-              ? 'image/*,.dng,.cr2,.cr3,.arw,.nef,.nrw,.orf,.raf,.rw2,.pef,.srw,.x3f,.3fr,.iiq,.raw,.rwl,.dcr,.kdc,.mrw,.erf,.mef,.mos,.srf,.sr2'
+              ? 'image/*,.dng,.cr2,.cr3,.arw,.nef,.nrw,.orf,.raf,.rw2,.pef,.srw,.x3f,.3fr,.fff,.iiq,.raw,.rwl,.dcr,.kdc,.mrw,.erf,.mef,.mos,.srf,.sr2,.bmp,.dib'
               : 'image/*'
             } 
             multiple 

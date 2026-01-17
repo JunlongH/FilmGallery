@@ -15,7 +15,7 @@ const SUPPORTED_EXTENSIONS = [
   '.dng', '.cr2', '.cr3', '.nef', '.arw', 
   '.raf', '.orf', '.rw2', '.pef', '.srw',
   '.x3f', '.erf', '.mef', '.mos', '.mrw',
-  '.kdc', '.3fr', '.dcr', '.k25', '.qtk'
+  '.kdc', '.3fr', '.fff', '.iiq', '.dcr', '.k25', '.qtk'
 ];
 
 // 尝试加载 lightdrift-libraw
@@ -84,7 +84,9 @@ class RawDecoder {
         { ext: '.mos', name: 'Leaf RAW' },
         { ext: '.mrw', name: 'Minolta RAW' },
         { ext: '.kdc', name: 'Kodak Digital Camera' },
-        { ext: '.3fr', name: 'Hasselblad RAW' },
+        { ext: '.3fr', name: 'Hasselblad 3F RAW' },
+        { ext: '.fff', name: 'Hasselblad/Imacon FlexFrame' },
+        { ext: '.iiq', name: 'Phase One Intelligent Image Quality' },
         { ext: '.dcr', name: 'Kodak RAW' },
         { ext: '.k25', name: 'Kodak DC25' },
         { ext: '.qtk', name: 'Apple QuickTake' }

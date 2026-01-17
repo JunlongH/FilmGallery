@@ -2,6 +2,7 @@ import exifr from 'exifr';
 import { isRawFile } from '@filmgallery/shared';
 
 const TIFF_EXTENSIONS = ['.tif', '.tiff'];
+const BMP_EXTENSIONS = ['.bmp', '.dib'];
 
 /**
  * Checks if a file is a TIFF file based on extension.
@@ -12,6 +13,18 @@ export const isTiffFile = (filename) => {
   if (!filename) return false;
   const ext = '.' + filename.split('.').pop().toLowerCase();
   return TIFF_EXTENSIONS.includes(ext);
+};
+
+/**
+ * Checks if a file is a BMP file based on extension.
+ * BMP files are common output from Fuji scanners.
+ * @param {string} filename 
+ * @returns {boolean}
+ */
+export const isBmpFile = (filename) => {
+  if (!filename) return false;
+  const ext = '.' + filename.split('.').pop().toLowerCase();
+  return BMP_EXTENSIONS.includes(ext);
 };
 
 /**

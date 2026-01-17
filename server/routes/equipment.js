@@ -5,6 +5,7 @@
  * - Cameras (equip_cameras)
  * - Lenses (equip_lenses)
  * - Flashes (equip_flashes)
+ * - Scanners (equip_scanners)
  * - Film Formats (ref_film_formats)
  * 
  * Also provides:
@@ -19,7 +20,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { uploadsDir } = require('../config/paths');
-const { CAMERA_TYPES, LENS_MOUNTS } = require('../utils/equipment-migration');
+const { CAMERA_TYPES, LENS_MOUNTS, SCANNER_TYPES } = require('../utils/equipment-migration');
 
 // Ensure equipment images directory exists
 const equipImagesDir = path.join(uploadsDir, 'equipment');
@@ -81,13 +82,17 @@ router.get('/constants', (req, res) => {
   res.json({
     cameraTypes: CAMERA_TYPES,
     lensMounts: LENS_MOUNTS,
+    scannerTypes: SCANNER_TYPES,
     focusTypes: ['manual', 'auto', 'hybrid'],
     conditions: ['mint', 'excellent', 'good', 'fair', 'poor'],
     statuses: ['owned', 'sold', 'wishlist', 'borrowed'],
     // New specification constants (2026-01-12)
     meterTypes: ['none', 'match-needle', 'center-weighted', 'matrix', 'spot', 'evaluative'],
     shutterTypes: ['focal-plane', 'leaf', 'electronic', 'hybrid'],
-    magnificationRatios: ['1:1', '1:2', '1:3', '1:4', '1:5', '1:10']
+    magnificationRatios: ['1:1', '1:2', '1:3', '1:4', '1:5', '1:10'],
+    // Scanner-specific constants
+    sensorTypes: ['CCD', 'CMOS', 'PMT'],
+    bitDepths: [8, 12, 14, 16, 24, 48]
   });
 });
 
@@ -632,6 +637,162 @@ router.post('/flashes/:id/image', upload.single('image'), async (req, res) => {
     res.json({ image_path: relativePath });
   } catch (err) {
     console.error('[EQUIPMENT] Error uploading flash image:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========================================
+// SCANNERS
+// ========================================
+
+router.get('/scanners', async (req, res) => {
+  try {
+    const { type, status, includeDeleted } = req.query;
+    
+    let sql = `SELECT * FROM equip_scanners WHERE 1=1`;
+    const params = [];
+
+    if (!includeDeleted) {
+      sql += ` AND deleted_at IS NULL`;
+    }
+    if (type) {
+      sql += ` AND type = ?`;
+      params.push(type);
+    }
+    if (status) {
+      sql += ` AND status = ?`;
+      params.push(status);
+    }
+
+    sql += ` ORDER BY brand, name`;
+
+    const scanners = await allAsync(sql, params);
+    res.json(scanners);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error fetching scanners:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/scanners/:id', async (req, res) => {
+  try {
+    const scanner = await getAsync(`SELECT * FROM equip_scanners WHERE id = ?`, [req.params.id]);
+    if (!scanner) return res.status(404).json({ error: 'Scanner not found' });
+    res.json(scanner);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error fetching scanner:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/scanners', async (req, res) => {
+  try {
+    const {
+      name, brand, model, type, max_resolution, sensor_type, supported_formats,
+      has_infrared_cleaning, bit_depth, default_software,
+      camera_equip_id, macro_lens_id, copy_stand_model,
+      serial_number, purchase_date, purchase_price, condition, notes, status
+    } = req.body;
+
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+
+    const result = await runAsync(`
+      INSERT INTO equip_scanners (
+        name, brand, model, type, max_resolution, sensor_type, supported_formats,
+        has_infrared_cleaning, bit_depth, default_software,
+        camera_equip_id, macro_lens_id, copy_stand_model,
+        serial_number, purchase_date, purchase_price, condition, notes, status,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `, [
+      name, brand || null, model || null, type || null, max_resolution || null, 
+      sensor_type || null, supported_formats || null,
+      has_infrared_cleaning ? 1 : 0, bit_depth || null, default_software || null,
+      camera_equip_id || null, macro_lens_id || null, copy_stand_model || null,
+      serial_number || null, purchase_date || null, purchase_price || null, 
+      condition || null, notes || null, status || 'owned'
+    ]);
+
+    const scanner = await getAsync(`SELECT * FROM equip_scanners WHERE id = ?`, [result.lastID]);
+    res.status(201).json(scanner);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error creating scanner:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/scanners/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const fields = [
+      'name', 'brand', 'model', 'type', 'max_resolution', 'sensor_type', 'supported_formats',
+      'has_infrared_cleaning', 'bit_depth', 'default_software',
+      'camera_equip_id', 'macro_lens_id', 'copy_stand_model',
+      'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
+    ];
+
+    const updates = [];
+    const params = [];
+    
+    for (const field of fields) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = ?`);
+        let value = req.body[field];
+        // Handle boolean fields
+        if (field === 'has_infrared_cleaning') {
+          value = value ? 1 : 0;
+        }
+        params.push(value);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    updates.push('updated_at = CURRENT_TIMESTAMP');
+    params.push(id);
+
+    await runAsync(`UPDATE equip_scanners SET ${updates.join(', ')} WHERE id = ?`, params);
+
+    const scanner = await getAsync(`SELECT * FROM equip_scanners WHERE id = ?`, [id]);
+    res.json(scanner);
+  } catch (err) {
+    console.error('[EQUIPMENT] Error updating scanner:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/scanners/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permanent } = req.query;
+
+    if (permanent === 'true') {
+      await runAsync(`DELETE FROM equip_scanners WHERE id = ?`, [id]);
+    } else {
+      await runAsync(`UPDATE equip_scanners SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
+    }
+    
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[EQUIPMENT] Error deleting scanner:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Scanner image upload
+router.post('/scanners/:id/image', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    
+    const relativePath = `equipment/${req.file.filename}`;
+    await runAsync(`UPDATE equip_scanners SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
+      [relativePath, req.params.id]);
+    
+    res.json({ image_path: relativePath });
+  } catch (err) {
+    console.error('[EQUIPMENT] Error uploading scanner image:', err);
     res.status(500).json({ error: err.message });
   }
 });
