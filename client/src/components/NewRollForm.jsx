@@ -8,6 +8,7 @@ import FilmSelector from './FilmSelector';
 import ModalDialog from './ModalDialog';
 import EquipmentSelector from './EquipmentSelector';
 import { useFilePreviews } from '../hooks/useFilePreviews';
+import ShotLogMapper from './ShotLogMapper';
 
 export default function NewRollForm({ onCreated }) {
   const location = useLocation();
@@ -42,12 +43,9 @@ export default function NewRollForm({ onCreated }) {
   const [fileDates, setFileDates] = useState({}); // { filename: 'YYYY-MM-DD' }
   const [fileMeta, setFileMeta] = useState({});   // { filename: { date, lens } }
   const [applyShotLog, setApplyShotLog] = useState(false);
-  const [logStartOffset, setLogStartOffset] = useState(0); // Skip first N files when mapping logs
+  const [showMapper, setShowMapper] = useState(false);
 
   const totalShotLogCount = shotLogs.reduce((acc, cur) => acc + (Number(cur.count || cur.shots || 0) || 0), 0);
-  const filesCount = files.length;
-  const effectiveFilesCount = Math.max(0, filesCount - logStartOffset);
-  const shotLogMismatch = applyShotLog && effectiveFilesCount > 0 && totalShotLogCount !== effectiveFilesCount;
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -116,7 +114,8 @@ export default function NewRollForm({ onCreated }) {
 
   // Re-apply mapping when shot logs or files change while toggle is on
   useEffect(() => {
-    if (applyShotLog) {
+    // Only auto-apply if meta is empty (init) to respect manual mapping
+    if (applyShotLog && Object.keys(fileMeta).length === 0 && files.length > 0 && shotLogs.length > 0) {
       handleApplyShotLog();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -129,9 +128,6 @@ export default function NewRollForm({ onCreated }) {
     const dateMap = {};
     let fileIndex = 0;
     
-    // Skip first N files (for leader frames, overlapped frames, etc.)
-    const effectiveOffset = Math.max(0, Math.min(logStartOffset, sortedFiles.length - 1));
-    
     for (const log of shotLogs) {
       const count = Number(log.count || log.shots || 0) || 0;
       const date = log.date || '';
@@ -141,17 +137,32 @@ export default function NewRollForm({ onCreated }) {
       const country = log.country || '';
       const city = log.city || '';
       const detail_location = log.detail_location || '';
+      const latitude = log.latitude;
+      const longitude = log.longitude;
       for (let i = 0; i < count; i++) {
-        const actualIndex = effectiveOffset + fileIndex;
-        if (actualIndex >= sortedFiles.length) break;
-        const name = sortedFiles[actualIndex].name;
-        metaMap[name] = { date, lens: lensFromLog, country, city, detail_location, aperture, shutter_speed, logIndex: shotLogs.indexOf(log) };
+        if (fileIndex >= sortedFiles.length) break;
+        const name = sortedFiles[fileIndex].name;
+        metaMap[name] = { date, lens: lensFromLog, country, city, detail_location, aperture, shutter_speed, latitude, longitude, logIndex: shotLogs.indexOf(log) };
         if (date) dateMap[name] = date;
         fileIndex++;
       }
     }
     setFileMeta(metaMap);
     setFileDates(dateMap);
+  };
+
+  const handleMapperSave = (mapping) => {
+    // mapping is now: { filename: { date, lens, aperture, shutter_speed, country, city, detail_location, logIndex } }
+    setFileMeta(mapping);
+    
+    // Also update fileDates for overlay display
+    const newDates = {};
+    Object.entries(mapping).forEach(([name, meta]) => {
+      if (meta && meta.date) newDates[name] = meta.date;
+    });
+    setFileDates(newDates);
+    setApplyShotLog(true);
+    setShowMapper(false);
   };
 
   /* Preview generation is now handled by useFilePreviews hook */
@@ -196,7 +207,9 @@ export default function NewRollForm({ onCreated }) {
         const detail_location = entry.detail_location || '';
         const aperture = entry.aperture;
         const shutter_speed = entry.shutter_speed;
-        if (date || lensFromMeta || country || city || detail_location || Number.isFinite(aperture) || !!shutter_speed) {
+        const latitude = entry.latitude;
+        const longitude = entry.longitude;
+        if (date || lensFromMeta || country || city || detail_location || Number.isFinite(aperture) || !!shutter_speed || Number.isFinite(latitude) || Number.isFinite(longitude)) {
           metaToSend[k] = {
             ...(date ? { date } : {}),
             ...(lensFromMeta ? { lens: lensFromMeta } : {}),
@@ -204,7 +217,9 @@ export default function NewRollForm({ onCreated }) {
             ...(shutter_speed ? { shutter_speed } : {}),
             ...(country ? { country } : {}),
             ...(city ? { city } : {}),
-            ...(detail_location ? { detail_location } : {})
+            ...(detail_location ? { detail_location } : {}),
+            ...(Number.isFinite(latitude) ? { latitude } : {}),
+            ...(Number.isFinite(longitude) ? { longitude } : {})
           };
         }
       });
@@ -577,48 +592,21 @@ export default function NewRollForm({ onCreated }) {
                         onChange={e => {
                           const v = e.target.checked;
                           setApplyShotLog(v);
-                          if (v) handleApplyShotLog();
+                          if (v && Object.keys(fileMeta).length === 0) handleApplyShotLog();
                         }} 
                       />
-                      <span>Apply shot log to photos (date + lens + location)</span>
+                      <span>Apply shot log</span>
                     </label>
                     <button 
                       type="button" 
                       className="fg-btn fg-btn-sm fg-btn-primary"
-                      onClick={handleApplyShotLog}
+                      onClick={() => setShowMapper(true)}
                     >
-                      Re-Apply
+                      Map Shot Logs
                     </button>
                   </div>
                 </div>
-                {/* Offset control for flexible mapping */}
-                {applyShotLog && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, fontSize: 12 }}>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ color: '#0369a1' }}>Skip first</span>
-                      <input
-                        type="number"
-                        min={0}
-                        max={Math.max(0, filesCount - 1)}
-                        value={logStartOffset}
-                        onChange={e => {
-                          const v = Math.max(0, parseInt(e.target.value) || 0);
-                          setLogStartOffset(v);
-                        }}
-                        style={{ width: 60, padding: '2px 6px', borderRadius: 4, border: '1px solid #bae6fd', fontSize: 12 }}
-                      />
-                      <span style={{ color: '#0369a1' }}>files (leader frames, etc.)</span>
-                    </label>
-                    <button
-                      type="button"
-                      className="fg-btn fg-btn-sm"
-                      style={{ padding: '2px 8px', fontSize: 11 }}
-                      onClick={() => { setLogStartOffset(0); setTimeout(handleApplyShotLog, 0); }}
-                    >
-                      Reset
-                    </button>
-                  </div>
-                )}
+                
                 <div style={{ fontSize: 11, color: '#0c4a6e', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   {shotLogs.map((l, i) => (
                     <span key={i} style={{ background: '#fff', padding: '2px 6px', borderRadius: 4, border: '1px solid #e0f2fe' }}>
@@ -626,10 +614,9 @@ export default function NewRollForm({ onCreated }) {
                     </span>
                   ))}
                 </div>
-                {applyShotLog && filesCount > 0 && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: shotLogMismatch ? '#b91c1c' : '#0f172a' }}>
-                    Mapping {filesCount - logStartOffset} files (offset {logStartOffset}) with {totalShotLogCount} logged shots
-                    {shotLogMismatch ? ' (counts differ – adjust offset or shot log)' : ''}
+                {applyShotLog && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#0f172a' }}>
+                    Mapped {Object.keys(fileMeta).length} / {files.length} files
                   </div>
                 )}
               </div>
@@ -703,25 +690,6 @@ export default function NewRollForm({ onCreated }) {
                         L{fileMeta[p.name].logIndex + 1}
                       </div>
                     )}
-                    {/* Skipped indicator */}
-                    {applyShotLog && logStartOffset > 0 && i < logStartOffset && (
-                      <div style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        background: 'rgba(0,0,0,0.4)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#fff',
-                        fontSize: 10,
-                        fontWeight: 600
-                      }}>
-                        SKIPPED
-                      </div>
-                    )}
                   </div>
                   <div style={{ 
                     fontSize: 10,
@@ -734,6 +702,24 @@ export default function NewRollForm({ onCreated }) {
                   }}>
                     {p.originalName || p.name}
                   </div>
+                  {/* Show mapped metadata summary */}
+                  {fileMeta[p.name] && (fileMeta[p.name].lens || fileMeta[p.name].city) && (
+                    <div style={{ 
+                      fontSize: 9, 
+                      color: '#0369a1', 
+                      textAlign: 'center',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      padding: '2px 0'
+                    }}>
+                      {[
+                        fileMeta[p.name].lens,
+                        fileMeta[p.name].aperture ? `f/${fileMeta[p.name].aperture}` : null,
+                        fileMeta[p.name].city
+                      ].filter(Boolean).join(' · ') || '—'}
+                    </div>
+                  )}
                   <input 
                     type="date" 
                     style={{ fontSize: 10, padding: 2, border: '1px solid #ddd', borderRadius: 3, width: '100%' }}
@@ -784,6 +770,14 @@ export default function NewRollForm({ onCreated }) {
           {uploadProgress !== null ? 'Uploading...' : 'Create Roll'}
         </button>
       </div>
+      {showMapper && (
+        <ShotLogMapper 
+          files={files.map((f, i) => ({ name: f.name, preview: previews[i] ? previews[i].url : null }))}
+          shotLogs={shotLogs}
+          onSave={handleMapperSave}
+          onClose={() => setShowMapper(false)}
+        />
+      )}
     </form>
   );
 }

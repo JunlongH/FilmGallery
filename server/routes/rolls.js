@@ -263,18 +263,22 @@ router.post('/', (req, res) => {
             if (!k) continue;
             const m = metaMap[k];
             if (!m) continue;
-            if (typeof m === 'string') return { date: m, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null };
-            if (typeof m === 'object') return {
-              date: m.date || null,
-              lens: m.lens || null,
-              country: m.country || null,
-              city: m.city || null,
-              detail_location: m.detail_location || null,
-              aperture: m.aperture ?? null,
-              shutter_speed: m.shutter_speed || null
-            };
+            if (typeof m === 'string') return { date: m, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null, latitude: null, longitude: null };
+            if (typeof m === 'object') {
+              return {
+                date: m.date || null,
+                lens: m.lens || null,
+                country: m.country || null,
+                city: m.city || null,
+                detail_location: m.detail_location || null,
+                aperture: m.aperture ?? null,
+                shutter_speed: m.shutter_speed || null,
+                latitude: m.latitude ?? null,
+                longitude: m.longitude ?? null
+              };
+            }
           }
-          return { date: null, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null };
+          return { date: null, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null, latitude: null, longitude: null };
         };
 
         const locationCache = new Map(); // key: country||city -> id
@@ -319,9 +323,10 @@ router.post('/', (req, res) => {
           full_rel_path, thumb_rel_path, negative_rel_path,
           original_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
           is_negative_source, taken_at, date_taken, time_taken,
-          location_id, detail_location,
-          camera, lens, photographer, aperture, shutter_speed, iso
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+          location_id, detail_location, country, city,
+          camera, lens, photographer, aperture, shutter_speed, iso,
+          latitude, longitude
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         stmtToFinalize = stmt;
         
         const runInsert = (params) => new Promise((resolve, reject) => {
@@ -533,6 +538,10 @@ router.post('/', (req, res) => {
           const isoForPhoto = filmIso !== null && filmIso !== undefined ? filmIso : null;
           const locationId = await ensureLocationId(meta.country, meta.city);
           const detailLoc = meta.detail_location || null;
+          const countryForPhoto = meta.country || null;
+          const cityForPhoto = meta.city || null;
+          const latitudeForPhoto = meta.latitude !== undefined && meta.latitude !== null && meta.latitude !== '' ? Number(meta.latitude) : null;
+          const longitudeForPhoto = meta.longitude !== undefined && meta.longitude !== null && meta.longitude !== '' ? Number(meta.longitude) : null;
           if (locationId) rollLocationIds.add(locationId);
 
           stagedPhotos.push({
@@ -550,12 +559,16 @@ router.post('/', (req, res) => {
             dateTaken,
             locationId,
             detailLoc,
+            countryForPhoto,
+            cityForPhoto,
             cameraForPhoto,
             lensForPhoto,
             photographerForPhoto,
             apertureForPhoto,
             shutterForPhoto,
             isoForPhoto,
+            latitudeForPhoto,
+            longitudeForPhoto,
           });
 
         }
@@ -616,12 +629,16 @@ router.post('/', (req, res) => {
             null, // time_taken unused here
             p.locationId,
             p.detailLoc,
+            p.countryForPhoto,
+            p.cityForPhoto,
             p.cameraForPhoto,
             p.lensForPhoto,
             p.photographerForPhoto,
             p.apertureForPhoto,
             p.shutterForPhoto,
-            p.isoForPhoto
+            p.isoForPhoto,
+            p.latitudeForPhoto,
+            p.longitudeForPhoto
           ]);
           inserted.push({
             filename: p.finalName,
@@ -1179,12 +1196,6 @@ router.get('/:rollId/photos', async (req, res) => {
   const rollId = req.params.rollId;
   try {
     const rows = await PreparedStmt.allAsync('photos.listByRoll', [rollId]);
-    
-    // DEBUG: Log first row to check paths
-    if (rows && rows.length > 0) {
-       const r = rows[0];
-       console.log(`[DEBUG] Roll ${rollId} photo[0]: id=${r.id}, full=${r.full_rel_path}, pos=${r.positive_rel_path}, neg=${r.negative_rel_path}`);
-    }
 
     const normalized = (rows || []).map(r => {
       const fullPath = r.positive_rel_path || r.full_rel_path || null;

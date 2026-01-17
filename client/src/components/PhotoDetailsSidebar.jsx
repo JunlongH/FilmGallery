@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import LocationSelect from './LocationSelect.jsx';
+import LocationInput from './LocationInput.jsx';
 import GeoSearchInput from './GeoSearchInput.jsx';
 import { getMetadataOptions, API_BASE } from '../api';
 import EquipmentSelector from './EquipmentSelector';
@@ -9,6 +9,7 @@ import '../styles/sidebar.css';
 export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSaved }) {
   const isBatch = Array.isArray(photos) && photos.length > 1;
   const base = photo || (isBatch ? photos[0] : null);
+  
   const [dateTaken, setDateTaken] = useState(base?.date_taken || '');
   const [timeTaken, setTimeTaken] = useState(base?.time_taken || '');
   const [detailLocation, setDetailLocation] = useState(base?.detail_location || '');
@@ -23,6 +24,8 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   const [iso, setIso] = useState(base?.iso != null ? base.iso : '');
   const [location, setLocation] = useState({
     location_id: base?.location_id || null,
+    country_name: base?.country_name || null,
+    city_name: base?.city_name || null,
     latitude: base?.latitude,
     longitude: base?.longitude,
   });
@@ -35,38 +38,36 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       .catch(err => console.error('Failed to load metadata options', err));
   }, []);
 
+  // Update states when photo changes (for navigation between photos)
   useEffect(() => {
-    if (!roll) return;
-    if (dateTaken) {
-      const d = new Date(dateTaken);
-      const s = roll.start_date ? new Date(roll.start_date) : null;
-      const e = roll.end_date ? new Date(roll.end_date) : null;
-      if (s && d < s) setDateTaken(roll.start_date);
-      if (e && d > e) setDateTaken(roll.end_date);
-    }
-  }, [dateTaken, roll]);
-
-  const handleLocationSelect = (loc) => {
-    if (!loc) return;
-    setLocation(prev => {
-      // If location matches and we already have coordinates, preserve them.
-      // Otherwise (location changed OR we have no coords), update to city defaults.
-      const hasCoords = prev.latitude != null || prev.longitude != null;
-      if (prev.location_id === loc.location_id && hasCoords) return prev;
-
-      return { 
-        location_id: loc.location_id, 
-        latitude: loc.latitude != null ? Number(loc.latitude) : null, 
-        longitude: loc.longitude != null ? Number(loc.longitude) : null 
-      };
+    if (!base) return;
+    setDateTaken(base.date_taken || '');
+    setTimeTaken(base.time_taken || '');
+    setCamera(base.camera || roll?.camera || '');
+    setLens(base.lens || roll?.lens || '');
+    setCameraEquipId(base.camera_equip_id || roll?.camera_equip_id || null);
+    setLensEquipId(base.lens_equip_id || roll?.lens_equip_id || null);
+    setPhotographer(base.photographer || roll?.photographer || '');
+    setAperture(base.aperture != null ? base.aperture : '');
+    setShutterSpeed(base.shutter_speed || '');
+    setIso(base.iso != null ? base.iso : '');
+    setDetailLocation(base.detail_location || '');
+    setLocation({
+      location_id: base.location_id || null,
+      country_name: base.country_name || null,
+      city_name: base.city_name || null,
+      latitude: base.latitude,
+      longitude: base.longitude,
     });
-  };
+  }, [base, roll]);
 
   async function handleSave() {
     const payload = {
       date_taken: dateTaken || null,
       time_taken: timeTaken || null,
       location_id: location.location_id || null,
+      country: location.country_name || null,
+      city: location.city_name || null,
       detail_location: detailLocation || null,
       latitude: location.latitude ?? null,
       longitude: location.longitude ?? null,
@@ -238,7 +239,19 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         <div className="fg-separator" />
         <div className="fg-field">
           <label className="fg-label">Country / City</label>
-          <LocationSelect value={location.location_id} onChange={handleLocationSelect} />
+          <LocationInput value={location} onChange={(loc) => {
+            if (!loc) {
+              setLocation({ location_id: null, country_name: null, city_name: null, latitude: null, longitude: null });
+              return;
+            }
+            setLocation(prev => ({
+              location_id: loc.location_id || null,
+              country_name: loc.country_name || null,
+              city_name: loc.city_name || null,
+              latitude: loc.latitude ?? prev.latitude,
+              longitude: loc.longitude ?? prev.longitude
+            }));
+          }} />
         </div>
         <div className="fg-sidepanel-groupGrid cols-2">
           <div className="fg-field">

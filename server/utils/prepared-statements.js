@@ -27,7 +27,7 @@ const STATEMENTS = {
   // Photos
   'photos.getById': 'SELECT * FROM photos WHERE id = ?',
   'photos.getByIdWithPaths': 'SELECT id, roll_id, filename, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path, thumb_rel_path, positive_thumb_rel_path, negative_thumb_rel_path FROM photos WHERE id = ?',
-  'photos.listByRoll': 'SELECT * FROM photos WHERE roll_id = ? ORDER BY frame_number',
+  'photos.listByRoll': 'SELECT p.*, COALESCE(l.country_name, p.country) AS country_name, COALESCE(l.city_name, p.city) AS city_name, l.country_code, l.city_lat AS location_lat, l.city_lng AS location_lng FROM photos p LEFT JOIN locations l ON p.location_id = l.id WHERE p.roll_id = ? ORDER BY p.frame_number',
   'photos.getByRollSimple': 'SELECT id, roll_id, frame_number, full_rel_path, thumb_rel_path FROM photos WHERE id = ?',
   'photos.updateRating': 'UPDATE photos SET rating = ? WHERE id = ?',
   'photos.delete': 'DELETE FROM photos WHERE id = ?',

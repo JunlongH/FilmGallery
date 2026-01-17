@@ -1,13 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import '../styles/forms.css';
-import LocationSelect from './LocationSelect.jsx';
+import LocationInput from './LocationInput.jsx';
 import GeoSearchInput from './GeoSearchInput.jsx';
 
 export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
   const [dateTaken, setDateTaken] = useState(photo.date_taken || '');
   const [timeTaken, setTimeTaken] = useState(photo.time_taken || '');
   const [detailLocation, setDetailLocation] = useState(photo.detail_location || '');
-  const [location, setLocation] = useState({ location_id: photo.location_id || null, latitude: photo.latitude, longitude: photo.longitude });
+  const [location, setLocation] = useState({ 
+    location_id: photo.location_id || null, 
+    country_name: photo.country_name || null,
+    city_name: photo.city_name || null,
+    latitude: photo.latitude, 
+    longitude: photo.longitude 
+  });
   
   // Shooting parameters
   const [camera, setCamera] = useState(photo.camera || '');
@@ -30,11 +36,6 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
   const onInc = (key, delta) => {
     const next = (location[key] || 0) + delta;
     setLocation(l => ({ ...l, [key]: Math.round(next * 1e6) / 1e6 }));
-  };
-
-  const handleLocationSelect = (loc) => {
-    if (!loc) return;
-    setLocation({ location_id: loc.location_id, latitude: loc.latitude, longitude: loc.longitude });
   };
 
   const rollMin = roll?.start_date || '';
@@ -89,7 +90,19 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
         {/* Location */}
         <div style={{ marginTop: 12 }}>
           <label className="fg-label">Location (Country / City)</label>
-          <LocationSelect value={location.location_id} onChange={handleLocationSelect} />
+          <LocationInput value={location} onChange={(loc) => {
+            if (!loc) {
+              setLocation({ location_id: null, country_name: null, city_name: null, latitude: null, longitude: null });
+              return;
+            }
+            setLocation(prev => ({
+              location_id: loc.location_id || null,
+              country_name: loc.country_name || null,
+              city_name: loc.city_name || null,
+              latitude: loc.latitude ?? prev.latitude,
+              longitude: loc.longitude ?? prev.longitude
+            }));
+          }} />
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap: 8, marginTop: 8 }}>
           <div className="fg-field">
@@ -136,7 +149,9 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
           <button type="button" className="fg-btn fg-btn-primary" onClick={() => onSave({ 
             date_taken: dateTaken || null, 
             time_taken: timeTaken || null, 
-            location_id: location.location_id || null, 
+            location_id: location.location_id || null,
+            country: location.country_name || null,
+            city: location.city_name || null,
             detail_location: detailLocation || null, 
             latitude: location.latitude ?? null, 
             longitude: location.longitude ?? null,
