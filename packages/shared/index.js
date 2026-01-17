@@ -19,6 +19,7 @@ const splitTone = require('./filmLabSplitTone');
 const render = require('./render');
 const helpers = require('./filmLabHelpers');
 const sourcePathResolver = require('./sourcePathResolver');
+const rawUtils = require('./rawUtils');
 
 // 统一导出
 module.exports = {
@@ -307,4 +308,26 @@ module.exports = {
   
   /** 获取照片可用的所有源类型 */
   getAvailableSourceTypes: sourcePathResolver.getAvailableSourceTypes,
+  
+  // ============================================================================
+  // RAW 文件工具
+  // ============================================================================
+  
+  /** RAW 文件扩展名列表 */
+  RAW_EXTENSIONS: rawUtils.RAW_EXTENSIONS,
+  
+  /** 检查是否为 RAW 文件 */
+  isRawFile: rawUtils.isRawFile,
+  
+  /** 获取 RAW 格式信息 */
+  getRawFormatInfo: rawUtils.getRawFormatInfo,
+  
+  /** 检测文件类型 */
+  detectFileType: rawUtils.detectFileType,
+  
+  /** 检查浏览器是否可以直接加载 */
+  isBrowserLoadable: rawUtils.isBrowserLoadable,
+  
+  /** 检查是否需要服务器解码 */
+  requiresServerDecode: rawUtils.requiresServerDecode,
 };

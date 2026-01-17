@@ -169,8 +169,9 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
   };
 
   // 检查各源类型是否可用
+  // 注意：original 可以回退到 negative_rel_path，因此只要有任何源文件就应该显示 original 选项
   const availableSources = {
-    original: !!(img.original_rel_path),
+    original: !!(img.original_rel_path || img.negative_rel_path || img.full_rel_path),
     negative: !!(img.negative_rel_path || img.full_rel_path),
     positive: !!(img.positive_rel_path)
   };

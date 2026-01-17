@@ -12,6 +12,9 @@
 
 'use strict';
 
+// Debug flag - set to true for detailed logging
+const DEBUG_LUT = false;
+
 // ============================================================================
 // 反转状态计算
 // ============================================================================
@@ -137,6 +140,25 @@ function buildCombinedLUT(lut1, lut2) {
   const bData = b ? b.data : null;
   const bInt = b ? (b.intensity ?? 1.0) : 0;
   
+  // 调试日志 - 验证输入 LUT 数据
+  if (DEBUG_LUT) {
+    console.log('[buildCombinedLUT] Input:', {
+      hasLut1: !!a, lut1Size: a?.size, lut1Intensity: a?.intensity,
+      hasLut2: !!b, lut2Size: b?.size, lut2Intensity: b?.intensity,
+      aInt, bInt, total
+    });
+    
+    // 关键调试：打印 aData 中 red 位置的值（验证 LUT 数据本身是否正确）
+    if (aData && size >= 17) {
+      const redIdx = (size - 1) * 3;  // r=size-1, g=0, b=0
+      console.log('[buildCombinedLUT] aData verification:', {
+        'aData[0..8]': [aData[0], aData[1], aData[2], aData[3], aData[4], aData[5], aData[6], aData[7], aData[8]],
+        'aData at red (r=max,g=0,b=0)': [aData[redIdx], aData[redIdx+1], aData[redIdx+2]],
+        'aData length': aData.length
+      });
+    }
+  }
+  
   for (let i = 0, j = 0; i < total; i++, j += 3) {
     // 重建原始归一化 RGB 从索引
     const rIdx = i % size;
@@ -171,6 +193,15 @@ function buildCombinedLUT(lut1, lut2) {
     out[j] = r;
     out[j + 1] = g;
     out[j + 2] = bb;
+  }
+  
+  // 调试：验证输出数据的几个关键点
+  if (DEBUG_LUT) {
+    console.log('[buildCombinedLUT] Output sample:',
+      'black:', out[0].toFixed(3), out[1].toFixed(3), out[2].toFixed(3),
+      'white:', out[(total-1)*3].toFixed(3), out[(total-1)*3+1].toFixed(3), out[(total-1)*3+2].toFixed(3),
+      'mid:', out[Math.floor(total/2)*3].toFixed(3), out[Math.floor(total/2)*3+1].toFixed(3), out[Math.floor(total/2)*3+2].toFixed(3)
+    );
   }
   
   // intensity 设为 1.0，因为强度已经在合并过程中被应用（烘焙）

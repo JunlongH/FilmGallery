@@ -63,7 +63,7 @@ export default function BatchRenderModal({
   const [quality, setQuality] = useState(95);
   
   // LUT 状态
-  const [lutFile, setLutFile] = useState(null);
+  // const [lutFile, setLutFile] = useState(null); // unused
   const [lutFileName, setLutFileName] = useState('');
   const [lutIntensity, setLutIntensity] = useState(1.0);
   
@@ -563,7 +563,7 @@ function RadioGroup({ value, onChange, options }) {
  */
 function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange }) {
   const [luts, setLuts] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // const [loading, setLoading] = useState(false); // unused
   const fileInputRef = React.useRef(null);
   
   // 加载已上传的 LUT 文件列表
@@ -572,7 +572,7 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
   }, []);
   
   const loadLuts = async () => {
-    setLoading(true);
+    // setLoading(true); // unused
     try {
       const res = await fetch(`${API_BASE}/api/luts`);
       if (res.ok) {
@@ -582,7 +582,7 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
     } catch (e) {
       console.error('Failed to load LUTs:', e);
     } finally {
-      setLoading(false);
+      // setLoading(false);
     }
   };
   

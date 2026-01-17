@@ -4,6 +4,42 @@ sharp.cache(false);
 // 使用共享模块的白平衡计算
 const { computeWBGains } = require('../../packages/shared');
 
+// RAW 解码器
+const rawDecoder = require('./raw-decoder');
+
+/**
+ * 获取图像输入源
+ * 如果是 RAW 文件，先解码为 TIFF buffer；否则直接使用文件路径
+ * 
+ * @param {string} inputPath - 输入文件路径
+ * @returns {Promise<{input: string|Buffer, isRaw: boolean}>}
+ */
+async function getImageInput(inputPath) {
+  const isRaw = rawDecoder.isRawFile(inputPath);
+  
+  if (isRaw) {
+    const available = await rawDecoder.isAvailable();
+    if (!available) {
+      console.warn('[FilmLab] RAW decoder not available, Sharp will try to handle directly');
+      return { input: inputPath, isRaw: true };
+    }
+    
+    try {
+      console.log(`[FilmLab] Decoding RAW file: ${inputPath}`);
+      // 解码为 TIFF（无损）以保持最高质量
+      const tiffBuffer = await rawDecoder.decode(inputPath, { outputFormat: 'tiff' });
+      console.log(`[FilmLab] RAW decoded to TIFF buffer: ${(tiffBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+      return { input: tiffBuffer, isRaw: true };
+    } catch (err) {
+      console.error('[FilmLab] RAW decode failed:', err.message);
+      // 回退到让 Sharp 直接处理（可能失败，但给它一个机会）
+      return { input: inputPath, isRaw: true };
+    }
+  }
+  
+  return { input: inputPath, isRaw: false };
+}
+
 // Build a sharp pipeline from params. Options:
 // { rotation, orientation, cropRect: {x,y,w,h} normalized relative to rotated image, maxWidth, toneAndCurvesInJs }
 // Returns a configured sharp instance (not yet written to file)
@@ -24,7 +60,10 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
 
   const { maxWidth = null, cropRect = null, toneAndCurvesInJs = false, skipColorOps = false } = options;
 
-  const base = sharp(inputPath, { failOn: 'none' });
+  // 获取图像输入（支持 RAW 文件自动解码）
+  const { input } = await getImageInput(inputPath);
+
+  const base = sharp(input, { failOn: 'none' });
   const meta = await base.metadata();
   const srcW = meta.width || 0;
   const srcH = meta.height || 0;
@@ -40,7 +79,7 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
   const targetW = Math.max(1, Math.round(rotatedW * scale));
   const targetH = Math.max(1, Math.round(rotatedH * scale));
 
-  let img = sharp(inputPath, { failOn: 'none' });
+  let img = sharp(input, { failOn: 'none' });
 
   if (totalRotation !== 0) img = img.rotate(totalRotation);
 
@@ -99,4 +138,4 @@ async function buildPipeline(inputPath, params = {}, options = {}) {
   return img;
 }
 
-module.exports = { buildPipeline };
+module.exports = { buildPipeline, getImageInput };

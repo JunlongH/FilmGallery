@@ -92,14 +92,30 @@ export async function createRollWithTmp({ fields = {}, tmpFiles = [], coverIndex
 }
 
 // Unified roll creation pipeline: decides multipart vs tmp-flow based on presence of File objects and useTwoStep flag.
-export async function createRollUnified({ fields = {}, files = [], useTwoStep = false, isNegative = false, onProgress } = {}) {
+export async function createRollUnified({ fields = {}, files = [], useTwoStep = false, isNegative = false, uploadType = null, onProgress, isOriginal = false } = {}) {
+  // Determine effective upload type
+  const effectiveUploadType = uploadType || (isNegative ? 'negative' : 'positive');
+  const effectiveIsNegative = effectiveUploadType === 'negative';
+  
+  const augmentedFields = { 
+    ...fields, 
+    isNegative: effectiveIsNegative, 
+    uploadType: effectiveUploadType,
+    isOriginal: !!isOriginal
+  };
+  
   if (useTwoStep) {
     // Upload temp files first
     const uploaded = await uploadTmpFiles(files, p => onProgress && onProgress(p));
-    const tmpFiles = (uploaded.files || []).map(f => ({ tmpName: f.tmpName, isNegative }));
-    return createRollWithTmp({ fields: { ...fields, isNegative }, tmpFiles });
+    const tmpFiles = (uploaded.files || []).map(f => ({ 
+      tmpName: f.tmpName, 
+      isNegative: effectiveIsNegative, 
+      uploadType: effectiveUploadType,
+      isOriginal: !!isOriginal 
+    }));
+    return createRollWithTmp({ fields: augmentedFields, tmpFiles });
   }
-  return createRollMultipart({ fields: { ...fields, isNegative }, files, onProgress });
+  return createRollMultipart({ fields: augmentedFields, files, onProgress });
 }
 
 export async function getRolls(filters = {}) {
@@ -171,19 +187,35 @@ export async function uploadPhotoToRoll(rollId, file, fields = {}) {
 
 // Upload multiple files to an existing roll. This calls `uploadPhotoToRoll` sequentially
 // and returns an array of results. An optional `onProgress` callback receives
-// an object { index, total } before each file upload starts.
-export async function uploadPhotosToRoll({ rollId, files = [], onProgress, isNegative = false }) {
+// an object { index, total, percent, message } before each file upload starts.
+// uploadType: 'positive' | 'negative' | 'original'
+export async function uploadPhotosToRoll({ rollId, files = [], onProgress, isNegative = false, uploadType = null }) {
   const results = [];
   const total = Array.isArray(files) ? files.length : 0;
+  
+  // Determine upload parameters based on uploadType
+  const effectiveUploadType = uploadType || (isNegative ? 'negative' : 'positive');
+  const effectiveIsNegative = effectiveUploadType === 'negative';
+  
   for (let i = 0; i < total; i++) {
     const f = files[i];
-    if (onProgress && typeof onProgress === 'function') onProgress({ index: i + 1, total });
+    if (onProgress && typeof onProgress === 'function') {
+      onProgress({ 
+        index: i + 1, 
+        total, 
+        percent: Math.round(((i + 1) / total) * 100),
+        message: `上传 ${f.name || 'file'}...`
+      });
+    }
     try {
       // reuse single-file upload helper
       // await ensures sequential uploads which is friendlier to some servers
       // and keeps ordering predictable.
       // eslint-disable-next-line no-await-in-loop
-      const res = await uploadPhotoToRoll(rollId, f, { isNegative });
+      const res = await uploadPhotoToRoll(rollId, f, { 
+        isNegative: effectiveIsNegative,
+        uploadType: effectiveUploadType
+      });
       results.push(res);
     } catch (err) {
       results.push({ error: (err && err.message) || String(err) });
@@ -1144,6 +1176,18 @@ export async function cleanupExportHistory(keepCount = 100) {
  */
 export async function listLuts() {
   const resp = await fetch(`${API_BASE}/api/luts`);
+  
+  // 检查响应内容类型
+  const contentType = resp.headers.get('content-type');
+  if (!resp.ok) {
+    if (contentType && contentType.includes('application/json')) {
+      const err = await resp.json();
+      throw new Error(err.error || '获取 LUT 列表失败');
+    } else {
+      throw new Error(`获取 LUT 列表失败: HTTP ${resp.status}`);
+    }
+  }
+  
   return resp.json();
 }
 
@@ -1154,11 +1198,27 @@ export async function listLuts() {
  */
 export async function uploadLut(file) {
   const fd = new FormData();
-  fd.append('file', file);
-  const resp = await fetch(`${API_BASE}/api/luts`, {
+  fd.append('lut', file);  // 字段名必须是 'lut'，与服务端 multer 配置一致
+  const resp = await fetch(`${API_BASE}/api/luts/upload`, {
     method: 'POST',
     body: fd
   });
+  
+  // 检查响应内容类型，避免解析 HTML 错误页面
+  const contentType = resp.headers.get('content-type');
+  if (!resp.ok) {
+    if (contentType && contentType.includes('application/json')) {
+      const err = await resp.json();
+      throw new Error(err.error || '上传失败');
+    } else {
+      throw new Error(`上传失败: HTTP ${resp.status}`);
+    }
+  }
+  
+  if (!contentType || !contentType.includes('application/json')) {
+    throw new Error('服务器返回了非 JSON 响应');
+  }
+  
   return resp.json();
 }
 
@@ -1171,6 +1231,18 @@ export async function deleteLut(name) {
   const resp = await fetch(`${API_BASE}/api/luts/${encodeURIComponent(name)}`, {
     method: 'DELETE'
   });
+  
+  // 检查响应内容类型
+  const contentType = resp.headers.get('content-type');
+  if (!resp.ok) {
+    if (contentType && contentType.includes('application/json')) {
+      const err = await resp.json();
+      throw new Error(err.error || '删除 LUT 失败');
+    } else {
+      throw new Error(`删除 LUT 失败: HTTP ${resp.status}`);
+    }
+  }
+  
   return resp.json();
 }
 
@@ -1181,7 +1253,23 @@ export async function deleteLut(name) {
  */
 export async function loadLutFromLibrary(name) {
   const resp = await fetch(`${API_BASE}/api/luts/${encodeURIComponent(name)}`);
+  
+  if (!resp.ok) {
+    // 尝试获取错误信息
+    const text = await resp.text();
+    if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+      throw new Error(`加载 LUT 失败: HTTP ${resp.status}`);
+    }
+    throw new Error(`加载 LUT 失败: ${text || 'HTTP ' + resp.status}`);
+  }
+  
   const text = await resp.text();
+  
+  // 检查是否是 HTML 错误页面
+  if (text.startsWith('<!DOCTYPE') || text.startsWith('<html')) {
+    throw new Error('服务器返回了 HTML 页面而非 LUT 文件');
+  }
+  
   return parseCubeLUT(text);
 }
 
@@ -1213,3 +1301,233 @@ export function parseCubeLUT(text) {
   
   return { size, data: new Float32Array(data) };
 }
+
+// ============================================================================
+// Edge Detection API
+// ============================================================================
+
+/**
+ * 检测单张照片的边缘
+ * @param {number} photoId - 照片 ID
+ * @param {Object} options - 检测选项
+ * @param {number} [options.sensitivity=50] - 灵敏度 (0-100)
+ * @param {string} [options.filmFormat='auto'] - 底片格式
+ * @param {string} [options.sourceType='original'] - 源类型
+ * @returns {Promise<Object>} 检测结果
+ */
+export async function detectEdges(photoId, { sensitivity = 50, filmFormat = 'auto', sourceType = 'original' } = {}) {
+  const resp = await fetch(`${API_BASE}/api/edge-detection/photos/${photoId}/detect-edges`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sensitivity, filmFormat, sourceType })
+  });
+  return resp.json();
+}
+
+/**
+ * 批量检测边缘
+ * @param {number[]} photoIds - 照片 ID 数组
+ * @param {Object} options - 检测选项
+ * @returns {Promise<Object>} 检测结果
+ */
+export async function detectEdgesBatch(photoIds, { sensitivity = 50, filmFormat = 'auto', sourceType = 'original' } = {}) {
+  const resp = await fetch(`${API_BASE}/api/edge-detection/photos/batch-detect-edges`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ photoIds, sensitivity, filmFormat, sourceType })
+  });
+  return resp.json();
+}
+
+/**
+ * 应用边缘检测结果到照片
+ * @param {number} photoId - 照片 ID
+ * @param {Object} cropRect - 裁剪区域 {x, y, w, h}
+ * @param {number} rotation - 旋转角度
+ * @param {boolean} preserveManualCrop - 是否保留现有手动裁剪
+ * @returns {Promise<Object>} 应用结果
+ */
+export async function applyEdgeDetection(photoId, { cropRect, rotation = 0, preserveManualCrop = true } = {}) {
+  const resp = await fetch(`${API_BASE}/api/edge-detection/photos/${photoId}/apply-edge-detection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cropRect, rotation, preserveManualCrop })
+  });
+  return resp.json();
+}
+
+/**
+ * 将边缘检测应用到整卷
+ * @param {number} rollId - 卷 ID
+ * @param {Object} options - 检测选项
+ * @returns {Promise<Object>} 应用结果
+ */
+export async function applyEdgeDetectionToRoll(rollId, { sensitivity = 50, filmFormat = 'auto', sourceType = 'original', skipExistingCrop = true } = {}) {
+  const resp = await fetch(`${API_BASE}/api/edge-detection/rolls/${rollId}/apply-edge-detection-to-all`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sensitivity, filmFormat, sourceType, skipExistingCrop })
+  });
+  return resp.json();
+}
+
+// ============================================================================
+// RAW Decoding API
+// ============================================================================
+
+/**
+ * 获取 RAW 解码器状态
+ * @returns {Promise<Object>} 解码器状态
+ */
+export async function getRawDecoderStatus() {
+  const resp = await fetch(`${API_BASE}/api/raw/status`);
+  return resp.json();
+}
+
+/**
+ * 获取支持的 RAW 格式列表
+ * @returns {Promise<Object>} 支持的格式
+ */
+export async function getSupportedRawFormats() {
+  const resp = await fetch(`${API_BASE}/api/raw/supported-formats`);
+  return resp.json();
+}
+
+/**
+ * 解码 RAW 文件
+ * @param {File} file - RAW 文件
+ * @param {Object} options - 解码选项
+ * @param {Function} onProgress - 进度回调
+ * @returns {Promise<Object>} 解码结果
+ */
+export async function decodeRawFile(file, options = {}, onProgress) {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  Object.entries(options).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      formData.append(key, String(value));
+    }
+  });
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}/api/raw/decode`);
+    
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch (e) {
+          resolve(xhr.responseText);
+        }
+      } else {
+        try {
+          const err = JSON.parse(xhr.responseText);
+          reject(new Error(err.error || 'Decode failed'));
+        } catch {
+          reject(new Error(xhr.statusText || 'Decode failed'));
+        }
+      }
+    };
+    
+    xhr.onerror = () => reject(new Error('Network error'));
+    
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          onProgress(Math.round(ev.loaded / ev.total * 100));
+        }
+      };
+    }
+    
+    xhr.send(formData);
+  });
+}
+
+/**
+ * 快速预览 RAW 文件
+ * @param {File} file - RAW 文件
+ * @returns {Promise<Object>} 预览结果
+ */
+export async function previewRawFile(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const resp = await fetch(`${API_BASE}/api/raw/preview`, {
+    method: 'POST',
+    body: formData
+  });
+  return resp.json();
+}
+
+/**
+ * 提取 RAW 文件元数据
+ * @param {File} file - RAW 文件
+ * @returns {Promise<Object>} 元数据
+ */
+export async function extractRawMetadata(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const resp = await fetch(`${API_BASE}/api/raw/metadata`, {
+    method: 'POST',
+    body: formData
+  });
+  return resp.json();
+}
+
+/**
+ * 导入 RAW 文件到相册
+ * @param {File} file - RAW 文件
+ * @param {number} rollId - 目标 Roll ID
+ * @param {Object} options - 导入选项
+ * @param {Function} onProgress - 进度回调
+ * @returns {Promise<Object>} 导入结果
+ */
+export async function importRawFile(file, rollId, options = {}, onProgress) {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('rollId', String(rollId));
+  
+  Object.entries(options).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      formData.append(key, String(value));
+    }
+  });
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}/api/raw/import`);
+    
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText));
+        } catch (e) {
+          resolve(xhr.responseText);
+        }
+      } else {
+        try {
+          const err = JSON.parse(xhr.responseText);
+          reject(new Error(err.error || 'Import failed'));
+        } catch {
+          reject(new Error(xhr.statusText || 'Import failed'));
+        }
+      }
+    };
+    
+    xhr.onerror = () => reject(new Error('Network error'));
+    
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          onProgress(Math.round(ev.loaded / ev.total * 100));
+        }
+      };
+    }
+    
+    xhr.send(formData);
+  });
+}
+

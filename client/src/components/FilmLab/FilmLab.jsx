@@ -17,6 +17,9 @@ import {
   DEFAULT_SPLIT_TONE_PARAMS,
   getEffectiveInverted,
   buildCombinedLUT,
+  // RAW 文件工具
+  isRawFile,
+  requiresServerDecode,
   // packLUT3DForWebGL - used in FilmLabWebGL.js, not here
 } from '@filmgallery/shared';
 
@@ -471,18 +474,20 @@ export default function FilmLab({
   useEffect(() => {
     setImage(null);
     
-    // Check if URL is likely a TIFF (unsupported by browser Image)
-    // We check extension or if the URL implies a TIFF source
-    const isTiff = imageUrl.toLowerCase().match(/\.tiff?$/) || imageUrl.toLowerCase().includes('format=tiff');
+    // 使用共享工具函数检测是否需要服务器解码（RAW/TIFF 文件浏览器无法直接加载）
+    const needsServerDecode = requiresServerDecode(imageUrl);
+    const isRawImage = isRawFile(imageUrl);
     
-    if (isTiff && photoId) {
-        // Load proxy via API
+    if (needsServerDecode && photoId) {
+        // Load proxy via API - server will decode RAW/TIFF to JPEG
         let active = true;
         (async () => {
             try {
                 // Request a "flat" preview (no params) to serve as the base image
                 // We use a reasonably large size for the editor base
                 // 传入 sourceType 以确保加载正确的源文件
+                // 对于 RAW 文件，服务器会自动解码为 TIFF 再处理
+                console.log(`[FilmLab] Loading ${isRawImage ? 'RAW' : 'TIFF'} file via API proxy...`);
                 const res = await filmlabPreview({ photoId, params: {}, maxWidth: 2000, sourceType });
                 if (active && res.ok) {
                     const url = URL.createObjectURL(res.blob);
@@ -492,10 +497,10 @@ export default function FilmLab({
                     // Proxy is stripped of EXIF, so no browser auto-rotation to compensate
                     setRotationOffset(0);
                 } else if (active) {
-                    console.warn('Failed to load TIFF proxy', res.error);
+                    console.warn(`Failed to load ${isRawImage ? 'RAW' : 'TIFF'} proxy`, res.error);
                 }
             } catch (e) {
-                if (active) console.error('Failed to load TIFF proxy', e);
+                if (active) console.error(`Failed to load ${isRawImage ? 'RAW' : 'TIFF'} proxy`, e);
             }
         })();
         return () => { active = false; };
@@ -2043,6 +2048,7 @@ export default function FilmLab({
       )}
 
       <FilmLabControls
+        photoId={photoId}
         sourceType={sourceType}
         inverted={inverted} setInverted={setInverted}
         useGPU={useGPU} setUseGPU={setUseGPU}
@@ -2063,6 +2069,7 @@ export default function FilmLab({
         ratioMode={ratioMode} setRatioMode={setRatioMode}
         ratioSwap={ratioSwap} setRatioSwap={setRatioSwap}
         rotation={rotation} setRotation={setRotation}
+        cropRect={cropRect} setCropRect={setCropRect}
         onRotateStart={() => { committedRotationRef.current = rotation; setIsRotating(true); }}
         onRotateEnd={() => { setIsRotating(false); }}
         setOrientation={setOrientation}

@@ -7,6 +7,7 @@ import '../styles/forms.css';
 import FilmSelector from './FilmSelector';
 import ModalDialog from './ModalDialog';
 import EquipmentSelector from './EquipmentSelector';
+import { useFilePreviews } from '../hooks/useFilePreviews';
 
 export default function NewRollForm({ onCreated }) {
   const location = useLocation();
@@ -20,9 +21,12 @@ export default function NewRollForm({ onCreated }) {
   const [filmId, setFilmId] = useState(null);
   const [exposures, setExposures] = useState(''); //数量
   const [notes, setNotes] = useState('');
-  const [isNegative, setIsNegative] = useState(false);
+  const [uploadType, setUploadType] = useState('positive'); // 'positive' | 'negative'
+  const [isOriginalUpload, setIsOriginalUpload] = useState(true); // Default to save as original
+  const isNegative = uploadType === 'negative'; // 兼容旧逻辑
   const [files, setFiles] = useState([]); // File[]
-  const [previews, setPreviews] = useState([]); // { url, tmpName? }
+  // const [previews, setPreviews] = useState([]); // Replaced by useFilePreviews
+  const previews = useFilePreviews(files);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [films, setFilms] = useState([]);
   const [useTwoStep, setUseTwoStep] = useState(false); // default simplified pipeline
@@ -150,12 +154,7 @@ export default function NewRollForm({ onCreated }) {
     setFileDates(dateMap);
   };
 
-  // create object URL previews
-  useEffect(() => {
-    const urls = files.map(f => ({ url: URL.createObjectURL(f), name: f.name }));
-    setPreviews(urls);
-    return () => urls.forEach(u => URL.revokeObjectURL(u.url));
-  }, [files]);
+  /* Preview generation is now handled by useFilePreviews hook */
 
   function onFileChange(e) {
     const list = Array.from(e.target.files || []);
@@ -218,11 +217,13 @@ export default function NewRollForm({ onCreated }) {
         files,
         useTwoStep,
         isNegative,
+        uploadType,
+        isOriginal: isOriginalUpload,
         onProgress: p => setUploadProgress(p)
       });
       setUploadProgress(null);
       if (res && res.ok) {
-        setFiles([]); setPreviews([]);
+        setFiles([]); 
         try {
           await updateRoll(res.roll.id, { locations: rollLocations.map(l => l.location_id), ...develop });
           
@@ -472,29 +473,78 @@ export default function NewRollForm({ onCreated }) {
       <section style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--fg-text)', paddingBottom: 10, borderBottom: '2px solid var(--fg-border)' }}>Photos</h3>
         
-        {/* Options row */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13 }}>
-          <label style={{ display:'flex', alignItems:'center', gap:6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input 
-              type="checkbox" 
-              checked={isNegative} 
-              onChange={e => setIsNegative(e.target.checked)} 
-            />
-            <span>Import as Negative</span>
-          </label>
-          <label style={{ display:'flex', alignItems:'center', gap:6, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-            <input type="checkbox" checked={useTwoStep} onChange={e=>setUseTwoStep(e.target.checked)} />
-            <span>Two-step upload</span>
-          </label>
-          <div style={{ fontSize: 12, color: 'var(--fg-muted)', flexBasis: '100%' }}>
-            Single-step is recommended for most cases.
+        {/* Upload Configuration */}
+        <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 16, alignItems: 'start', fontSize: 13, background: '#f8fafc', padding: 16, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+          
+          {/* Label */}
+          <span style={{ fontWeight: 600, color: '#334155', paddingTop: 2 }}>Upload Type:</span>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* Type Radios */}
+            <div style={{ display: 'flex', gap: 24 }}>
+              <label style={{ display:'flex', alignItems:'center', gap:6, cursor: 'pointer' }}>
+                <input 
+                  type="radio" 
+                  name="uploadType"
+                  value="positive"
+                  checked={uploadType === 'positive'} 
+                  onChange={e => setUploadType(e.target.value)} 
+                  style={{ accentColor: '#0ea5e9', width: 16, height: 16 }}
+                />
+                <span style={{ color: '#0f172a' }}>正片 (Positive)</span>
+              </label>
+              <label style={{ display:'flex', alignItems:'center', gap:6, cursor: 'pointer' }}>
+                <input 
+                  type="radio" 
+                  name="uploadType"
+                  value="negative"
+                  checked={uploadType === 'negative'} 
+                  onChange={e => setUploadType(e.target.value)} 
+                  style={{ accentColor: '#0ea5e9', width: 16, height: 16 }}
+                />
+                <span style={{ color: '#0f172a' }}>负片 (Negative)</span>
+              </label>
+            </div>
+
+            {/* Checkboxes Row */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, paddingLeft: 2 }}>
+              <label style={{ display:'flex', alignItems:'center', gap:8, cursor: 'pointer', userSelect:'none' }}>
+                <input 
+                  type="checkbox"
+                  checked={isOriginalUpload}
+                  onChange={e => setIsOriginalUpload(e.target.checked)}
+                  style={{ width: 15, height: 15, accentColor: '#0ea5e9' }}
+                />
+                <span style={{ color: '#334155' }}>上传原始底片 (Upload Original)</span>
+              </label>
+              
+              <label style={{ display:'flex', alignItems:'center', gap:8, cursor: 'pointer', userSelect:'none' }}>
+                <input 
+                  type="checkbox" 
+                  checked={useTwoStep} 
+                  onChange={e=>setUseTwoStep(e.target.checked)} 
+                  style={{ width: 15, height: 15, accentColor: '#0ea5e9' }}
+                />
+                <span style={{ color: '#334155' }}>Two-step upload</span>
+              </label>
+            </div>
+
+            {/* Hint Text */}
+             <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+                {isOriginalUpload 
+                  ? '支持 RAW 格式 (CR2, NEF, ARW, DNG 等) 及高保真 TIFF/JPG。原始底片将被存档用于 FilmLab 后期处理。'
+                  : '仅支持普通图像格式。不保存原始底片存档。'}
+             </div>
           </div>
         </div>
 
         <div className="fg-field">
           <input 
             type="file" 
-            accept="image/*" 
+            accept={isOriginalUpload
+              ? 'image/*,.dng,.cr2,.cr3,.arw,.nef,.nrw,.orf,.raf,.rw2,.pef,.srw,.x3f,.3fr,.iiq,.raw,.rwl,.dcr,.kdc,.mrw,.erf,.mef,.mos,.srf,.sr2'
+              : 'image/*'
+            } 
             multiple 
             onChange={onFileChange}
             style={{ 

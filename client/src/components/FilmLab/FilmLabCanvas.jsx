@@ -354,6 +354,8 @@ export default function FilmLabCanvas({
             objectFit: 'contain',
             cursor: isPicking ? 'crosshair' : 'default',
             opacity: compareMode === 'original' ? 0 : 1,
+            filter: 'none',
+            mixBlendMode: 'normal'
           }} 
         />
 

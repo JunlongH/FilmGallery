@@ -1,0 +1,637 @@
+/**
+ * RAW 导入向导样式
+ */
+
+/* 遮罩层 */
+.raw-import-wizard-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* 向导容器 */
+.raw-import-wizard {
+  background: #1e1e1e;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 800px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+/* 标题栏 */
+.raw-import-wizard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #333;
+}
+
+.raw-import-wizard-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.raw-import-wizard-header .close-btn {
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.raw-import-wizard-header .close-btn:hover {
+  color: #fff;
+}
+
+/* 步骤指示器 */
+.raw-import-steps {
+  display: flex;
+  padding: 16px 20px;
+  border-bottom: 1px solid #333;
+  gap: 8px;
+}
+
+.raw-import-steps .step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  opacity: 0.5;
+}
+
+.raw-import-steps .step.active {
+  opacity: 1;
+}
+
+.raw-import-steps .step.done {
+  opacity: 1;
+}
+
+.raw-import-steps .step-number {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #888;
+}
+
+.raw-import-steps .step.active .step-number {
+  background: #0078d4;
+  color: #fff;
+}
+
+.raw-import-steps .step.done .step-number {
+  background: #4caf50;
+  color: #fff;
+}
+
+.raw-import-steps .step-label {
+  font-size: 13px;
+  color: #888;
+}
+
+.raw-import-steps .step.active .step-label {
+  color: #fff;
+}
+
+/* 错误提示 */
+.raw-import-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: #ff5252;
+  color: #fff;
+}
+
+.raw-import-error button {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+/* 警告提示 */
+.raw-import-warning {
+  padding: 16px 20px;
+  background: #ff9800;
+  color: #000;
+}
+
+.raw-import-warning h4 {
+  margin: 0 0 8px 0;
+}
+
+.raw-import-warning p {
+  margin: 4px 0;
+  font-size: 13px;
+}
+
+.raw-import-warning code {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* 内容区域 */
+.raw-import-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+/* 步骤 1: 拖拽区域 */
+.drop-zone {
+  border: 2px dashed #444;
+  border-radius: 12px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.drop-zone:hover,
+.drop-zone.drag-over {
+  border-color: #0078d4;
+  background: rgba(0, 120, 212, 0.1);
+}
+
+.drop-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.drop-zone .drop-icon {
+  font-size: 48px;
+}
+
+.drop-zone p {
+  margin: 0;
+  color: #888;
+}
+
+.drop-zone .or {
+  font-size: 12px;
+  color: #666;
+}
+
+.drop-zone .select-btn {
+  background: #0078d4;
+  color: #fff;
+  border: none;
+  padding: 8px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.drop-zone .select-btn:hover {
+  background: #106ebe;
+}
+
+.drop-zone .formats {
+  font-size: 12px;
+  color: #666;
+  margin-top: 8px;
+}
+
+/* 文件列表 */
+.file-list {
+  margin-top: 20px;
+}
+
+.file-list h4 {
+  margin: 0 0 12px 0;
+  color: #888;
+  font-size: 13px;
+  font-weight: normal;
+}
+
+.file-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: #2a2a2a;
+  border-radius: 6px;
+}
+
+.file-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.file-name {
+  font-size: 14px;
+  color: #fff;
+}
+
+.file-size {
+  font-size: 12px;
+  color: #888;
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.file-actions button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.file-actions button:hover {
+  opacity: 1;
+}
+
+.file-actions .remove-btn:hover {
+  color: #ff5252;
+}
+
+/* 预览面板 */
+.preview-panel {
+  margin-top: 20px;
+  padding: 16px;
+  background: #2a2a2a;
+  border-radius: 8px;
+}
+
+.preview-panel.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.preview-panel h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #fff;
+}
+
+.preview-image {
+  max-height: 300px;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.preview-image img {
+  max-width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+}
+
+.preview-metadata {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.metadata-item {
+  display: flex;
+  gap: 6px;
+}
+
+.metadata-item .label {
+  color: #888;
+  font-size: 13px;
+}
+
+.metadata-item .value {
+  color: #fff;
+  font-size: 13px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #333;
+  border-top-color: #0078d4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 步骤 2: 配置选项 */
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.option-group label {
+  font-size: 13px;
+  color: #888;
+}
+
+.option-group select {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #fff;
+  font-size: 14px;
+}
+
+.option-group select:focus {
+  outline: none;
+  border-color: #0078d4;
+}
+
+.option-group.checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.option-group.checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  cursor: pointer;
+}
+
+.option-group.checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.import-target {
+  margin-top: 24px;
+  padding: 12px 16px;
+  background: #2a2a2a;
+  border-radius: 6px;
+  display: flex;
+  gap: 8px;
+}
+
+.import-target .label {
+  color: #888;
+}
+
+.import-target .value {
+  color: #fff;
+  font-weight: 500;
+}
+
+.files-summary {
+  margin-top: 16px;
+  display: flex;
+  justify-content: space-between;
+  color: #888;
+  font-size: 13px;
+}
+
+/* 步骤 3: 导入进度 */
+.import-progress {
+  margin-bottom: 24px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  color: #888;
+  font-size: 13px;
+}
+
+.progress-bar-container {
+  height: 8px;
+  background: #333;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar {
+  height: 100%;
+  background: #0078d4;
+  transition: width 0.3s;
+}
+
+.progress-percent {
+  margin-top: 8px;
+  text-align: center;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.import-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.import-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #2a2a2a;
+  border-radius: 6px;
+}
+
+.import-file-item .status-icon {
+  font-size: 16px;
+}
+
+.import-file-item .file-name {
+  flex: 1;
+  color: #fff;
+  font-size: 14px;
+}
+
+.import-file-item .file-progress {
+  color: #0078d4;
+  font-size: 13px;
+}
+
+.import-file-item .file-error {
+  color: #ff5252;
+  font-size: 12px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.import-file-item.done {
+  opacity: 0.7;
+}
+
+.import-file-item.error {
+  border-left: 3px solid #ff5252;
+}
+
+/* 步骤 4: 完成 */
+.import-complete {
+  text-align: center;
+  padding: 20px 0;
+}
+
+.import-complete .complete-icon {
+  font-size: 64px;
+}
+
+.import-complete h3 {
+  margin: 16px 0;
+  color: #fff;
+}
+
+.import-summary {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin: 24px 0;
+}
+
+.summary-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.summary-item .count {
+  font-size: 36px;
+  font-weight: 600;
+}
+
+.summary-item.success .count {
+  color: #4caf50;
+}
+
+.summary-item.error .count {
+  color: #ff5252;
+}
+
+.summary-item .label {
+  color: #888;
+  font-size: 13px;
+}
+
+.failed-files {
+  margin-top: 24px;
+  text-align: left;
+  background: #2a2a2a;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.failed-files h4 {
+  margin: 0 0 12px 0;
+  color: #ff5252;
+  font-size: 14px;
+}
+
+.failed-file {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid #333;
+}
+
+.failed-file:last-child {
+  border-bottom: none;
+}
+
+.failed-file .file-name {
+  color: #fff;
+}
+
+.failed-file .error-msg {
+  color: #888;
+  font-size: 12px;
+}
+
+/* 底部按钮 */
+.raw-import-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #333;
+}
+
+.raw-import-footer .btn-secondary {
+  background: #333;
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.raw-import-footer .btn-secondary:hover:not(:disabled) {
+  background: #444;
+}
+
+.raw-import-footer .btn-primary {
+  background: #0078d4;
+  color: #fff;
+  border: none;
+  padding: 10px 24px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.raw-import-footer .btn-primary:hover:not(:disabled) {
+  background: #106ebe;
+}
+
+.raw-import-footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

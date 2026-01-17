@@ -8,7 +8,7 @@ import { packLUT3DForWebGL } from '@filmgallery/shared';
 // Debug flag - set to true during development for detailed logging
 const DEBUG_WEBGL = false;
 const DEBUG_LUT = false;
-const DEBUG_LUT_OUTPUT = false;
+// const DEBUG_LUT_OUTPUT = false; // unused
 
 // Helper: Check if HSL params are default (all zeros)
 function isDefaultHSLParams(hslParams) {

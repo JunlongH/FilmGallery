@@ -69,7 +69,7 @@ export default function ImportPositiveModal({
   const [conflictResolution, setConflictResolution] = useState(CONFLICT_RESOLUTION.OVERWRITE);
   
   // 导入状态
-  const [currentJobId, setCurrentJobId] = useState(null);
+  // const [currentJobId, setCurrentJobId] = useState(null); // unused
   const [progress, setProgress] = useState({ completed: 0, total: 0, status: '' });
   const [importResult, setImportResult] = useState(null);
   
@@ -89,7 +89,7 @@ export default function ImportPositiveModal({
       setUnmatchedPhotos([]);
       setSelectedFileIndex(null);
       setConflictResolution(CONFLICT_RESOLUTION.OVERWRITE);
-      setCurrentJobId(null);
+      // setCurrentJobId(null);
       setProgress({ completed: 0, total: 0, status: '' });
       setImportResult(null);
       setError(null);
@@ -228,7 +228,7 @@ export default function ImportPositiveModal({
       const result = await executeImport(rollId, matches, conflictResolution);
       
       if (result.jobId) {
-        setCurrentJobId(result.jobId);
+        // setCurrentJobId(result.jobId);
         setProgress({ completed: 0, total: result.total, status: 'processing' });
         
         // 轮询进度

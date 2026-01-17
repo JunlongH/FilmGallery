@@ -151,6 +151,8 @@ const mountRoutes = () => {
   app.use('/api/export-history', require('./routes/export-history')); // Export history
   app.use('/api/import', require('./routes/import')); // External positive import
   app.use('/api/luts', require('./routes/luts')); // LUT file management
+  app.use('/api/edge-detection', require('./routes/edge-detection')); // Edge detection for auto-crop
+  app.use('/api/raw', require('./routes/raw')); // RAW file decoding
   app.get('/api/_profiler', (req, res) => res.json(getProfilerStats()));
   app.get('/api/_prepared-statements', (req, res) => res.json(PreparedStmt.getStats()));
 };

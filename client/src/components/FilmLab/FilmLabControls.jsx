@@ -4,6 +4,7 @@ import ToneCurveEditor from './ToneCurveEditor';
 import HSLPanel from './HSLPanel';
 import SplitToningPanel from './SplitToningPanel';
 import LutSelectorModal from './LutSelectorModal';
+import AutoCropButton from './AutoCropButton';
 import { createFilmCurveProfile, updateFilmCurveProfile, deleteFilmCurveProfile } from '../../api';
 
 // Film Curve Profile Selector Component
@@ -247,6 +248,7 @@ function FilmCurveProfileSelector({
 }
 
 export default function FilmLabControls({
+  photoId,  // 照片 ID，用于自动边缘检测
   sourceType = 'original', // 源类型: 'original' | 'negative' | 'positive'
   inverted, setInverted,
   useGPU, setUseGPU,
@@ -267,6 +269,8 @@ export default function FilmLabControls({
   ratioMode, setRatioMode,
   ratioSwap, setRatioSwap,
   rotation, setRotation,
+  cropRect, setCropRect,  // 用于自动边缘检测
+  onAutoEdgeDetection,    // 自动边缘检测回调
   onRotateStart,
   onRotateEnd,
   setOrientation,
@@ -341,9 +345,9 @@ export default function FilmLabControls({
   
   // 源类型标签配置
   const sourceLabels = {
-    original: { icon: '🎞️', label: '原始', color: '#4caf50' },
-    negative: { icon: '📷', label: '负片', color: '#2196f3' },
-    positive: { icon: '✨', label: '正片', color: '#ff9800' }
+    original: {label: 'ORIG', color: '#4caf50' },
+    negative: { label: 'NEG', color: '#2196f3' },
+    positive: { label: 'POS', color: '#ff9800' }
   };
   const currentSource = sourceLabels[sourceType] || sourceLabels.original;
   
@@ -587,6 +591,33 @@ export default function FilmLabControls({
          
          {isCropping && (
            <div style={{ marginBottom: 12, background: '#252525', padding: 8, borderRadius: 4 }}>
+             {/* 自动边缘检测按钮 */}
+             <AutoCropButton
+               photoId={photoId}
+               sourceType={sourceType}
+               cropRect={cropRect}
+               rotation={rotation}
+               pushToHistory={pushToHistory}
+               onDetectionResult={(result) => {
+                 console.log('📐 Received detection result in FilmLabControls:', result);
+                 // 应用检测结果到裁剪区域
+                 if (result && result.cropRect) {
+                   console.log('🎯 Updating cropRect from', cropRect, 'to', result.cropRect);
+                   setCropRect(result.cropRect);
+                 }
+                 // 应用旋转角度
+                 if (result && Math.abs(result.rotation) > 0.1) {
+                   console.log('🔄 Applying rotation:', result.rotation);
+                   setRotation(prev => prev + result.rotation);
+                 }
+                 // 回调父组件
+                 if (onAutoEdgeDetection) {
+                   onAutoEdgeDetection(result);
+                 }
+               }}
+               disabled={!photoId}
+             />
+             
              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom: 8 }}>
                <label className="iv-control-label" style={{ fontSize: 12, color: '#eee' }}>Aspect</label>
                <select value={ratioMode} onChange={(e)=>setRatioMode(e.target.value)} style={{ background:'#333', color:'#eee', border:'1px solid #444', fontSize:12, borderRadius:4, padding:'4px 6px' }}>

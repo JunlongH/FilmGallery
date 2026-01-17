@@ -1,0 +1,314 @@
+/**
+ * Edge Detection Utilities
+ * 
+ * 边缘检测基础工具函数
+ * 
+ * @module packages/shared/edgeDetection/utils
+ */
+
+/**
+ * 将图像数据转换为灰度
+ * 
+ * @param {Uint8Array|Uint8ClampedArray} data - 图像像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} channels - 通道数 (3=RGB, 4=RGBA)
+ * @returns {Float32Array} 灰度图像数据 (0-255)
+ */
+function toGrayscale(data, width, height, channels = 4) {
+  const size = width * height;
+  const gray = new Float32Array(size);
+  
+  for (let i = 0; i < size; i++) {
+    const idx = i * channels;
+    // 使用 ITU-R BT.601 标准加权
+    const r = data[idx];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+  
+  return gray;
+}
+
+/**
+ * 1D 高斯核
+ * 
+ * @param {number} sigma - 标准差
+ * @param {number} size - 核大小 (奇数)
+ * @returns {Float32Array} 归一化高斯核
+ */
+function createGaussianKernel(sigma, size = 0) {
+  if (size === 0) {
+    // 自动计算核大小 (3σ 规则)
+    size = Math.ceil(sigma * 3) * 2 + 1;
+  }
+  
+  // 确保是奇数
+  if (size % 2 === 0) size++;
+  
+  const kernel = new Float32Array(size);
+  const half = Math.floor(size / 2);
+  const sigma2 = 2 * sigma * sigma;
+  let sum = 0;
+  
+  for (let i = 0; i < size; i++) {
+    const x = i - half;
+    kernel[i] = Math.exp(-(x * x) / sigma2);
+    sum += kernel[i];
+  }
+  
+  // 归一化
+  for (let i = 0; i < size; i++) {
+    kernel[i] /= sum;
+  }
+  
+  return kernel;
+}
+
+/**
+ * 高斯模糊 (可分离卷积)
+ * 
+ * @param {Float32Array} data - 灰度图像数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} sigma - 高斯标准差
+ * @returns {Float32Array} 模糊后的图像
+ */
+function gaussianBlur(data, width, height, sigma = 1.4) {
+  const kernel = createGaussianKernel(sigma);
+  const half = Math.floor(kernel.length / 2);
+  const temp = new Float32Array(width * height);
+  const result = new Float32Array(width * height);
+  
+  // 水平方向卷积
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let weightSum = 0;
+      
+      for (let k = -half; k <= half; k++) {
+        const nx = x + k;
+        if (nx >= 0 && nx < width) {
+          const weight = kernel[k + half];
+          sum += data[y * width + nx] * weight;
+          weightSum += weight;
+        }
+      }
+      
+      temp[y * width + x] = sum / weightSum;
+    }
+  }
+  
+  // 垂直方向卷积
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let weightSum = 0;
+      
+      for (let k = -half; k <= half; k++) {
+        const ny = y + k;
+        if (ny >= 0 && ny < height) {
+          const weight = kernel[k + half];
+          sum += temp[ny * width + x] * weight;
+          weightSum += weight;
+        }
+      }
+      
+      result[y * width + x] = sum / weightSum;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * 通用 3x3 卷积
+ * 
+ * @param {Float32Array} data - 灰度图像数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number[]} kernel - 3x3 卷积核 (9 元素数组)
+ * @returns {Float32Array} 卷积结果
+ */
+function convolve3x3(data, width, height, kernel) {
+  const result = new Float32Array(width * height);
+  
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      let sum = 0;
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const idx = (y + ky) * width + (x + kx);
+          const kidx = (ky + 1) * 3 + (kx + 1);
+          sum += data[idx] * kernel[kidx];
+        }
+      }
+      result[y * width + x] = sum;
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * 将像素坐标的矩形归一化为 0-1 范围
+ * 
+ * @param {Object} rect - 像素坐标矩形 {x, y, w, h} 或 {x, y, width, height}
+ * @param {number} imageWidth - 图像宽度
+ * @param {number} imageHeight - 图像高度
+ * @returns {Object} 归一化矩形 {x, y, w, h}
+ */
+function normalizeRect(rect, imageWidth, imageHeight) {
+  const w = rect.w !== undefined ? rect.w : rect.width;
+  const h = rect.h !== undefined ? rect.h : rect.height;
+  
+  return {
+    x: Math.max(0, Math.min(1, rect.x / imageWidth)),
+    y: Math.max(0, Math.min(1, rect.y / imageHeight)),
+    w: Math.max(0, Math.min(1, w / imageWidth)),
+    h: Math.max(0, Math.min(1, h / imageHeight))
+  };
+}
+
+/**
+ * 将归一化矩形转换为像素坐标
+ * 
+ * @param {Object} rect - 归一化矩形 {x, y, w, h}
+ * @param {number} imageWidth - 图像宽度
+ * @param {number} imageHeight - 图像高度
+ * @returns {Object} 像素坐标矩形 {x, y, w, h}
+ */
+function denormalizeRect(rect, imageWidth, imageHeight) {
+  return {
+    x: Math.round(rect.x * imageWidth),
+    y: Math.round(rect.y * imageHeight),
+    w: Math.round(rect.w * imageWidth),
+    h: Math.round(rect.h * imageHeight)
+  };
+}
+
+/**
+ * 计算两个矩形的 IoU (Intersection over Union)
+ * 
+ * @param {Object} rect1 - 矩形 1 {x, y, w, h}
+ * @param {Object} rect2 - 矩形 2 {x, y, w, h}
+ * @returns {number} IoU 值 (0-1)
+ */
+function calculateIoU(rect1, rect2) {
+  const x1 = Math.max(rect1.x, rect2.x);
+  const y1 = Math.max(rect1.y, rect2.y);
+  const x2 = Math.min(rect1.x + rect1.w, rect2.x + rect2.w);
+  const y2 = Math.min(rect1.y + rect1.h, rect2.y + rect2.h);
+  
+  if (x2 <= x1 || y2 <= y1) return 0;
+  
+  const intersection = (x2 - x1) * (y2 - y1);
+  const area1 = rect1.w * rect1.h;
+  const area2 = rect2.w * rect2.h;
+  const union = area1 + area2 - intersection;
+  
+  return union > 0 ? intersection / union : 0;
+}
+
+/**
+ * 计算两条直线的交点
+ * 
+ * @param {Object} line1 - 直线 1 {rho, theta} (极坐标)
+ * @param {Object} line2 - 直线 2 {rho, theta} (极坐标)
+ * @returns {Object|null} 交点 {x, y} 或 null (平行)
+ */
+function lineIntersection(line1, line2) {
+  const cos1 = Math.cos(line1.theta);
+  const sin1 = Math.sin(line1.theta);
+  const cos2 = Math.cos(line2.theta);
+  const sin2 = Math.sin(line2.theta);
+  
+  const det = cos1 * sin2 - sin1 * cos2;
+  
+  if (Math.abs(det) < 1e-10) {
+    // 直线平行
+    return null;
+  }
+  
+  const x = (line1.rho * sin2 - line2.rho * sin1) / det;
+  const y = (line2.rho * cos1 - line1.rho * cos2) / det;
+  
+  return { x, y };
+}
+
+/**
+ * 计算两个角度之间的差值 (考虑周期性)
+ * 
+ * @param {number} angle1 - 角度 1 (弧度)
+ * @param {number} angle2 - 角度 2 (弧度)
+ * @returns {number} 角度差 (弧度, 0 到 π)
+ */
+function angleDifference(angle1, angle2) {
+  let diff = Math.abs(angle1 - angle2);
+  if (diff > Math.PI) {
+    diff = 2 * Math.PI - diff;
+  }
+  return diff;
+}
+
+/**
+ * 判断两条直线是否近似垂直
+ * 
+ * @param {Object} line1 - 直线 1 {theta}
+ * @param {Object} line2 - 直线 2 {theta}
+ * @param {number} tolerance - 容差 (度)
+ * @returns {boolean}
+ */
+function arePerpendicular(line1, line2, tolerance = 15) {
+  const diff = angleDifference(line1.theta, line2.theta);
+  const perpAngle = Math.PI / 2;
+  const tolRad = tolerance * Math.PI / 180;
+  
+  return Math.abs(diff - perpAngle) < tolRad;
+}
+
+/**
+ * 判断两条直线是否近似平行
+ * 
+ * @param {Object} line1 - 直线 1 {theta}
+ * @param {Object} line2 - 直线 2 {theta}
+ * @param {number} tolerance - 容差 (度)
+ * @returns {boolean}
+ */
+function areParallel(line1, line2, tolerance = 10) {
+  const diff = angleDifference(line1.theta, line2.theta);
+  const tolRad = tolerance * Math.PI / 180;
+  
+  return diff < tolRad || Math.abs(diff - Math.PI) < tolRad;
+}
+
+/**
+ * 计算点到直线的距离
+ * 
+ * @param {Object} point - 点 {x, y}
+ * @param {Object} line - 直线 {rho, theta}
+ * @returns {number} 距离
+ */
+function pointToLineDistance(point, line) {
+  const { x, y } = point;
+  const { rho, theta } = line;
+  
+  // 点到直线 x*cos(θ) + y*sin(θ) = ρ 的距离
+  return Math.abs(x * Math.cos(theta) + y * Math.sin(theta) - rho);
+}
+
+module.exports = {
+  toGrayscale,
+  createGaussianKernel,
+  gaussianBlur,
+  convolve3x3,
+  normalizeRect,
+  denormalizeRect,
+  calculateIoU,
+  lineIntersection,
+  angleDifference,
+  arePerpendicular,
+  areParallel,
+  pointToLineDistance
+};

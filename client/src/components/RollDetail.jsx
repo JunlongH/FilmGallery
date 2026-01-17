@@ -1,7 +1,7 @@
 // src/components/RollDetail.jsx
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRoll, getPhotos, uploadPhotosToRoll, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions } from '../api';
+import { getRoll, getPhotos, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions } from '../api';
 import { useParams } from 'react-router-dom';
 import ImageViewer from './ImageViewer';
 import PhotoItem from './PhotoItem';
@@ -11,8 +11,10 @@ import LocationSelect from './LocationSelect.jsx';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
 import ContactSheetModal from './ContactSheetModal.jsx';
 import EquipmentSelector from './EquipmentSelector';
+import UploadModal from './UploadModal';
 import { BatchRenderModal, BatchDownloadModal } from './BatchExport';
 import { ImportPositiveModal } from './ImportPositive';
+import { RawImportWizard } from './RawImport';
 import '../styles/sidebar.css';
 import '../styles/forms.css';
 import '../styles/roll-detail-card.css';
@@ -39,6 +41,9 @@ export default function RollDetail() {
   const [showBatchRenderModal, setShowBatchRenderModal] = useState(false);
   const [showBatchDownloadModal, setShowBatchDownloadModal] = useState(false);
   const [showImportPositiveModal, setShowImportPositiveModal] = useState(false);
+  const [showRawImportWizard, setShowRawImportWizard] = useState(false);
+  // Replaced inline upload state
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   const showAlert = (title, message) => {
     setDialog({ isOpen: true, type: 'alert', title, message, onConfirm: () => setDialog(prev => ({ ...prev, isOpen: false })) });
@@ -75,13 +80,7 @@ export default function RollDetail() {
 
   // Locations now embedded in roll response (row.locations)
 
-  const uploadMutation = useMutation({
-    mutationFn: uploadPhotosToRoll,
-    onSuccess: () => {
-      queryClient.invalidateQueries(['rollPhotos', id]);
-      queryClient.invalidateQueries(['roll', id]); // Cover might change
-    }
-  });
+  /* uploadMutation removed as it is now handled by UploadModal */
 
   const deletePhotoMutation = useMutation({
     mutationFn: deletePhoto,
@@ -116,26 +115,13 @@ export default function RollDetail() {
 
   const filmName = resolveFilmName(roll);
 
-  const fileInputRef = useRef(null);
-
-  async function onUpload(e) {
-    const fileList = e.target.files;
-    if (!fileList || fileList.length === 0) return;
-    const files = Array.from(fileList);
-    try {
-      await uploadMutation.mutateAsync({
-        rollId: id,
-        files,
-        isNegative: viewMode === 'negative',
-        onProgress: ({ index, total }) => console.debug(`Uploading ${index}/${total}`)
-      });
-    } catch (err) {
-      console.error('Upload failed', err);
-      showAlert('Error', 'Upload failed: ' + (err.message || err));
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  function handleUploadComplete() {
+    queryClient.invalidateQueries(['rollPhotos', id]);
+    queryClient.invalidateQueries(['roll', id]);
   }
+
+  /* Old inline upload logic removed */
+
 
   async function onDeletePhoto(photoId) {
     showConfirm('Delete Photo', 'Delete this photo?', async () => {
@@ -300,7 +286,14 @@ export default function RollDetail() {
         onCancel={dialog.onCancel}
       />
       
-      <div className="roll-card">
+      <UploadModal
+        isOpen={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        rollId={id}
+        onUploadComplete={handleUploadComplete}
+      />
+      
+      <div className="roll-card" style={{ position: 'relative', zIndex: 20 }}>
         <div className="roll-info-column">
           <div className="roll-header-section">
             <div className="roll-title-block">
@@ -403,11 +396,17 @@ export default function RollDetail() {
                 Negative
               </button>
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-              <button className="primary-btn" onClick={() => !multiSelect && fileInputRef.current && fileInputRef.current.click()} disabled={multiSelect}>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+              {/* Upload Button - Opens Modal */}
+              <button 
+                className="primary-btn" 
+                onClick={() => setShowUploadModal(true)} 
+                disabled={multiSelect}
+              >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                 Upload Photos
               </button>
+
               <button className="primary-btn" style={{ background: multiSelect ? '#1d4ed8' : '#334155' }} onClick={() => { setMultiSelect(!multiSelect); if (!multiSelect) setSelectedPhotos([]); }}>
                 {multiSelect ? 'Multi-Select: ON' : 'Multi-Select'}
               </button>
@@ -491,7 +490,7 @@ export default function RollDetail() {
 
         {isEditing && (
           <div style={{ marginTop: 12, marginBottom: 20 }}>
-            <button className="primary-btn" onClick={() => fileInputRef.current && fileInputRef.current.click()}>Upload files</button>
+            {/* Removed redundant Upload files button in edit mode, users can use the main button */}
           </div>
         )}
 
@@ -789,7 +788,16 @@ export default function RollDetail() {
         }}
       />
 
-      <input type="file" multiple ref={fileInputRef} style={{ display: 'none' }} onChange={onUpload} />
+      {/* RAW 文件导入向导 (保留作为高级选项) */}
+      <RawImportWizard
+        isOpen={showRawImportWizard}
+        onClose={() => setShowRawImportWizard(false)}
+        rollId={Number(id)}
+        onImportComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ['rollPhotos', id] });
+          queryClient.invalidateQueries({ queryKey: ['roll', id] });
+        }}
+      />
     </div>
   );
 }

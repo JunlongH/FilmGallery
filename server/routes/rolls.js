@@ -61,9 +61,12 @@ router.post('/', (req, res) => {
       const notes = body.notes || null;
       const tmpFiles = body.tmpFiles ? (typeof body.tmpFiles === 'string' ? JSON.parse(body.tmpFiles) : body.tmpFiles) : null;
       const coverIndex = body.coverIndex ? Number(body.coverIndex) : null;
-      const isNegativeGlobal = body.isNegative === 'true' || body.isNegative === true;
+      const uploadTypeGlobal = body.uploadType || null; // 'positive' | 'negative' | 'original'
+      const isNegativeGlobal = uploadTypeGlobal === 'negative' || body.isNegative === 'true' || body.isNegative === true;
+      // Fix: Support explicit isOriginal flag (from checkbox) independent of uploadType
+      const isOriginalGlobal = uploadTypeGlobal === 'original' || body.isOriginal === 'true' || body.isOriginal === true;
       const fileMetadata = body.fileMetadata ? (typeof body.fileMetadata === 'string' ? JSON.parse(body.fileMetadata) : body.fileMetadata) : {};
-      console.log('[CREATE ROLL] isNegativeGlobal:', isNegativeGlobal);
+      console.log('[CREATE ROLL] uploadType:', uploadTypeGlobal, 'isNegativeGlobal:', isNegativeGlobal, 'isOriginalGlobal:', isOriginalGlobal);
 
       if (start_date && end_date) {
         const sd = new Date(start_date);
@@ -146,8 +149,23 @@ router.post('/', (req, res) => {
         const tmpFilesCount = (tmpFiles && Array.isArray(tmpFiles)) ? tmpFiles.length : 0;
         console.log(`[CREATE ROLL] Received files: req.files=${reqFilesCount}, tmpFiles=${tmpFilesCount}`);
 
+        // Import raw decoder for RAW file support
+        const rawDecoder = require('../services/raw-decoder');
+
         if (req.files && req.files.length) {
-          incoming.push(...req.files.map(f => ({ tmpPath: f.path, originalName: f.originalname, tmpName: f.filename, isNegative: isNegativeGlobal })));
+          incoming.push(...req.files.map(f => {
+             // Robust RAW detection: check both originalname and filename (uploaded name)
+             const nameCands = [f.originalname, f.filename].filter(Boolean);
+             const isRaw = nameCands.some(n => rawDecoder.isRawFile(n));
+             return { 
+                tmpPath: f.path, 
+                originalName: f.originalname, 
+                tmpName: f.filename, 
+                isNegative: isNegativeGlobal,
+                isOriginal: isOriginalGlobal,
+                isRaw
+             };
+          }));
         }
 
         // IMPORTANT: tmpFiles are also stored in localTmpDir now (NOT uploads/tmp)
@@ -156,7 +174,19 @@ router.post('/', (req, res) => {
             const tmpName = t.tmpName || t.filename;
             const tmpPath = path.join(localTmpDir, tmpName);
             if (!tmpName || !fs.existsSync(tmpPath)) continue;
-            incoming.push({ tmpPath, originalName: tmpName, tmpName, isNegative: t.isNegative !== undefined ? t.isNegative : isNegativeGlobal });
+            const fileIsNegative = t.isNegative !== undefined ? t.isNegative : isNegativeGlobal;
+            const fileIsOriginal = (t.isOriginal !== undefined ? t.isOriginal : isOriginalGlobal) || t.uploadType === 'original';
+            
+            const isRaw = rawDecoder.isRawFile(tmpName) || rawDecoder.isRawFile(t.originalName);
+            
+            incoming.push({ 
+              tmpPath, 
+              originalName: tmpName, 
+              tmpName, 
+              isNegative: fileIsNegative,
+              isOriginal: fileIsOriginal,
+              isRaw
+            });
           }
         }
 
@@ -345,6 +375,27 @@ router.post('/', (req, res) => {
           const finalOriginalPath = path.join(originalsDir, originalName);
           originalRelPath = path.join('rolls', folderName, 'originals', originalName).replace(/\\/g, '/');
 
+          // Prepare Source for Sharp (Buffer or Path)
+          let processInput = f.tmpPath;
+          let rawMetadata = null;
+
+          // RAW Handling: If RAW, decode to Buffer (TIFF) first
+          if (f.isRaw) {
+            console.log(`[CREATE ROLL] Detected RAW file: ${f.originalName}`);
+            try {
+              // Decode to TIFF Buffer
+              const tiffBuffer = await rawDecoder.decode(f.tmpPath, { outputFormat: 'tiff' });
+              processInput = tiffBuffer;
+              
+              rawMetadata = await rawDecoder.extractMetadata(f.tmpPath);
+              console.log(`[CREATE ROLL] RAW decoded. Camera: ${rawMetadata?.camera || 'Unknown'}`);
+            } catch (rawErr) {
+              console.error('[CREATE ROLL] RAW decode failed, using original file as fallback:', rawErr.message);
+              // Fallback to originalPath (Sharp can handle some DNGs/formats natively if libraw fails)
+              processInput = f.tmpPath;
+            }
+          }
+
           // Process into LOCAL temp dir
           if (isNegative) {
             const negName = `${baseName}_neg.jpg`;
@@ -358,10 +409,10 @@ router.post('/', (req, res) => {
             stagedTempArtifacts.push(tempNegPath);
             
             try {
-              console.log(`[CREATE ROLL] Processing negative ${frameNumber}: ${path.basename(f.tmpPath)} (${(fs.statSync(f.tmpPath).size / 1024 / 1024).toFixed(2)} MB)`);
+              console.log(`[CREATE ROLL] Processing negative ${frameNumber}: ${path.basename(f.tmpPath)}`);
               const startTime = Date.now();
               await sharpWithTimeout(
-                sharp(f.tmpPath).jpeg({ quality: 95 }).toFile(tempNegPath)
+                sharp(processInput, { failOn: 'none' }).jpeg({ quality: 95 }).toFile(tempNegPath)
               );
               const duration = Date.now() - startTime;
               console.log(`[CREATE ROLL] Negative ${frameNumber} processed in ${duration}ms`);
@@ -417,10 +468,10 @@ router.post('/', (req, res) => {
             stagedTempArtifacts.push(tempFullPath);
             
             try {
-              console.log(`[CREATE ROLL] Processing positive ${frameNumber}: ${path.basename(f.tmpPath)} (${(fs.statSync(f.tmpPath).size / 1024 / 1024).toFixed(2)} MB)`);
+              console.log(`[CREATE ROLL] Processing positive ${frameNumber}: ${path.basename(f.tmpPath)}`);
               const startTime = Date.now();
               await sharpWithTimeout(
-                sharp(f.tmpPath).jpeg({ quality: 95 }).toFile(tempFullPath)
+                sharp(processInput, { failOn: 'none' }).jpeg({ quality: 95 }).toFile(tempFullPath)
               );
               const duration = Date.now() - startTime;
               console.log(`[CREATE ROLL] Positive ${frameNumber} processed in ${duration}ms`);
@@ -464,10 +515,18 @@ router.post('/', (req, res) => {
 
           // Stage DB insert params
           const meta = resolveMeta(fileMetadata, [f.originalName, f.tmpName, finalName]);
+          
+          // Apply RAW metadata (if available) to supplement missing logs
+          if (rawMetadata) {
+             if (!meta.lens && rawMetadata.lens) meta.lens = rawMetadata.lens;
+             if (!meta.aperture && rawMetadata.aperture) meta.aperture = rawMetadata.aperture;
+             if (!meta.shutter_speed && rawMetadata.shutterSpeed) meta.shutter_speed = rawMetadata.shutterSpeed;
+          }
+
           const dateTaken = meta.date || null;
           const takenAt = dateTaken ? `${dateTaken}T12:00:00` : null;
           const lensForPhoto = meta.lens || lens || null;
-          const cameraForPhoto = camera || null;
+          const cameraForPhoto = rawMetadata?.camera || camera || null;
           const photographerForPhoto = photographer || null;
           const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' ? Number(meta.aperture) : null;
           const shutterForPhoto = meta.shutter_speed || null;
@@ -1145,11 +1204,19 @@ router.get('/:rollId/photos', async (req, res) => {
 
 router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) => {
   const rollId = req.params.rollId;
-  const { caption, taken_at, rating, isNegative, camera: photoCamera, lens: photoLens, photographer: photoPhotographer } = req.body;
+  const { 
+    caption, taken_at, rating, isNegative, 
+    uploadType, // 'positive' | 'negative' | 'original'
+    camera: photoCamera, lens: photoLens, photographer: photoPhotographer 
+  } = req.body;
   if (!req.file) return res.status(400).json({ error: 'image file required' });
+  
+  // Import raw decoder for RAW file support
+  const rawDecoder = require('../services/raw-decoder');
   
   // Use original extension for the original file
   const originalExt = path.extname(req.file.originalname || req.file.filename) || '.jpg';
+  const isRawFile = rawDecoder.isRawFile(req.file.originalname || req.file.filename);
   
   const rollFolder = path.join(rollsDir, String(rollId));
   fs.mkdirSync(rollFolder, { recursive: true });
@@ -1180,16 +1247,45 @@ router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) =
     let positiveThumbRelPath = null;
     let negativeThumbRelPath = null;
     let isNegativeSource = 0;
+    let rawMetadata = null;
 
-    const isNeg = isNegative === 'true' || isNegative === true;
+    // Determine effective upload type
+    const effectiveUploadType = uploadType || (isNegative === 'true' || isNegative === true ? 'negative' : 'positive');
+    const isNeg = effectiveUploadType === 'negative';
+    const isOriginal = effectiveUploadType === 'original';
 
-    // Save original
+    // Save original file first
     const originalName = `${baseName}_original${originalExt}`;
     const originalPath = path.join(originalsDir, originalName);
     moveFileSync(req.file.path, originalPath);
-    originalRelPath = path.join('rolls', String(rollId), 'originals', originalName).replace(/\\/g, '/');
+    // Note: We don't currently have an original_rel_path column in DB, but file is safe.
+    
+    // Prepare Source for Sharp (Buffer or Path)
+    let processInput = originalPath;
+    
+    // RAW Handling: If RAW, decode to Buffer (TIFF) first
+    if (isRawFile) {
+      console.log(`[UPLOAD] Detected RAW file: ${req.file.originalname}`);
+      try {
+        // Decode to TIFF Buffer
+        const tiffBuffer = await rawDecoder.decode(originalPath, { outputFormat: 'tiff' });
+        processInput = tiffBuffer;
+        
+        rawMetadata = await rawDecoder.extractMetadata(originalPath);
+        console.log(`[UPLOAD] RAW decoded. Camera: ${rawMetadata?.camera || 'Unknown'}`);
+      } catch (rawErr) {
+        console.error('[UPLOAD] RAW decode failed, using original file as fallback:', rawErr.message);
+        // Fallback to originalPath (Sharp can handle some DNGs/formats natively if libraw fails)
+        processInput = originalPath;
+      }
+    }
 
-    if (isNeg) {
+    // Branch Logic
+    if (isOriginal || isNeg) {
+      // "Original" or "Negative" Mode -> Result is a "Negative" entry
+      // For "Original" uploads (RAW/TIFF), we generate a high-quality JPEG preview and store it as the "Negative" path
+      // This allows the user to see the image (even if inverted) and process/invert it later using the Negative Editor
+      
       const negName = `${baseName}_neg.jpg`;
       const negDir = path.join(rollFolder, 'negative');
       const negThumbDir = path.join(rollFolder, 'negative', 'thumb');
@@ -1198,25 +1294,26 @@ router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) =
       
       const negPath = path.join(negDir, negName);
       
-      // Generate negative JPG from original
-      await sharp(originalPath)
+      // Generate Negative Preview (High Quality JPG)
+      await sharp(processInput)
+        .rotate() // Auto-rotate based on EXIF
         .jpeg({ quality: 95 })
         .toFile(negPath);
         
       negativeRelPath = path.join('rolls', String(rollId), 'negative', negName).replace(/\\/g, '/');
       isNegativeSource = 1;
       
-      // Generate negative thumb
+      // Generate Negative Thumbnail
       const negThumbName = `${baseName}-thumb.jpg`;
       const negThumbPath = path.join(negThumbDir, negThumbName);
       
       await sharp(negPath)
         .resize({ width: 240, height: 240, fit: 'inside' })
-        .jpeg({ quality: 40 })
+        .jpeg({ quality: 60 })
         .toFile(negThumbPath)
         .catch(thErr => console.error('Negative Thumbnail generation failed', thErr.message));
 
-      // Copy negative thumb to main thumb dir
+      // Copy negative thumb to main thumb dir (for main gallery view)
       const mainThumbName = `${baseName}-thumb.jpg`;
       const mainThumbPath = path.join(thumbDir, mainThumbName);
       if (fs.existsSync(negThumbPath)) {
@@ -1225,16 +1322,19 @@ router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) =
         negativeThumbRelPath = path.join('rolls', String(rollId), 'negative', 'thumb', negThumbName).replace(/\\/g, '/');
       }
       
-      // Do NOT generate positive
+      // Originals/Negatives don't have a "positive" path initially
       fullRelPath = null;
       positiveRelPath = null;
+      
+      console.log(`[UPLOAD] Processed as Negative/Original. Preview: ${negativeRelPath}`);
 
     } else {
-      // Positive Logic
+      // Positive Mode (Default)
       const destPath = path.join(fullDir, finalName);
       
-      // Generate positive JPG from original
-      await sharp(originalPath)
+      // Generate positive JPG
+      await sharp(processInput)
+        .rotate()
         .jpeg({ quality: 95 })
         .toFile(destPath);
         
@@ -1248,19 +1348,22 @@ router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) =
       try {
         await sharp(destPath)
           .resize({ width: 240, height: 240, fit: 'inside' })
-          .jpeg({ quality: 40 })
+          .jpeg({ quality: 60 })
           .toFile(thumbPath);
         thumbRelPath = path.join('rolls', String(rollId), 'thumb', thumbName).replace(/\\/g, '/');
         positiveThumbRelPath = thumbRelPath;
       } catch (thErr) {
         console.error('Thumbnail generation failed', thErr.message);
       }
+      
+      console.log(`[UPLOAD] Processed as Positive. Path: ${fullRelPath}`);
     }
 
     // Fetch roll defaults for metadata if not provided explicitly
+    // Also apply RAW metadata if available
     const rollMeta = await getAsync('SELECT camera, lens, photographer FROM rolls WHERE id = ?', [rollId]) || { camera: null, lens: null, photographer: null };
-    const finalCamera = photoCamera || rollMeta.camera || null;
-    const finalLens = photoLens || rollMeta.lens || null;
+    const finalCamera = photoCamera || (rawMetadata?.camera) || rollMeta.camera || null;
+    const finalLens = photoLens || (rawMetadata?.lens) || rollMeta.lens || null;
     const finalPhotographer = photoPhotographer || rollMeta.photographer || null;
 
     const sql = `INSERT INTO photos (roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path, caption, taken_at, rating, camera, lens, photographer) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`;
