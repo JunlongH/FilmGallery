@@ -12,6 +12,35 @@ let serverCapabilities = null;
 let lastCapabilityCheck = 0;
 const CAPABILITY_CACHE_MS = 60000; // 1分钟缓存
 
+// 进度回调注册表
+const progressCallbacks = new Map();
+let progressCallbackId = 0;
+
+// 错误类型定义
+export const ComputeErrorCodes = {
+  NO_GPU_PROCESSOR: 'E_NO_GPU_PROCESSOR',
+  PHOTO_NOT_FOUND: 'E_PHOTO_NOT_FOUND',
+  SERVER_UNAVAILABLE: 'E_SERVER_UNAVAILABLE',
+  NAS_NO_COMPUTE: 'E_NAS_NO_COMPUTE',
+  UPLOAD_FAILED: 'E_UPLOAD_FAILED',
+  PROCESSING_FAILED: 'E_PROCESSING_FAILED',
+  NETWORK_ERROR: 'E_NETWORK_ERROR',
+  TIMEOUT: 'E_TIMEOUT'
+};
+
+/**
+ * 创建标准化错误对象
+ */
+function createError(code, message, details = {}) {
+  return {
+    ok: false,
+    error: message,
+    code,
+    details,
+    timestamp: Date.now()
+  };
+}
+
 /**
  * 获取服务器能力（带缓存）
  */
@@ -272,12 +301,355 @@ export function clearCapabilityCache() {
   lastCapabilityCheck = 0;
 }
 
+// ========================================
+// Phase 3.4: 处理结果上传
+// ========================================
+
+/**
+ * 上传处理结果到远程服务器
+ * @param {Blob} blob - 处理后的图片 Blob
+ * @param {Object} options - 上传选项
+ * @returns {Promise<{ok: boolean, url?: string, error?: string}>}
+ */
+export async function uploadProcessedResult(blob, options = {}) {
+  const { 
+    photoId, 
+    filename, 
+    type = 'processed',
+    onProgress 
+  } = options;
+  
+  if (!blob) {
+    return createError(ComputeErrorCodes.PROCESSING_FAILED, 'No blob to upload');
+  }
+  
+  const formData = new FormData();
+  const finalFilename = filename || `processed_${photoId}_${Date.now()}.jpg`;
+  formData.append('file', blob, finalFilename);
+  formData.append('type', type);
+  if (photoId) formData.append('photoId', photoId);
+  
+  try {
+    // 使用 XMLHttpRequest 支持进度
+    return await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', `${API_BASE}/api/uploads/processed`);
+      
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve({ ok: true, ...data, source: 'remote-upload' });
+          } catch {
+            resolve({ ok: true, url: xhr.responseText, source: 'remote-upload' });
+          }
+        } else {
+          resolve(createError(
+            ComputeErrorCodes.UPLOAD_FAILED, 
+            `Upload failed: ${xhr.statusText}`,
+            { status: xhr.status }
+          ));
+        }
+      };
+      
+      xhr.onerror = () => {
+        resolve(createError(
+          ComputeErrorCodes.NETWORK_ERROR,
+          'Network error during upload'
+        ));
+      };
+      
+      xhr.ontimeout = () => {
+        resolve(createError(ComputeErrorCodes.TIMEOUT, 'Upload timed out'));
+      };
+      
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            onProgress({
+              phase: 'upload',
+              loaded: e.loaded,
+              total: e.total,
+              percent: Math.round((e.loaded / e.total) * 100)
+            });
+          }
+        };
+      }
+      
+      xhr.timeout = 120000; // 2分钟超时
+      xhr.send(formData);
+    });
+  } catch (e) {
+    console.error('[ComputeService] Upload failed:', e);
+    return createError(ComputeErrorCodes.UPLOAD_FAILED, e.message);
+  }
+}
+
+/**
+ * 智能处理并上传结果
+ * 本地处理 + 上传到远程服务器
+ */
+export async function processAndUpload(photoId, params, options = {}) {
+  const { 
+    format = 'jpeg',
+    onProgress,
+    uploadToServer = true 
+  } = options;
+  
+  // 阶段1: 本地处理
+  if (onProgress) {
+    onProgress({ phase: 'processing', percent: 0, message: '开始处理...' });
+  }
+  
+  const result = await localRenderPositive(photoId, params, { format });
+  
+  if (!result.ok) {
+    return result;
+  }
+  
+  if (onProgress) {
+    onProgress({ phase: 'processing', percent: 100, message: '处理完成' });
+  }
+  
+  // 如果不需要上传，直接返回
+  if (!uploadToServer) {
+    return result;
+  }
+  
+  // 阶段2: 上传到服务器
+  if (onProgress) {
+    onProgress({ phase: 'upload', percent: 0, message: '开始上传...' });
+  }
+  
+  const uploadResult = await uploadProcessedResult(result.blob, {
+    photoId,
+    filename: `filmlab_${photoId}_${Date.now()}.${format === 'tiff16' ? 'tiff' : 'jpg'}`,
+    type: 'processed',
+    onProgress: (p) => {
+      if (onProgress) {
+        onProgress({ 
+          phase: 'upload', 
+          ...p, 
+          message: `上传中 ${p.percent}%` 
+        });
+      }
+    }
+  });
+  
+  if (!uploadResult.ok) {
+    // 上传失败但处理成功，返回本地结果
+    return {
+      ...result,
+      uploadError: uploadResult.error,
+      uploadFailed: true
+    };
+  }
+  
+  if (onProgress) {
+    onProgress({ phase: 'complete', percent: 100, message: '完成' });
+  }
+  
+  return {
+    ok: true,
+    blob: result.blob,
+    remoteUrl: uploadResult.url,
+    source: 'local-gpu-uploaded'
+  };
+}
+
+// ========================================
+// Phase 4.2: 进度反馈系统
+// ========================================
+
+/**
+ * 注册进度回调
+ * @param {string} taskId - 任务ID
+ * @param {Function} callback - 进度回调函数
+ * @returns {number} 回调ID
+ */
+export function registerProgressCallback(taskId, callback) {
+  const id = ++progressCallbackId;
+  progressCallbacks.set(id, { taskId, callback });
+  return id;
+}
+
+/**
+ * 取消注册进度回调
+ * @param {number} callbackId - 回调ID
+ */
+export function unregisterProgressCallback(callbackId) {
+  progressCallbacks.delete(callbackId);
+}
+
+/**
+ * 触发进度更新
+ * @param {string} taskId - 任务ID
+ * @param {Object} progress - 进度信息
+ */
+export function emitProgress(taskId, progress) {
+  for (const [, { taskId: tid, callback }] of progressCallbacks) {
+    if (tid === taskId) {
+      try {
+        callback(progress);
+      } catch (e) {
+        console.warn('[ComputeService] Progress callback error:', e);
+      }
+    }
+  }
+}
+
+/**
+ * 创建带进度追踪的任务
+ */
+export function createProgressTask(taskId) {
+  let currentPhase = 'init';
+  let currentPercent = 0;
+  
+  return {
+    taskId,
+    
+    update(phase, percent, message) {
+      currentPhase = phase;
+      currentPercent = percent;
+      emitProgress(taskId, { phase, percent, message, timestamp: Date.now() });
+    },
+    
+    getProgress() {
+      return { phase: currentPhase, percent: currentPercent };
+    },
+    
+    complete(result) {
+      emitProgress(taskId, { 
+        phase: 'complete', 
+        percent: 100, 
+        result,
+        timestamp: Date.now() 
+      });
+    },
+    
+    error(err) {
+      emitProgress(taskId, { 
+        phase: 'error', 
+        error: err,
+        timestamp: Date.now() 
+      });
+    }
+  };
+}
+
+// ========================================
+// Phase 4.3: 批量处理支持
+// ========================================
+
+/**
+ * 批量处理照片
+ * @param {Array} photoIds - 照片ID列表
+ * @param {Object} params - 处理参数
+ * @param {Object} options - 选项
+ */
+export async function batchProcess(photoIds, params, options = {}) {
+  const {
+    format = 'jpeg',
+    concurrency = 1,
+    uploadToServer = true,
+    onProgress,
+    onItemComplete
+  } = options;
+  
+  const results = [];
+  const total = photoIds.length;
+  let completed = 0;
+  let failed = 0;
+  
+  // 进度更新
+  const updateProgress = () => {
+    if (onProgress) {
+      onProgress({
+        total,
+        completed,
+        failed,
+        percent: Math.round((completed / total) * 100),
+        current: completed + failed
+      });
+    }
+  };
+  
+  // 处理单个照片
+  const processOne = async (photoId) => {
+    try {
+      const result = await processAndUpload(photoId, params, {
+        format,
+        uploadToServer,
+        onProgress: (p) => {
+          // 可以细化到单个任务的进度
+        }
+      });
+      
+      if (result.ok) {
+        completed++;
+      } else {
+        failed++;
+      }
+      
+      if (onItemComplete) {
+        onItemComplete({ photoId, result });
+      }
+      
+      updateProgress();
+      return { photoId, ...result };
+    } catch (e) {
+      failed++;
+      updateProgress();
+      return { 
+        photoId, 
+        ok: false, 
+        error: e.message,
+        code: ComputeErrorCodes.PROCESSING_FAILED 
+      };
+    }
+  };
+  
+  // 按并发数处理
+  for (let i = 0; i < photoIds.length; i += concurrency) {
+    const batch = photoIds.slice(i, i + concurrency);
+    const batchResults = await Promise.all(batch.map(processOne));
+    results.push(...batchResults);
+  }
+  
+  return {
+    ok: failed === 0,
+    total,
+    completed,
+    failed,
+    results
+  };
+}
+
 export default {
+  // 能力检测
   getServerCapabilities,
   isComputeAvailable,
   isHybridMode,
   getLocalGpuProcessor,
+  clearCapabilityCache,
+  
+  // 智能处理
   smartFilmlabPreview,
   smartRenderPositive,
-  clearCapabilityCache
+  
+  // 上传
+  uploadProcessedResult,
+  processAndUpload,
+  
+  // 进度系统
+  registerProgressCallback,
+  unregisterProgressCallback,
+  emitProgress,
+  createProgressTask,
+  
+  // 批量处理
+  batchProcess,
+  
+  // 错误码
+  ComputeErrorCodes
 };
