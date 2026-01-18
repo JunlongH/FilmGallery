@@ -10,7 +10,45 @@ NAS 模式的服务器提供：
 - ✅ 移动端/手表应用同步
 - ❌ FilmLab 图像处理（需要本地 PC 算力）
 
-## 📦 快速开始
+---
+
+## 🚀 方式一：使用预构建镜像（推荐）
+
+### 快速开始
+
+```bash
+# 1. 下载部署包
+# 从 GitHub Releases 下载 filmgallery-deploy-YYYYMMDD.zip
+
+# 2. 解压并进入目录
+unzip filmgallery-deploy-*.zip
+cd filmgallery-deploy-*/
+
+# 3. 配置环境变量
+cp .env.example .env
+nano .env
+
+# 4. 启动服务
+docker-compose up -d
+```
+
+### 手动拉取镜像
+
+```bash
+# 拉取最新版本
+docker pull filmgallery/server:latest
+
+# 或指定版本
+docker pull filmgallery/server:1.8.0
+```
+
+**支持平台**：
+- `linux/amd64` (x86_64)
+- `linux/arm64` (ARM64/Apple Silicon)
+
+---
+
+## 🛠️ 方式二：从源码构建
 
 ### 1. 准备配置文件
 
@@ -29,11 +67,26 @@ UPLOADS_PATH=./uploads    # 图片文件存储路径
 PORT=4000                 # 服务端口
 ```
 
-### 2. 启动服务
+### 2. 启动服务（从源码构建）
+
+如需从源码构建镜像，编辑 `docker-compose.yml`：
+
+```yaml
+services:
+  filmgallery:
+    # 取消注释以下两行以从源码构建
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # 注释掉 image 行
+    # image: filmgallery/server:latest
+```
+
+然后启动：
 
 ```bash
-# 启动服务（后台运行）
-docker-compose up -d
+# 构建并启动服务
+docker-compose up -d --build
 
 # 查看日志
 docker-compose logs -f
@@ -215,6 +268,8 @@ logging:
 
 ## 🔄 更新升级
 
+### 使用预构建镜像
+
 ```bash
 # 拉取最新镜像
 docker-compose pull
@@ -225,6 +280,62 @@ docker-compose up -d
 # 清理旧镜像
 docker image prune -f
 ```
+
+### 从源码重新构建
+
+```bash
+# 重新构建镜像
+docker-compose build --no-cache
+
+# 重新创建容器
+docker-compose up -d
+```
+
+---
+
+## 🏗️ 维护者：构建和发布镜像
+
+### 构建多平台镜像
+
+```bash
+# Linux/macOS
+cd docker/
+chmod +x build-image.sh
+./build-image.sh 1.8.0
+
+# Windows
+cd docker\
+.\build-image.ps1 -Version 1.8.0
+```
+
+此脚本会：
+1. 登录 Docker Hub
+2. 使用 buildx 构建多平台镜像（amd64 + arm64）
+3. 推送到 Docker Hub
+
+### 创建发布包
+
+```bash
+# Linux/macOS
+cd docker/
+chmod +x create-release-package.sh
+./create-release-package.sh
+
+# Windows
+cd docker\
+.\create-release-package.ps1
+```
+
+这会生成 `filmgallery-deploy-YYYYMMDD.zip`，包含：
+- docker-compose.yml（使用预构建镜像）
+- .env.example（配置模板）
+- README.md（部署说明）
+- deploy.sh / deploy.ps1（可选的部署脚本）
+- docs/（快速启动和部署指南）
+
+用户只需下载、解压、配置即可部署。
+
+---
 
 ## 📝 环境变量参考
 

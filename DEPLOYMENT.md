@@ -44,7 +44,87 @@ FilmGallery 混合算力架构分为三层：
 
 ## 🖥️ NAS 服务器部署
 
-### 方式一：使用自动化脚本（推荐）
+### 前置要求
+
+- Docker 已安装（[安装指南](https://docs.docker.com/get-docker/)）
+- Docker Compose 已安装
+
+### 方式一：使用预构建镜像（推荐）
+
+最快、最简单的部署方式，无需源码和编译。
+
+#### 步骤 1：下载部署包
+
+从 [GitHub Releases](https://github.com/YourRepo/FilmGallery/releases) 下载：
+- `filmgallery-deploy-YYYYMMDD.zip` (Windows/Linux/macOS 通用)
+
+#### 步骤 2：解压并配置
+
+```bash
+# 解压
+unzip filmgallery-deploy-*.zip
+cd filmgallery-deploy-*/
+
+# 复制配置文件
+cp .env.example .env
+
+# 编辑配置（可选）
+nano .env
+```
+
+配置说明：
+
+```env
+# 必填：数据存储路径
+DATA_PATH=./data
+UPLOADS_PATH=./uploads
+
+# 可选：镜像版本（推荐生产环境固定版本）
+IMAGE_VERSION=latest    # 或 1.8.0
+
+# 可选：服务端口
+PORT=4000
+```
+
+#### 步骤 3：启动服务
+
+```bash
+# 启动（自动拉取镜像）
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+
+# 查看状态
+docker-compose ps
+```
+
+Docker 会自动从 Docker Hub 拉取预构建的镜像，支持：
+- `linux/amd64` (x86_64)
+- `linux/arm64` (ARM64/Apple Silicon)
+
+#### 验证部署
+
+访问：`http://localhost:4000/api/discover`
+
+期望输出：
+```json
+{
+  "name": "filmgallery",
+  "mode": "nas",
+  "capabilities": {
+    "database": true,
+    "files": true,
+    "compute": false
+  }
+}
+```
+
+✅ 部署成功！
+
+---
+
+### 方式二：使用自动化脚本（从源码）
 
 #### Linux / macOS
 

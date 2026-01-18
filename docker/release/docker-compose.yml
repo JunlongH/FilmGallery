@@ -2,12 +2,8 @@ version: '3.8'
 
 services:
   filmgallery:
-    # 使用预构建的镜像（推荐）
+    # 使用 Docker Hub 上的预构建镜像
     image: filmgallery/server:${IMAGE_VERSION:-latest}
-    # 如需从源码构建，请取消注释以下两行并注释上面的 image 行
-    # build:
-    #   context: ..
-    #   dockerfile: docker/Dockerfile
     container_name: filmgallery-server
     restart: unless-stopped
     
@@ -55,9 +51,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-# Named volumes (alternative to bind mounts)
-# Uncomment if you prefer Docker-managed volumes
-# volumes:
-#   filmgallery-data:
-#   filmgallery-uploads:

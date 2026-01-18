@@ -1,10 +1,37 @@
 # 🚀 FilmGallery 混合算力架构 - 快速启动
 
-5 分钟快速部署指南
+5 分钟快速部署指南（使用预构建镜像）
 
 ---
 
-## 第一步：部署 NAS 服务器
+## 方式一：使用预构建镜像（最快，推荐）
+
+### 下载部署包
+
+1. 从 [GitHub Releases](https://github.com/YourRepo/FilmGallery/releases) 下载最新的部署包
+2. 解压 `filmgallery-deploy-YYYYMMDD.zip`
+
+### 快速部署
+
+```bash
+# 进入解压目录
+cd filmgallery-deploy-*/
+
+# 复制配置文件
+cp .env.example .env
+
+# 启动服务（自动拉取镜像）
+docker-compose up -d
+
+# 等待启动完成后访问
+# http://localhost:4000/api/discover
+```
+
+就这么简单！Docker 会自动从 Docker Hub 拉取预构建的镜像。
+
+---
+
+## 方式二：从源码部署
 
 ### Windows 用户
 
