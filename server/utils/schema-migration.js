@@ -193,6 +193,7 @@ function runSchemaMigration() {
       const columns = [
         // Rolls - Basic
         { table: 'rolls', col: 'cover_photo', type: 'TEXT' },
+        { table: 'rolls', col: 'coverPath', type: 'TEXT' },
         { table: 'rolls', col: 'folderName', type: 'TEXT' },
         { table: 'rolls', col: 'title', type: 'TEXT' },
         { table: 'rolls', col: 'start_date', type: 'DATE' },
@@ -216,6 +217,22 @@ function runSchemaMigration() {
         { table: 'rolls', col: 'batch_number', type: 'TEXT' },
         // Rolls - link to film_items inventory
         { table: 'rolls', col: 'film_item_id', type: 'INTEGER' },
+        
+        // Missing columns added 2026-01-18
+        { table: 'rolls', col: 'display_seq', type: 'INTEGER DEFAULT 0' },
+        { table: 'rolls', col: 'camera_equip_id', type: 'INTEGER' },
+        { table: 'rolls', col: 'lens_equip_id', type: 'INTEGER' },
+        { table: 'rolls', col: 'flash_equip_id', type: 'INTEGER' },
+        { table: 'rolls', col: 'film_back_equip_id', type: 'INTEGER' },
+        { table: 'rolls', col: 'scanner_equip_id', type: 'INTEGER' },
+        { table: 'rolls', col: 'scan_resolution', type: 'INTEGER' },
+        { table: 'rolls', col: 'scan_software', type: 'TEXT' },
+        { table: 'rolls', col: 'scan_lab', type: 'TEXT' },
+        { table: 'rolls', col: 'scan_date', type: 'DATE' },
+        { table: 'rolls', col: 'scan_cost', type: 'REAL' },
+        { table: 'rolls', col: 'scan_notes', type: 'TEXT' },
+        { table: 'rolls', col: 'format', type: 'TEXT' },
+
         // Film Items - usage tracking
         { table: 'film_items', col: 'negative_archived', type: 'INTEGER DEFAULT 0' },
         { table: 'film_items', col: 'loaded_date', type: 'TEXT' },

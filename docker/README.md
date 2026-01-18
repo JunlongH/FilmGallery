@@ -1,109 +1,460 @@
-# FilmGallery NAS Server - Docker 部署指南
+# FilmGallery Docker 部署指南
 
-一键部署 FilmGallery 数据服务器到 NAS 或任何 Docker 主机。
-
-## 🎯 功能说明
-
-NAS 模式的服务器提供：
-- ✅ 数据库管理（相册、胶片、设备信息）
-- ✅ 文件存储与访问
-- ✅ 移动端/手表应用同步
-- ❌ FilmLab 图像处理（需要本地 PC 算力）
+部署 FilmGallery 服务器到 NAS，支持远程模式和混合模式。
 
 ---
 
-## 🚀 方式一：使用预构建镜像（推荐）
+## ⚠️ 外网访问须知
 
-### 快速开始
+FilmGallery 默认仅支持**内网访问**（同一 WiFi/局域网）。如需从外网访问（如手机 4G/5G、外出时访问家中 NAS），你需要配置以下方案之一：
+
+### 方案一：公网 IP + 端口转发
+
+如果你的宽带有**公网 IP**（非运营商 NAT）：
+
+1. 登录路由器管理页面
+2. 设置端口转发：外部端口 `4000` → NAS 内网 IP:4000
+3. 通过 `http://你的公网IP:4000` 访问
+
+⚠️ **安全警告**：直接暴露端口到公网有安全风险，强烈建议：
+- 使用反向代理（Nginx）+ HTTPS
+- 修改默认端口
+- 配置访问认证
+
+### 方案二：内网穿透服务（推荐）
+
+无需公网 IP，通过第三方服务穿透 NAT：
+
+| 服务 | 类型 | 特点 |
+|------|------|------|
+| [Tailscale](https://tailscale.com) | VPN 组网 | 零配置，推荐新手 |
+| [ZeroTier](https://www.zerotier.com) | P2P 组网 | 免费，需简单配置 |
+| [frp](https://github.com/fatedier/frp) | 端口转发 | 开源自建，需有服务器 |
+| [Cloudflare Tunnel](https://www.cloudflare.com/products/tunnel/) | 隧道 | 免费，支持 HTTPS |
+| [花生壳](https://hsk.oray.com) | 国内服务 | 中文界面，有免费额度 |
+| [cpolar](https://www.cpolar.com) | 国内服务 | 简单易用 |
+
+### 方案三：NAS 官方远程访问
+
+- **群晖**：QuickConnect（控制面板 → QuickConnect）
+- **威联通**：myQNAPcloud（控制台 → myQNAPcloud）
+
+### Tailscale 快速配置示例
+
+1. 在 NAS 上安装 Tailscale 套件
+2. 在手机上安装 Tailscale App
+3. 两端登录同一账号
+4. 使用 Tailscale 分配的 IP 访问：`http://100.x.x.x:4000`
+
+---
+
+## 🎯 模式说明
+
+| 模式 | 服务器位置 | 数据存储 | FilmLab 处理 | 适用场景 |
+|------|-----------|---------|-------------|---------|
+| **本地模式** | 本机 Electron | 本机 | 本机 GPU | 单机使用 |
+| **远程模式** | NAS Docker | NAS | ❌ 不支持 | 仅数据同步，移动端访问 |
+| **混合模式** | NAS Docker | NAS | PC 本地 GPU | 多设备 + 需要 FilmLab |
+
+### 架构图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        混合模式                                  │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌──────────┐         ┌──────────────┐         ┌──────────┐   │
+│   │  手机/   │ ◄─────► │  NAS Docker  │ ◄─────► │  桌面端  │   │
+│   │  手表    │         │  (数据存储)   │         │ (GPU算力)│   │
+│   └──────────┘         └──────────────┘         └──────────┘   │
+│                               ▲                       │         │
+│                               │     FilmLab 渲染      │         │
+│                               └───────────────────────┘         │
+│                                                                  │
+│   特点: NAS 存储数据，PC 提供 GPU 算力进行 FilmLab 处理         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 📥 下载镜像
+
+从 GitHub Releases 下载 Docker 镜像：
+
+**下载地址**: [GitHub Releases](https://github.com/your-repo/filmgallery/releases)
+
+下载文件：`filmgallery-nas-latest.tar`
+
+---
+
+## 📁 存储结构
+
+FilmGallery 会在你指定的目录下创建 `FilmGallery/` 子目录：
+
+```
+/volume1/photos/              ← NAS 本地目录
+├── FilmGallery/              ← FilmGallery 数据
+│   ├── data/                 ← SQLite 数据库 (film.db)
+│   └── uploads/              ← 照片存储
+├── 2024-vacation/            ← 你的其他照片 (可通过导入访问)
+└── scans/                    ← 扫描仪输出 (可通过导入访问)
+```
+
+---
+
+## 🔧 群晖 Synology NAS 安装
+
+### 方法一：通过 SSH 命令行
+
+#### 1. 启用 SSH 并连接
+
+1. 群晖控制面板 → 终端机和 SNMP → 启用 SSH
+2. 使用 SSH 客户端连接：
+   ```bash
+   ssh admin@<NAS-IP>
+   ```
+
+#### 2. 上传并加载镜像
 
 ```bash
-# 1. 下载部署包
-# 从 GitHub Releases 下载 filmgallery-deploy-YYYYMMDD.zip
+# 进入 docker 目录
+cd /volume1/docker
 
-# 2. 解压并进入目录
-unzip filmgallery-deploy-*.zip
-cd filmgallery-deploy-*/
+# 上传 filmgallery-nas-latest.tar 文件到此目录
+# (可使用 File Station 或 SCP)
 
-# 3. 配置环境变量
-cp .env.example .env
-nano .env
+# 加载镜像
+sudo docker load -i filmgallery-nas-latest.tar
+```
 
-# 4. 启动服务
+#### 3. 创建目录结构
+
+```bash
+# 创建存储目录
+mkdir -p /volume1/photos/FilmGallery/data
+mkdir -p /volume1/photos/FilmGallery/uploads
+
+# 设置权限
+chmod -R 755 /volume1/photos/FilmGallery
+```
+
+#### 4. 创建 docker-compose.yml
+
+```bash
+cd /volume1/docker
+mkdir filmgallery
+cd filmgallery
+nano docker-compose.yml
+```
+
+粘贴以下内容：
+
+```yaml
+version: '3.8'
+
+services:
+  filmgallery:
+    image: filmgallery-nas:latest
+    container_name: filmgallery-server
+    restart: unless-stopped
+    
+    ports:
+      - "4000:4000"
+    
+    environment:
+      - NODE_ENV=production
+      - SERVER_MODE=nas
+      - PORT=4000
+      - TZ=Asia/Shanghai
+      - DATA_ROOT=/mnt/photos/FilmGallery
+      - ALLOW_ALL_MOUNTED_PATHS=true
+    
+    volumes:
+      - /volume1/photos:/mnt/photos
+      # 可选：添加其他目录
+      # - /volume1/scans:/mnt/scans:ro
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+#### 5. 启动服务
+
+```bash
+sudo docker-compose up -d
+```
+
+### 方法二：通过群晖 Docker 套件 (GUI)
+
+#### 1. 上传镜像文件
+
+1. 打开 **File Station**
+2. 进入 `/docker` 目录
+3. 上传 `filmgallery-nas-latest.tar`
+
+#### 2. 导入镜像
+
+1. 打开 **Docker** 套件
+2. 点击 **映像** → **新增** → **从文件添加**
+3. 选择上传的 `filmgallery-nas-latest.tar`
+
+#### 3. 创建容器
+
+1. 在映像列表中找到 `filmgallery-nas`
+2. 点击 **启动**
+3. 设置容器名称：`filmgallery-server`
+
+#### 4. 配置高级设置
+
+**端口设置**：
+| 本地端口 | 容器端口 |
+|---------|---------|
+| 4000 | 4000 |
+
+**卷设置**：
+| 文件/文件夹 | 挂载路径 | 权限 |
+|------------|---------|------|
+| /volume1/photos | /mnt/photos | 读写 |
+
+**环境变量**：
+| 变量 | 值 |
+|------|-----|
+| NODE_ENV | production |
+| SERVER_MODE | nas |
+| PORT | 4000 |
+| TZ | Asia/Shanghai |
+| DATA_ROOT | /mnt/photos/FilmGallery |
+| ALLOW_ALL_MOUNTED_PATHS | true |
+
+#### 5. 启动容器
+
+点击 **应用** 启动容器。
+
+---
+
+## 🔧 威联通 QNAP NAS 安装
+
+### 1. 安装 Container Station
+
+在 App Center 中安装 **Container Station**。
+
+### 2. 上传镜像
+
+1. 打开 **File Station**
+2. 进入共享文件夹（如 `/share/Container`）
+3. 上传 `filmgallery-nas-latest.tar`
+
+### 3. 导入镜像
+
+1. 打开 **Container Station**
+2. 点击 **映像** → **导入** → **从本地文件导入**
+3. 选择上传的 tar 文件
+
+### 4. 创建容器
+
+1. 选择 `filmgallery-nas:latest` 镜像
+2. 点击 **创建**
+3. 配置以下设置：
+
+**网络**：
+- 端口映射：`4000:4000`
+
+**共享文件夹**：
+| 主机路径 | 容器路径 |
+|---------|---------|
+| /share/photos | /mnt/photos |
+
+**环境变量**：
+```
+NODE_ENV=production
+SERVER_MODE=nas
+PORT=4000
+TZ=Asia/Shanghai
+DATA_ROOT=/mnt/photos/FilmGallery
+ALLOW_ALL_MOUNTED_PATHS=true
+```
+
+### 5. 创建存储目录
+
+```bash
+mkdir -p /share/photos/FilmGallery/data
+mkdir -p /share/photos/FilmGallery/uploads
+```
+
+### 6. 启动容器
+
+---
+
+## 🔧 华硕 ASUS NAS 安装
+
+### 1. 准备工作
+
+确保已安装 Docker 应用。
+
+### 2. 上传镜像
+
+通过 File Manager 上传 `filmgallery-nas-latest.tar` 到 NAS。
+
+### 3. SSH 安装
+
+```bash
+# 连接 SSH
+ssh admin@<NAS-IP>
+
+# 加载镜像
+docker load -i /path/to/filmgallery-nas-latest.tar
+
+# 创建目录
+mkdir -p /volume1/photos/FilmGallery/data
+mkdir -p /volume1/photos/FilmGallery/uploads
+
+# 运行容器
+docker run -d \
+  --name filmgallery-server \
+  --restart unless-stopped \
+  -p 4000:4000 \
+  -e NODE_ENV=production \
+  -e SERVER_MODE=nas \
+  -e TZ=Asia/Shanghai \
+  -e DATA_ROOT=/mnt/photos/FilmGallery \
+  -e ALLOW_ALL_MOUNTED_PATHS=true \
+  -v /volume1/photos:/mnt/photos \
+  filmgallery-nas:latest
+```
+
+---
+
+## 🔧 通用 Linux 服务器安装
+
+### 1. 加载镜像
+
+```bash
+# 加载镜像
+docker load -i filmgallery-nas-latest.tar
+
+# 验证
+docker images | grep filmgallery
+```
+
+### 2. 创建目录
+
+```bash
+mkdir -p /data/photos/FilmGallery/data
+mkdir -p /data/photos/FilmGallery/uploads
+chmod -R 755 /data/photos/FilmGallery
+```
+
+### 3. 创建 docker-compose.yml
+
+```yaml
+version: '3.8'
+
+services:
+  filmgallery:
+    image: filmgallery-nas:latest
+    container_name: filmgallery-server
+    restart: unless-stopped
+    
+    ports:
+      - "4000:4000"
+    
+    environment:
+      - NODE_ENV=production
+      - SERVER_MODE=nas
+      - PORT=4000
+      - TZ=Asia/Shanghai
+      - DATA_ROOT=/mnt/photos/FilmGallery
+      - ALLOW_ALL_MOUNTED_PATHS=true
+    
+    volumes:
+      - /data/photos:/mnt/photos
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+```
+
+### 4. 启动
+
+```bash
 docker-compose up -d
 ```
 
-### 手动拉取镜像
+---
 
-```bash
-# 拉取最新版本
-docker pull filmgallery/server:latest
+## 🔧 Windows Docker Desktop 安装
 
-# 或指定版本
-docker pull filmgallery/server:1.8.0
+### 1. 加载镜像
+
+```powershell
+docker load -i filmgallery-nas-latest.tar
 ```
 
-**支持平台**：
-- `linux/amd64` (x86_64)
-- `linux/arm64` (ARM64/Apple Silicon)
+### 2. 创建目录
+
+```powershell
+mkdir D:\Photos\FilmGallery\data
+mkdir D:\Photos\FilmGallery\uploads
+```
+
+### 3. 创建 docker-compose.yml
+
+在 `D:\Photos\FilmGallery\` 下创建：
+
+```yaml
+version: '3.8'
+
+services:
+  filmgallery:
+    image: filmgallery-nas:latest
+    container_name: filmgallery-server
+    restart: unless-stopped
+    
+    ports:
+      - "4000:4000"
+    
+    environment:
+      - NODE_ENV=production
+      - SERVER_MODE=nas
+      - PORT=4000
+      - TZ=Asia/Shanghai
+      - DATA_ROOT=/mnt/storage/FilmGallery
+      - ALLOW_ALL_MOUNTED_PATHS=true
+    
+    volumes:
+      - D:\Photos:/mnt/storage
+```
+
+### 4. 启动
+
+```powershell
+cd D:\Photos\FilmGallery
+docker-compose up -d
+```
 
 ---
 
-## 🛠️ 方式二：从源码构建
-
-### 1. 准备配置文件
+## ✅ 验证安装
 
 ```bash
-# 复制示例配置
-cp .env.example .env
+# 检查容器状态
+docker ps | grep filmgallery
 
-# 编辑配置
-nano .env
+# 测试 API
+curl http://localhost:4000/api/discover
 ```
 
-主要配置项：
-```env
-DATA_PATH=./data          # 数据库存储路径
-UPLOADS_PATH=./uploads    # 图片文件存储路径
-PORT=4000                 # 服务端口
-```
-
-### 2. 启动服务（从源码构建）
-
-如需从源码构建镜像，编辑 `docker-compose.yml`：
-
-```yaml
-services:
-  filmgallery:
-    # 取消注释以下两行以从源码构建
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-    # 注释掉 image 行
-    # image: filmgallery/server:latest
-```
-
-然后启动：
-
-```bash
-# 构建并启动服务
-docker-compose up -d --build
-
-# 查看日志
-docker-compose logs -f
-
-# 停止服务
-docker-compose down
-```
-
-### 3. 验证部署
-
-访问 `http://<NAS-IP>:4000/api/discover` 应返回：
-
+预期返回：
 ```json
 {
-  "name": "filmgallery",
-  "version": "1.x.x",
-  "mode": "nas",
+  "app": "FilmGallery",
+  "version": "1.9.1",
+  "serverMode": "nas",
   "capabilities": {
     "database": true,
     "files": true,
@@ -112,228 +463,22 @@ docker-compose down
 }
 ```
 
-## 🔧 客户端配置
+---
 
-### 桌面客户端
+## 💻 客户端配置
 
-1. 打开设置 → 服务器模式
-2. 选择「远程服务器」
-3. 输入 NAS 地址：`http://<NAS-IP>:4000`
-4. 点击「测试连接」
-5. 启用「本地算力处理」以使用 PC 进行 FilmLab 处理
+### 桌面端
+
+1. 打开 FilmGallery
+2. 进入 **设置 → 服务器连接**
+3. 选择 **混合模式**（推荐）或 **远程模式**
+4. 输入：`http://<NAS-IP>:4000`
+5. 测试连接并保存
 
 ### 移动端 / 手表
 
-1. 打开设置 → 服务器设置
-2. 扫描二维码或手动输入服务器地址
-3. 应用会自动发现 NAS 服务器
-
-## 📂 数据持久化
-
-### 推荐目录结构
-
-```
-/volume1/docker/filmgallery/
-├── docker-compose.yml
-├── .env
-├── data/
-│   └── film.db           # SQLite 数据库
-└── uploads/
-    ├── thumbnails/       # 缩略图
-    ├── processed/        # 处理后的图片
-    └── raw/              # 原始文件
-```
-
-### 数据备份
-
-```bash
-# 备份数据库
-docker-compose exec filmgallery-server cp /app/data/film.db /app/data/film.db.backup
-
-# 或直接复制宿主机文件
-cp ./data/film.db ./data/film.db.backup.$(date +%Y%m%d)
-```
-
-## 🔐 安全建议
-
-### 内网访问
-
-默认配置仅适用于内网环境。如需外网访问，请：
-
-1. 使用反向代理（如 Nginx）
-2. 配置 HTTPS
-3. 添加认证层
-
-### Nginx 反向代理示例
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name filmgallery.yourdomain.com;
-    
-    ssl_certificate /path/to/cert.pem;
-    ssl_certificate_key /path/to/key.pem;
-    
-    location / {
-        proxy_pass http://localhost:4000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-## 🐳 Docker Compose 选项
-
-### 自定义端口
-
-```yaml
-ports:
-  - "8080:4000"  # 改为 8080 端口
-```
-
-### 限制资源使用
-
-```yaml
-services:
-  filmgallery-server:
-    # ... 其他配置
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 1G
-```
-
-### 使用外部网络
-
-```yaml
-networks:
-  default:
-    external:
-      name: your-network
-```
-
-## 🔍 故障排查
-
-### 服务无法启动
-
-```bash
-# 查看详细日志
-docker-compose logs --tail=100
-
-# 检查端口占用
-netstat -tlnp | grep 4000
-```
-
-### 数据库锁定
-
-如果使用云同步（OneDrive/Dropbox），设置：
-
-```env
-DB_WRITE_THROUGH=1
-```
-
-### 权限问题
-
-```bash
-# 确保目录权限正确
-chmod -R 755 ./data ./uploads
-chown -R 1000:1000 ./data ./uploads
-```
-
-## 📊 监控
-
-### 健康检查
-
-Docker 内置健康检查，可通过以下命令查看：
-
-```bash
-docker inspect --format='{{json .State.Health}}' filmgallery-server
-```
-
-### 日志聚合
-
-日志自动限制大小，可集成到日志系统：
-
-```yaml
-logging:
-  driver: "syslog"
-  options:
-    syslog-address: "udp://192.168.1.1:514"
-    tag: "filmgallery"
-```
-
-## 🔄 更新升级
-
-### 使用预构建镜像
-
-```bash
-# 拉取最新镜像
-docker-compose pull
-
-# 重新创建容器
-docker-compose up -d
-
-# 清理旧镜像
-docker image prune -f
-```
-
-### 从源码重新构建
-
-```bash
-# 重新构建镜像
-docker-compose build --no-cache
-
-# 重新创建容器
-docker-compose up -d
-```
-
----
-
-## 🏗️ 维护者：构建和发布镜像
-
-### 构建多平台镜像
-
-```bash
-# Linux/macOS
-cd docker/
-chmod +x build-image.sh
-./build-image.sh 1.8.0
-
-# Windows
-cd docker\
-.\build-image.ps1 -Version 1.8.0
-```
-
-此脚本会：
-1. 登录 Docker Hub
-2. 使用 buildx 构建多平台镜像（amd64 + arm64）
-3. 推送到 Docker Hub
-
-### 创建发布包
-
-```bash
-# Linux/macOS
-cd docker/
-chmod +x create-release-package.sh
-./create-release-package.sh
-
-# Windows
-cd docker\
-.\create-release-package.ps1
-```
-
-这会生成 `filmgallery-deploy-YYYYMMDD.zip`，包含：
-- docker-compose.yml（使用预构建镜像）
-- .env.example（配置模板）
-- README.md（部署说明）
-- deploy.sh / deploy.ps1（可选的部署脚本）
-- docs/（快速启动和部署指南）
-
-用户只需下载、解压、配置即可部署。
+1. 打开 App 设置
+2. 输入服务器地址：`http://<NAS-IP>:4000`
 
 ---
 
@@ -342,14 +487,61 @@ cd docker\
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `PORT` | `4000` | 服务端口 |
-| `DATA_PATH` | `./data` | 数据库路径 |
-| `UPLOADS_PATH` | `./uploads` | 上传文件路径 |
-| `TZ` | `Asia/Shanghai` | 时区 |
-| `DB_WRITE_THROUGH` | `0` | 数据库写入模式 |
-| `NODE_ENV` | `production` | Node 环境 |
 | `SERVER_MODE` | `nas` | 服务器模式 |
+| `DATA_ROOT` | `/app/data` | 数据根目录 |
+| `TZ` | `Asia/Shanghai` | 时区 |
+| `ALLOW_ALL_MOUNTED_PATHS` | `false` | 允许访问所有 /mnt 目录 |
+| `ALLOWED_BROWSE_PATHS` | - | 白名单目录 (逗号分隔) |
 
-## 🆘 获取帮助
+---
 
-- 查看完整文档：[docs/hybrid-compute-architecture.md](../docs/hybrid-compute-architecture.md)
-- 提交问题：GitHub Issues
+## 🔧 常用命令
+
+```bash
+# 查看日志
+docker logs -f filmgallery-server
+
+# 重启
+docker restart filmgallery-server
+
+# 停止
+docker stop filmgallery-server
+
+# 删除容器（数据保留）
+docker rm filmgallery-server
+
+# 更新：先删除容器，加载新镜像，再启动
+docker stop filmgallery-server
+docker rm filmgallery-server
+docker load -i filmgallery-nas-new.tar
+docker-compose up -d
+```
+
+---
+
+## 🆘 故障排查
+
+### 容器无法启动
+
+```bash
+docker logs filmgallery-server
+```
+
+### 权限问题
+
+```bash
+chmod -R 755 /volume1/photos/FilmGallery
+chown -R 1000:1000 /volume1/photos/FilmGallery
+```
+
+### 端口被占用
+
+修改 docker-compose.yml 中的端口映射：
+```yaml
+ports:
+  - "4001:4000"
+```
+
+### 防火墙问题
+
+确保 NAS 防火墙开放 4000 端口。

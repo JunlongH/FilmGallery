@@ -23,13 +23,48 @@ services:
       - TZ=${TZ:-Asia/Shanghai}
       # Database write-through for cloud sync compatibility
       - DB_WRITE_THROUGH=${DB_WRITE_THROUGH:-0}
+      
+      # ============================================
+      # 数据存储路径配置
+      # 数据存储在 /mnt/<挂载名>/FilmGallery/ 下
+      # ============================================
+      - DATA_ROOT=/mnt/storage/FilmGallery
+      
+      # ============================================
+      # 文件系统访问模式配置 (三选一)
+      # ============================================
+      
+      # 模式1: 白名单模式 (最安全)
+      # 只允许访问明确指定的目录，逗号分隔
+      # - ALLOWED_BROWSE_PATHS=/mnt/photos,/mnt/scans
+      
+      # 模式2: 挂载目录模式 (推荐，默认启用)
+      # 允许访问所有 /mnt 下的挂载目录
+      - ALLOW_ALL_MOUNTED_PATHS=true
+      
+      # 模式3: 完全开放模式 (危险! 仅限测试)
+      # 允许访问除系统目录外的所有路径
+      # - FILESYSTEM_OPEN_MODE=true
     
     # Volume mounts
     volumes:
-      # Database storage (film.db)
-      - ${DATA_PATH:-./data}:/app/data
-      # Image files (uploads/)
-      - ${UPLOADS_PATH:-./uploads}:/app/uploads
+      # ============================================
+      # 核心数据挂载 (必须配置)
+      # 将 NAS 本地目录挂载到容器的 /mnt/xxx/FilmGallery
+      # ============================================
+      
+      # 主存储目录 - 包含数据库和照片
+      # 格式: <NAS本地目录>:/mnt/<挂载名>
+      # 例如: /volume1/photos:/mnt/photos
+      #       数据库将存储在 /mnt/photos/FilmGallery/data
+      #       照片将存储在 /mnt/photos/FilmGallery/uploads
+      - ${STORAGE_PATH:-/volume1/photos}:/mnt/storage
+      
+      # ============================================
+      # 可选: 额外的只读目录 (用于导入功能)
+      # ============================================
+      # 如果你想从其他位置导入照片，可以挂载额外目录
+      # - /volume1/scans:/mnt/scans:ro
     
     # Health check
     healthcheck:

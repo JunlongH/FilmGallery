@@ -1,105 +1,115 @@
-# FilmGallery - Docker 镜像构建和发布脚本（Windows）
-# 用于维护者构建并发布 Docker 镜像到 Docker Hub
+# FilmGallery - Docker Image Build Script (Windows)
+# Build and publish Docker images to Docker Hub
 
 param(
-    [string]$Version = "latest"
+    [string]$Version = "latest",
+    [switch]$Push = $false,
+    [switch]$UseMirror = $false
 )
 
 $ErrorActionPreference = "Stop"
 
-# 配置
+# Configuration
 $ImageName = "filmgallery/server"
-$Platform = "linux/amd64,linux/arm64"
 
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
-Write-Host "  FilmGallery Docker 镜像构建" -ForegroundColor Blue
-Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Blue
+Write-Host "==========================================" -ForegroundColor Blue
+Write-Host "  FilmGallery Docker Image Build" -ForegroundColor Blue
+Write-Host "==========================================" -ForegroundColor Blue
 Write-Host ""
 
-# 检查 Docker
+# Check Docker
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Host "[ERROR] Docker 未安装" -ForegroundColor Red
+    Write-Host "[ERROR] Docker is not installed" -ForegroundColor Red
     exit 1
 }
 
-# 检查 buildx
-try {
-    docker buildx version | Out-Null
-} catch {
-    Write-Host "[ERROR] Docker buildx 未安装" -ForegroundColor Red
-    Write-Host "请运行: docker buildx create --use"
-    exit 1
-}
-
-# 获取版本信息
+# Get version from package.json
 if ($Version -eq "latest") {
     if (Test-Path "..\server\package.json") {
         $packageJson = Get-Content "..\server\package.json" | ConvertFrom-Json
         $pkgVersion = $packageJson.version
-        Write-Host "检测到版本: $pkgVersion" -ForegroundColor Yellow
-        $response = Read-Host "是否使用此版本号？[Y/n]"
+        Write-Host "Detected version: $pkgVersion" -ForegroundColor Yellow
+        $response = Read-Host "Use this version? [Y/n]"
         if ([string]::IsNullOrEmpty($response) -or $response -match '^[Yy]$') {
             $Version = $pkgVersion
         }
     }
 }
 
-Write-Host "[INFO] 镜像信息:" -ForegroundColor Blue
-Write-Host "  名称: $ImageName"
-Write-Host "  版本: $Version"
-Write-Host "  平台: $Platform"
+# Select Dockerfile
+$dockerfilePath = "Dockerfile"
+if ($UseMirror) {
+    $dockerfilePath = "Dockerfile.cn"
+    Write-Host "[INFO] Using China mirror Dockerfile" -ForegroundColor Yellow
+}
+
+Write-Host "[INFO] Image information:" -ForegroundColor Blue
+Write-Host "  Name: $ImageName"
+Write-Host "  Version: $Version"
+Write-Host "  Dockerfile: $dockerfilePath"
+Write-Host "  Push to Hub: $Push"
 Write-Host ""
 
-# 确认构建
-$confirm = Read-Host "确认开始构建？[Y/n]"
+# Confirm build
+$confirm = Read-Host "Confirm to start build? [Y/n]"
 if (-not ([string]::IsNullOrEmpty($confirm) -or $confirm -match '^[Yy]$')) {
-    Write-Host "已取消"
+    Write-Host "Cancelled"
     exit 0
 }
 
-# 登录 Docker Hub
-Write-Host "[INFO] 登录 Docker Hub..." -ForegroundColor Blue
-docker login
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[ERROR] Docker Hub 登录失败" -ForegroundColor Red
-    exit 1
-}
-
-# 创建 buildx builder（如果不存在）
-$builders = docker buildx ls
-if (-not ($builders -match "filmgallery-builder")) {
-    Write-Host "[INFO] 创建 buildx builder..." -ForegroundColor Blue
-    docker buildx create --name filmgallery-builder --use
-}
-
-# 构建并推送多平台镜像
-Write-Host "[INFO] 构建并推送镜像..." -ForegroundColor Blue
-Write-Host ""
-
+# Change to project root
 Set-Location ..
 
-docker buildx build `
-    --platform $Platform `
-    --file docker/Dockerfile `
+# Build image using standard docker build (uses local cache)
+Write-Host "[INFO] Building image..." -ForegroundColor Blue
+Write-Host ""
+
+docker build `
+    --file "docker/$dockerfilePath" `
     --tag "${ImageName}:${Version}" `
     --tag "${ImageName}:latest" `
-    --push `
     .
 
-if ($LASTEXITCODE -eq 0) {
-    Write-Host ""
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Green
-    Write-Host "  ✓ 镜像构建并发布成功！" -ForegroundColor Green
-    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "发布的镜像:"
-    Write-Host "  ${ImageName}:${Version}"
-    Write-Host "  ${ImageName}:latest"
-    Write-Host ""
-    Write-Host "用户可通过以下命令拉取:"
-    Write-Host "  docker pull ${ImageName}:${Version}"
-    Write-Host ""
-} else {
-    Write-Host "[ERROR] 镜像构建失败" -ForegroundColor Red
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[ERROR] Image build failed" -ForegroundColor Red
     exit 1
+}
+
+Write-Host ""
+Write-Host "[OK] Build succeeded!" -ForegroundColor Green
+Write-Host "  ${ImageName}:${Version}"
+Write-Host "  ${ImageName}:latest"
+Write-Host ""
+
+# Push if requested
+if ($Push) {
+    Write-Host "[INFO] Login to Docker Hub..." -ForegroundColor Blue
+    docker login
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[ERROR] Docker Hub login failed" -ForegroundColor Red
+        exit 1
+    }
+
+    Write-Host "[INFO] Pushing image..." -ForegroundColor Blue
+    docker push "${ImageName}:${Version}"
+    docker push "${ImageName}:latest"
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host ""
+        Write-Host "==========================================" -ForegroundColor Green
+        Write-Host "  Push succeeded!" -ForegroundColor Green
+        Write-Host "==========================================" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Users can pull with:"
+        Write-Host "  docker pull ${ImageName}:${Version}"
+    } else {
+        Write-Host "[ERROR] Push failed" -ForegroundColor Red
+        exit 1
+    }
+} else {
+    Write-Host "To push to Docker Hub, run:"
+    Write-Host "  .\build-image.ps1 $Version -Push"
+    Write-Host ""
+    Write-Host "To save as tar file:"
+    Write-Host "  docker save ${ImageName}:${Version} -o filmgallery-${Version}.tar"
 }

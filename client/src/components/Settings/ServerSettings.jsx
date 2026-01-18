@@ -71,7 +71,8 @@ export default function ServerSettings() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.name === 'filmgallery') {
+        // Check for app identifier (server returns "app" not "name")
+        if (data.app === 'FilmGallery' || data.name === 'filmgallery') {
           setServerInfo(data);
           setTestStatus('success');
           return true;

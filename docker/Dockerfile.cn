@@ -1,12 +1,10 @@
-# FilmGallery NAS Server
+# FilmGallery NAS Server (China Mirror Version)
 # Multi-stage build for minimal image size
+# Uses China mirror to avoid network issues
 
 # ============ Build Stage ============
-FROM node:20-alpine AS builder
-
-# Install build dependencies for native modules
-# libraw-dev is required for lightdrift-libraw
-RUN apk add --no-cache python3 py3-setuptools make g++ gcc libc-dev linux-headers libraw-dev
+# Use Docker Hub official image (will be pulled via configured mirror)
+FROM node:18-alpine AS builder
 
 WORKDIR /build
 
@@ -14,19 +12,21 @@ WORKDIR /build
 COPY server/package*.json ./server/
 COPY packages/shared/package*.json ./packages/shared/
 
+# Use China npm mirror
+RUN npm config set registry https://registry.npmmirror.com
+
 # Install dependencies
 WORKDIR /build/server
-RUN npm ci --omit=dev
+RUN npm ci --only=production
 
 # ============ Production Stage ============
-FROM node:20-alpine AS production
+FROM node:18-alpine AS production
 
-# Install runtime dependencies
-# libraw: required for lightdrift-libraw native module
-# perl: required for exiftool (EXIF metadata extraction)
-# curl: for healthcheck
-# tzdata: for timezone support
-RUN apk add --no-cache curl tzdata libraw perl exiftool
+# Use China alpine mirror
+RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl tzdata
 
 # Create non-root user
 RUN addgroup -g 1001 filmgallery && \

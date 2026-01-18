@@ -8,10 +8,22 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [savingWriteThrough, setSavingWriteThrough] = useState(false);
   const [actualPaths, setActualPaths] = useState(null);
+  const [serverInfo, setServerInfo] = useState(null);
   const [activeTab, setActiveTab] = useState('general'); // 'general' | 'luts'
 
   const isElectron = !!window.__electron;
   const canPickDirs = !!window.__electron?.pickDataRoot && !!window.__electron?.setDataRoot;
+  
+  // 检测是否连接远程服务器 (非 localhost)
+  const isRemoteServer = (() => {
+    try {
+      const url = new URL(API_BASE);
+      const host = url.hostname.toLowerCase();
+      return host !== 'localhost' && host !== '127.0.0.1';
+    } catch {
+      return false;
+    }
+  })();
 
   useEffect(() => {
     let mounted = true;
@@ -24,6 +36,12 @@ export default function Settings() {
         if (res.ok) {
           const data = await res.json();
           if (mounted && data.storage) setActualPaths(data.storage);
+        }
+        // Fetch server info (mode, version etc)
+        const infoRes = await fetch(`${API_BASE}/api/discover`);
+        if (infoRes.ok) {
+          const info = await infoRes.json();
+          if (mounted) setServerInfo(info);
         }
       } catch {}
     })();
@@ -196,6 +214,50 @@ export default function Settings() {
         </div>
       )}
 
+      {/* 远程服务器模式：显示服务器存储信息（只读） */}
+      {isRemoteServer && (
+        <div className="card" style={{ padding: 16, marginBottom: 16, background: '#f0f7ff' }}>
+          <h3>🖥️ 远程服务器存储 (只读)</h3>
+          <p style={{ color: '#555', marginBottom: 12 }}>
+            当前连接到远程服务器，存储路径由服务器端 Docker 配置管理
+          </p>
+          
+          {actualPaths && (
+            <div style={{ background: '#fff', padding: 12, borderRadius: 8, border: '1px solid #d0e0f0' }}>
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ color: '#666', width: 80, display: 'inline-block' }}>数据库:</span>
+                <code style={{ background: '#f5f5f5', padding: '4px 8px', borderRadius: 4 }}>
+                  {actualPaths.databasePath}
+                </code>
+              </div>
+              <div>
+                <span style={{ color: '#666', width: 80, display: 'inline-block' }}>照片存储:</span>
+                <code style={{ background: '#f5f5f5', padding: '4px 8px', borderRadius: 4 }}>
+                  {actualPaths.uploadsDir}
+                </code>
+              </div>
+            </div>
+          )}
+          
+          {serverInfo && (
+            <div style={{ marginTop: 12, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, color: '#666' }}>
+                <strong>服务器模式:</strong> {serverInfo.serverMode || 'unknown'}
+              </div>
+              <div style={{ fontSize: 13, color: '#666' }}>
+                <strong>版本:</strong> {serverInfo.version || 'unknown'}
+              </div>
+            </div>
+          )}
+          
+          <div style={{ marginTop: 12, padding: 8, background: '#fff3cd', borderRadius: 4, fontSize: 13, color: '#856404' }}>
+            💡 如需修改服务器存储路径，请在 NAS 上编辑 <code>docker-compose.yml</code> 的 volumes 配置
+          </div>
+        </div>
+      )}
+
+      {/* 本地服务器模式：允许修改路径 */}
+      {!isRemoteServer && (
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <h3>Data Location (Database & Uploads)</h3>
         <p style={{ color: '#555' }}>Choose where the database (film.db) and uploads are stored. Useful for OneDrive/Dropbox syncing.</p>
@@ -217,7 +279,10 @@ export default function Settings() {
           </div>
         )}
       </div>
+      )}
 
+      {/* Write-through 仅在本地模式显示 */}
+      {!isRemoteServer && (
       <div className="card" style={{ padding: 16, marginBottom: 16 }}>
         <h3>Database Write-through (OneDrive即时同步)</h3>
         <p style={{ color: '#555' }}>
@@ -236,7 +301,10 @@ export default function Settings() {
           Applies immediately and restarts backend. Disable to return to WAL mode (better throughput).
         </div>
       </div>
+      )}
 
+      {/* Legacy 仅在本地模式显示 */}
+      {!isRemoteServer && (
       <div className="card" style={{ padding: 16 }}>
         <h3>Legacy: Image Storage Root</h3>
         <p style={{ color: '#555' }}>Override only the uploads folder (not recommended if using Data Location).</p>
@@ -252,6 +320,7 @@ export default function Settings() {
           Changes apply immediately to the local server. Existing files are not moved automatically.
         </div>
       </div>
+      )}
         </>
       )}
     </div>

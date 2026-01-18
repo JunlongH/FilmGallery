@@ -162,6 +162,7 @@ const mountRoutes = () => {
   app.use('/api/luts', require('./routes/luts')); // LUT file management
   app.use('/api/edge-detection', require('./routes/edge-detection')); // Edge detection for auto-crop
   app.use('/api/raw', require('./routes/raw')); // RAW file decoding
+  app.use('/api/filesystem', require('./routes/filesystem')); // Filesystem browsing for hybrid mode
   app.get('/api/_profiler', (req, res) => res.json(getProfilerStats()));
   app.get('/api/_prepared-statements', (req, res) => res.json(PreparedStmt.getStats()));
   
@@ -348,9 +349,9 @@ const seedLocations = async () => {
 		 * Find an available port from the range
 		 */
 		const findAvailablePort = async () => {
-			// If explicit port is set, use it directly
+			// If explicit port is set, use it directly (wrap in promise to wait for listening)
 			if (explicitPort) {
-				return app.listen(explicitPort, '0.0.0.0');
+				return await tryListen(explicitPort);
 			}
 			
 			// In dev mode, prefer 4000
@@ -374,7 +375,7 @@ const seedLocations = async () => {
 			
 			// If all ports in range are taken, let OS assign one (fallback)
 			console.warn('[SERVER] All preferred ports in use, using OS-assigned port');
-			return app.listen(0, '0.0.0.0');
+			return await tryListen(0);
 		};
 		
 		// Start server with port discovery

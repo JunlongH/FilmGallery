@@ -1,0 +1,63 @@
+# Git
+.git
+.github
+.gitignore
+
+# Dependencies (will be installed in container)
+node_modules
+**/node_modules
+
+# Build outputs
+dist_v9
+dist_v9_client
+build
+electron-gpu
+
+# Client (frontend is served separately or pre-built)
+client
+
+# Data files (should be mounted as volumes)
+uploads
+**/uploads
+data
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+# Explicitly exclude server database (contains sample data)
+server/film.db
+server/*.db
+
+# Development files
+.vscode
+*.md
+*.log
+*.cube
+test-*.js
+
+# Docker files
+docker/release
+Dockerfile
+docker-compose*.yml
+
+# Mobile and other apps
+mobile
+watch-app
+
+# Electron files (not needed for server)
+electron-*.js
+*.exe
+*.blockmap
+*.yml
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Assets (if large)
+assets
+
+# Patches
+patches
+**/patches

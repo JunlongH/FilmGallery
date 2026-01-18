@@ -5,7 +5,7 @@
  * @description 批量 FilmLab 渲染配置界面
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import BatchExportProgress from './BatchExportProgress';
 import {
   createBatchRenderLibrary,
@@ -15,8 +15,11 @@ import {
   pauseBatchRender,
   resumeBatchRender,
   listPresets,
+  getPhotos, // Added for hybrid mode
   API_BASE
 } from '../../api';
+import ComputeService from '../../services/ComputeService'; // Added for hybrid mode
+import RemoteFileBrowser from '../common/RemoteFileBrowser'; // Added for remote path selection
 
 // ============================================================================
 // 常量
@@ -74,6 +77,30 @@ export default function BatchRenderModal({
   const [jobId, setJobId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
+  // Local/Hybrid Processing State
+  const [isLocalJob, setIsLocalJob] = useState(false);
+  const localJobProgressRef = useRef({
+    status: 'idle',
+    total: 0, 
+    completed: 0, 
+    failed: 0, 
+    current: 0
+  });
+
+  // Remote file browser state (for server path selection in hybrid mode)
+  const [showRemoteBrowser, setShowRemoteBrowser] = useState(false);
+  const [isRemoteMode, setIsRemoteMode] = useState(false);
+
+  // Detect if we're in remote/hybrid mode on mount
+  useEffect(() => {
+    const checkRemoteMode = async () => {
+      const caps = await ComputeService.getServerCapabilities();
+      // If server is NAS mode, we're in remote/hybrid mode
+      setIsRemoteMode(caps.mode === 'nas');
+    };
+    checkRemoteMode();
+  }, []);
+
   // 模态框打开时重置 jobId
   useEffect(() => {
     if (isOpen) {
@@ -115,14 +142,29 @@ export default function BatchRenderModal({
   
   // 选择输出目录
   const handleSelectDir = async () => {
+    // In remote/hybrid mode when not in Electron, use remote file browser
+    if (isRemoteMode && !window.__electron) {
+      setShowRemoteBrowser(true);
+      return;
+    }
+    
     if (window.__electron && window.__electron.selectDirectory) {
+      // In Electron with local mode, use native dialog
       const dir = await window.__electron.selectDirectory();
       if (dir) setOutputDir(dir);
+    } else if (isRemoteMode) {
+      // Remote mode in browser
+      setShowRemoteBrowser(true);
     } else {
-      // 浏览器环境：使用 prompt
+      // Local browser fallback (dev mode)
       const dir = prompt('请输入输出目录路径:', outputDir || 'D:/Exports');
       if (dir) setOutputDir(dir);
     }
+  };
+
+  // Handle remote path selection
+  const handleRemotePathSelect = (path) => {
+    setOutputDir(path);
   };
   
   // 开始渲染
@@ -144,7 +186,7 @@ export default function BatchRenderModal({
     
     try {
       // 构建参数
-      const photoIds = scope === SCOPE.SELECTED 
+      let photoIds = scope === SCOPE.SELECTED 
         ? selectedPhotos.map(p => p.id)
         : undefined;
       
@@ -161,30 +203,113 @@ export default function BatchRenderModal({
         }
       })();
       
-      let result;
-      if (outputMode === OUTPUT_MODE.LIBRARY) {
-        result = await createBatchRenderLibrary({
-          rollId,
-          scope,
-          photoIds,
-          paramsSource: paramsSourceObj
-        });
-      } else {
-        result = await createBatchRenderDownload({
-          rollId,
-          scope,
-          photoIds,
-          paramsSource: paramsSourceObj,
-          outputDir,
-          format,
-          quality
-        });
-      }
+      // HYBRID MODE CHECK
+      const isHybrid = ComputeService.isHybridMode();
       
-      if (result.jobId) {
-        setJobId(result.jobId);
+      if (isHybrid) {
+        setIsLocalJob(true);
+        // Resolve photo IDs if not selected
+        if (!photoIds) {
+           // Fetch all photos for roll
+           const rollPhotos = await getPhotos(rollId);
+           if (rollPhotos && rollPhotos.value) {
+             let eligible = rollPhotos.value;
+             // Rough filter for NO_POSITIVE
+             if (scope === SCOPE.NO_POSITIVE) {
+               eligible = eligible.filter(p => !p.positive_rel_path); 
+             }
+             photoIds = eligible.map(p => p.id);
+           } else {
+             throw new Error('Failed to fetch roll photos for batch processing');
+           }
+        }
+        
+        if (!photoIds || photoIds.length === 0) {
+           throw new Error('No photos to process');
+        }
+
+        // RESOLVE PARAMS locally
+        let finalParams = {};
+        if (paramsSource === PARAMS_SOURCE.PRESET) {
+            const preset = presets.find(p => p.id === selectedPresetId);
+            if (!preset) throw new Error('Preset not found');
+            try {
+                finalParams = typeof preset.params_json === 'string' ? JSON.parse(preset.params_json) : preset.params;
+            } catch (e) {
+                console.error('Failed to parse preset params', e);
+                // Fallback to empty
+            }
+        } else if (paramsSource === PARAMS_SOURCE.CUSTOM) {
+            finalParams = customParams;
+        } else if (paramsSource === PARAMS_SOURCE.LUT) {
+            // Apply LUT parameters structure that FilmLab expects
+            finalParams = {
+                lut: lutFileName,
+                intensity: lutIntensity
+            };
+        }
+
+        // Initialize local job
+        setJobId('local-job-' + Date.now());
+        localJobProgressRef.current = {
+          status: 'processing',
+          total: photoIds.length,
+          completed: 0,
+          failed: 0,
+          current: 0
+        };
+
+        // Start processing in background (don't await)
+        ComputeService.batchProcess(photoIds, finalParams, {
+           format,
+           outputDir: outputMode === OUTPUT_MODE.DOWNLOAD ? outputDir : undefined,
+           uploadToServer: outputMode === OUTPUT_MODE.LIBRARY,
+           onProgress: (p) => {
+             localJobProgressRef.current = {
+               status: 'processing',
+               ...p
+             };
+           }
+        }).then(res => {
+           localJobProgressRef.current = {
+             status: res.ok ? 'completed' : 'failed',
+             ...localJobProgressRef.current
+           };
+        }).catch(err => {
+           console.error('Local batch failed', err);
+           localJobProgressRef.current = {
+             status: 'failed',
+             ...localJobProgressRef.current
+           };
+        });
+
       } else {
-        throw new Error(result.error || 'Failed to create job');
+        // SERVER MODE (Original Logic)
+        let result;
+        if (outputMode === OUTPUT_MODE.LIBRARY) {
+          result = await createBatchRenderLibrary({
+            rollId,
+            scope,
+            photoIds,
+            paramsSource: paramsSourceObj
+          });
+        } else {
+          result = await createBatchRenderDownload({
+            rollId,
+            scope,
+            photoIds,
+            paramsSource: paramsSourceObj,
+            outputDir,
+            format,
+            quality
+          });
+        }
+        
+        if (result.jobId) {
+          setJobId(result.jobId);
+        } else {
+          throw new Error(result.error || 'Failed to create job');
+        }
       }
     } catch (e) {
       console.error('Failed to start batch render:', e);
@@ -223,36 +348,46 @@ export default function BatchRenderModal({
   if (!isOpen) return null;
   
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: 'rgba(0,0,0,0.8)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 10000
-    }}>
+    <>
+      {/* Remote File Browser Modal */}
+      <RemoteFileBrowser
+        isOpen={showRemoteBrowser}
+        onClose={() => setShowRemoteBrowser(false)}
+        onSelect={handleRemotePathSelect}
+        mode="directory"
+        title="选择输出目录 (服务器端)"
+      />
+      
       <div style={{
-        background: '#1e1e1e',
-        borderRadius: 12,
-        padding: 24,
-        minWidth: 500,
-        maxWidth: 600,
-        maxHeight: '80vh',
-        overflow: 'auto'
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: 'rgba(0,0,0,0.8)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 10000
       }}>
-        {/* 标题栏 */}
         <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: 20
+          background: '#1e1e1e',
+          borderRadius: 12,
+          padding: 24,
+          minWidth: 500,
+          maxWidth: 600,
+          maxHeight: '80vh',
+          overflow: 'auto'
         }}>
-          <h2 style={{ margin: 0, color: '#fff' }}>批量渲染</h2>
-          <button
+          {/* 标题栏 */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 20
+          }}>
+            <h2 style={{ margin: 0, color: '#fff' }}>批量渲染</h2>
+            <button
             onClick={handleClose}
             style={{
               background: 'none',
@@ -271,10 +406,10 @@ export default function BatchRenderModal({
           <BatchExportProgress
             jobId={jobId}
             jobType="render"
-            getProgress={getBatchRenderProgress}
-            cancelJob={cancelBatchRender}
-            pauseJob={pauseBatchRender}
-            resumeJob={resumeBatchRender}
+            getProgress={isLocalJob ? () => Promise.resolve(localJobProgressRef.current) : getBatchRenderProgress}
+            cancelJob={isLocalJob ? undefined : cancelBatchRender} // Allow local cancel later if needed
+            pauseJob={isLocalJob ? undefined : pauseBatchRender}
+            resumeJob={isLocalJob ? undefined : resumeBatchRender}
             onComplete={handleJobComplete}
           />
         ) : (
@@ -504,8 +639,9 @@ export default function BatchRenderModal({
             </div>
           </>
         )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -700,3 +836,5 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
     </div>
   );
 }
+// Export RemoteFileBrowser for other components to use
+export { default as RemoteFileBrowser } from '../common/RemoteFileBrowser';
