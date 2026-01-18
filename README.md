@@ -1,7 +1,36 @@
 # Film Gallery
 ### *A Film management software developed all by AI tools using vibe coding.*
 
-一款专业的胶片摄影管理系统，支持多平台（桌面端、手机端、手表端）和多种部署方式。
+一款专业的胶片摄影管理系统，支持多平台（桌面端、手机端、手表端）和混合算力架构部署。
+
+---
+
+## 🚀 快速开始
+
+### 新用户推荐：混合算力架构
+
+如果你有 NAS 或服务器，推荐使用混合算力架构，享受最佳体验：
+
+```bash
+# 1. 快速部署 NAS 服务器（5分钟）
+cd docker/
+./deploy.sh start    # Linux/macOS
+# 或
+.\deploy.ps1 start   # Windows
+
+# 2. 桌面客户端连接 NAS
+# 设置 → 服务器模式 → 混合模式
+# 服务器地址: http://<NAS-IP>:4000
+# 启用本地 FilmLab 处理
+
+# 3. 移动端直连 NAS
+# 扫描二维码或输入服务器地址
+```
+
+📖 详细部署指南：
+- **5分钟入门**: [QUICKSTART.md](./QUICKSTART.md)
+- **完整部署指南**: [DEPLOYMENT.md](./DEPLOYMENT.md)
+- **架构文档**: [docs/hybrid-compute-architecture.md](./docs/hybrid-compute-architecture.md)
 
 ---
 
@@ -11,7 +40,15 @@
 - **桌面端**: v1.8.0
 - **移动端**: v1.3.1
 - **服务器**: v1.8.0
-- **最新更新**: Server/Client 分离架构 + Docker 部署支持
+- **最新更新**: 混合算力架构 + 完整部署自动化
+
+### 部署方式对比
+
+| 方式 | 适用场景 | 数据位置 | FilmLab 处理 | 移动端访问 |
+|------|----------|----------|--------------|------------|
+| **混合模式（推荐）** | NAS + PC | NAS | PC 本地 | 直连 NAS |
+| 单机完整版 | 仅桌面使用 | PC 本地 | PC 本地 | 需 PC 在线 |
+| 客户端 + 远程服务器 | 远程连接 | 云服务器 | 禁用 | 直连服务器 |
 
 ### 版本类型
 
@@ -30,14 +67,16 @@
 - **下载位置**: `dist_v9_client/`
 - **要求**: 需要单独部署服务器
 
-#### 3. **服务器 - Docker Version**
+#### 3. **服务器 - Docker Version（NAS 推荐）**
 - **适用场景**: 
+  - 🔥 **混合算力架构**（NAS 存储 + PC 算力）
   - 远程服务器部署
-  - NAS 设备部署
+  - NAS 设备部署（Synology/QNAP/群晖）
   - 多设备共享数据
   - 7x24 小时运行
 - **部署方式**: Docker / Docker Compose
-- **详细文档**: 见 [README-DEPLOY.md](./README-DEPLOY.md)
+- **快速开始**: [QUICKSTART.md](./QUICKSTART.md)
+- **详细文档**: [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 #### 4. **移动端 - Android App**
 - **版本**: v1.3.1
