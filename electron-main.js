@@ -887,6 +887,32 @@ ipcMain.handle('config-set-api-base', async (e, url) => {
   return { ok: true, apiBase: trimmed };
 });
 
+// Set server mode (local/remote/hybrid)
+ipcMain.handle('config-set-server-mode', async (e, mode, options = {}) => {
+  if (!['local', 'remote', 'hybrid'].includes(mode)) {
+    return { ok: false, error: 'invalid_mode' };
+  }
+  const update = { 
+    serverMode: mode,
+    useLocalCompute: mode === 'hybrid' ? true : (options.useLocalCompute || false)
+  };
+  if (options.remoteUrl) {
+    update.apiBase = options.remoteUrl.trim();
+  }
+  saveConfig(update);
+  LOG('config-set-server-mode: saved', mode, JSON.stringify(options));
+  return { ok: true, config: appConfig };
+});
+
+// Get server mode
+ipcMain.handle('config-get-server-mode', () => {
+  return {
+    mode: appConfig.serverMode || 'local',
+    useLocalCompute: !!appConfig.useLocalCompute,
+    apiBase: appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`
+  };
+});
+
 // IPC for settings
 ipcMain.handle('config-get', () => appConfig);
 ipcMain.handle('pick-uploads-root', async () => {

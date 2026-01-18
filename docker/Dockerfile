@@ -1,0 +1,59 @@
+# FilmGallery NAS Server
+# Multi-stage build for minimal image size
+
+# ============ Build Stage ============
+FROM node:18-alpine AS builder
+
+WORKDIR /build
+
+# Copy package files
+COPY server/package*.json ./server/
+COPY packages/shared/package*.json ./packages/shared/
+
+# Install dependencies
+WORKDIR /build/server
+RUN npm ci --only=production
+
+# ============ Production Stage ============
+FROM node:18-alpine AS production
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl tzdata
+
+# Create non-root user
+RUN addgroup -g 1001 filmgallery && \
+    adduser -u 1001 -G filmgallery -s /bin/sh -D filmgallery
+
+WORKDIR /app
+
+# Copy server code
+COPY --chown=filmgallery:filmgallery server/ ./server/
+COPY --chown=filmgallery:filmgallery packages/shared/ ./packages/shared/
+
+# Copy dependencies from builder
+COPY --from=builder --chown=filmgallery:filmgallery /build/server/node_modules ./server/node_modules
+
+# Create data directories
+RUN mkdir -p /app/data /app/uploads && \
+    chown -R filmgallery:filmgallery /app/data /app/uploads
+
+# Environment variables
+ENV NODE_ENV=production
+ENV SERVER_MODE=nas
+ENV PORT=4000
+ENV DATA_ROOT=/app/data
+ENV UPLOADS_ROOT=/app/uploads
+
+# Expose port
+EXPOSE 4000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:4000/api/health || exit 1
+
+# Switch to non-root user
+USER filmgallery
+
+# Start server
+WORKDIR /app/server
+CMD ["node", "server.js"]

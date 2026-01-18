@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import LutLibrary from './Settings/LutLibrary';
+import ServerSettings from './Settings/ServerSettings';
 import { API_BASE } from '../api';
 
 export default function Settings() {
@@ -116,6 +117,21 @@ export default function Settings() {
           通用设置
         </button>
         <button
+          onClick={() => setActiveTab('server')}
+          style={{
+            padding: '10px 20px',
+            border: 'none',
+            background: activeTab === 'server' ? '#fff' : 'transparent',
+            borderBottom: activeTab === 'server' ? '2px solid #5a4632' : '2px solid transparent',
+            color: activeTab === 'server' ? '#5a4632' : '#888',
+            fontWeight: activeTab === 'server' ? 600 : 400,
+            cursor: 'pointer',
+            fontSize: 14
+          }}
+        >
+          服务器连接
+        </button>
+        <button
           onClick={() => setActiveTab('luts')}
           style={{
             padding: '10px 20px',
@@ -131,6 +147,11 @@ export default function Settings() {
           LUT 库管理
         </button>
       </div>
+
+      {/* Server Settings Tab */}
+      {activeTab === 'server' && (
+        <ServerSettings />
+      )}
 
       {/* LUT Library Tab */}
       {activeTab === 'luts' && (

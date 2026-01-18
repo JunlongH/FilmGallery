@@ -17,6 +17,13 @@ const { runFilmStructMigration } = require('./utils/film-struct-migration');
 const { cacheSeconds } = require('./utils/cache');
 const { requestProfiler, getProfilerStats, scheduleProfilerLog } = require('./utils/profiler');
 const PreparedStmt = require('./utils/prepared-statements');
+const { computeGuard } = require('./middleware/compute-guard');
+const { getServerMode, getCapabilities, isComputeEnabled } = require('../packages/shared/serverCapabilities');
+
+// Log server mode
+const serverMode = getServerMode();
+console.log(`[SERVER MODE] Running in ${serverMode.toUpperCase()} mode`);
+console.log(`[SERVER MODE] Compute enabled: ${isComputeEnabled()}`);
 
 console.log('[STORAGE CONFIG]', {
 	DATA_ROOT: process.env.DATA_ROOT,
@@ -40,6 +47,8 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 // lightweight request profiler for API
 app.use(requestProfiler());
+// Compute guard - blocks heavy routes in NAS mode
+app.use(computeGuard);
 app.use(bodyParser.json({ limit: '10mb' }));
 // gzip/deflate for API JSON responses (not applied to static uploads)
 app.use(compression({ threshold: 1024 }));
@@ -157,14 +166,17 @@ const mountRoutes = () => {
   app.get('/api/_prepared-statements', (req, res) => res.json(PreparedStmt.getStats()));
   
   // Port discovery API for mobile/watch auto-discovery
-  // This endpoint is registered after all routes to ensure it's always available
+  // Also returns server capabilities for hybrid compute mode
   app.get('/api/discover', (req, res) => {
     const appInfo = require('./constants/app-info');
+    const capabilities = getCapabilities();
     res.json({
       app: appInfo.APP_IDENTIFIER,
       version: appInfo.APP_VERSION,
       port: global.__actualServerPort || 4000,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      // Server capabilities for hybrid compute mode
+      ...capabilities
     });
   });
 };

@@ -1,0 +1,66 @@
+# FilmGallery Docker ignore file
+# Exclude files not needed in Docker image
+
+# Development files
+*.md
+*.txt
+*.log
+
+# Test files
+test-*.js
+*.test.js
+*.spec.js
+__tests__/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Local environment
+.env
+.env.local
+*.local
+
+# Build outputs (use pre-built)
+dist_v9/
+dist_v9_client/
+
+# Electron-specific (not needed for server)
+electron-main.js
+electron-preload.js
+electron-builder*.json
+build/
+
+# Mobile and watch apps
+mobile/
+watch-app/
+
+# Development dependencies
+node_modules/
+
+# Documentation
+docs/
+
+# Client app (built separately)
+client/node_modules/
+client/src/
+client/public/
+
+# Patches and configs
+patches/
+*.patch
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+*.tmp

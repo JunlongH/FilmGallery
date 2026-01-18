@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('__electron', {
   // Expose method to change API BASE at runtime (reload required)
   setApiBase: (url) => ipcRenderer.invoke('config-set-api-base', url),
   getApiBase: () => ipcRenderer.invoke('config-get-api-base'),
+  
+  // Server mode configuration (local/remote/hybrid)
+  setServerMode: (mode, options) => ipcRenderer.invoke('config-set-server-mode', mode, options),
+  getServerMode: () => ipcRenderer.invoke('config-get-server-mode'),
 
   minimize: () => ipcRenderer.invoke('window-minimize'),
 
