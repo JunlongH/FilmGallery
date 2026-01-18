@@ -118,6 +118,9 @@ const FS_GL2 = `#version 300 es
   uniform float u_filmCurveDMin;
   uniform float u_filmCurveDMax;
 
+  // Film Base Correction Gains (Pre-Inversion)
+  uniform vec3 u_baseGains;
+
   // HSL parameters (8 channels: red, orange, yellow, green, cyan, blue, purple, magenta)
   uniform vec3 u_hslRed;
   uniform vec3 u_hslOrange;
@@ -328,6 +331,11 @@ const FS_GL2 = `#version 300 es
       c.b = applyFilmCurve(c.b);
     }
     
+    // Base Correction - neutralize film base color
+    // 始终应用，让用户在负片状态下就能看到效果
+    c = c * u_baseGains;
+    c = clamp(c, 0.0, 1.0);
+    
     // Inversion
     if (u_inverted > 0.5) {
       if (u_logMode > 0.5) {
@@ -430,6 +438,9 @@ const FS_GL1 = `
   uniform float u_filmCurveGamma;
   uniform float u_filmCurveDMin;
   uniform float u_filmCurveDMax;
+
+  // Film Base Correction Gains (Pre-Inversion)
+  uniform vec3 u_baseGains;
 
   // HSL parameters (8 channels)
   uniform vec3 u_hslRed;
@@ -593,6 +604,11 @@ const FS_GL1 = `
       c.g = applyFilmCurve(c.g);
       c.b = applyFilmCurve(c.b);
     }
+    
+    // Base Correction - neutralize film base color
+    // 始终应用，让用户在负片状态下就能看到效果
+    c = c * u_baseGains;
+    c = clamp(c, 0.0, 1.0);
     
     if (u_inverted > 0.5) {
       if (u_logMode > 0.5) {
@@ -851,6 +867,11 @@ function runJob(job) {
       gl.uniform1f(u_filmCurveDMin, (params?.filmCurveDMin ?? 0.1));
       const u_filmCurveDMax = gl.getUniformLocation(prog, 'u_filmCurveDMax');
       gl.uniform1f(u_filmCurveDMax, (params?.filmCurveDMax ?? 3.0));
+
+      // Base Correction Gains (Pre-Inversion)
+      const baseGains = [params?.baseRed ?? 1.0, params?.baseGreen ?? 1.0, params?.baseBlue ?? 1.0];
+      const u_baseGains = gl.getUniformLocation(prog, 'u_baseGains');
+      gl.uniform3fv(u_baseGains, new Float32Array(baseGains));
 
       // HSL Uniforms
       const hslParams = params?.hslParams || {};

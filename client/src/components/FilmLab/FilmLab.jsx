@@ -83,6 +83,11 @@ export default function FilmLab({
   const [green, setGreen] = useState(1.0);
   const [blue, setBlue] = useState(1.0);
 
+  // Film Base Correction Gains (Pre-Inversion, independent of scene WB)
+  const [baseRed, setBaseRed] = useState(1.0);
+  const [baseGreen, setBaseGreen] = useState(1.0);
+  const [baseBlue, setBaseBlue] = useState(1.0);
+
   // Rotation
   const [rotation, setRotation] = useState(0);
   const [orientation, setOrientation] = useState(0); // 0, 90, 180, 270
@@ -174,8 +179,10 @@ export default function FilmLab({
     const scale = image && image.width ? Math.min(1, PREVIEW_MAX_WIDTH_CLIENT / image.width) : 1;
     // 使用统一的 getEffectiveInverted 函数计算有效反转状态
     const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
+    // 片基校正增益 (Pre-Inversion)
+    const baseGains = [baseRed, baseGreen, baseBlue];
     return {
-      inverted: effectiveInvertedValue, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
+      inverted: effectiveInvertedValue, inversionMode, gains, baseGains, exposure, contrast, highlights, shadows, whites, blacks,
       curves, lut1, lut2,
       // HSL and Split Toning params for WebGL preview (serialized for cache comparison)
       hslParams, splitToning,
@@ -193,7 +200,7 @@ export default function FilmLab({
       sourceType
     };
   }, [inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
-      temp, tint, red, green, blue, curves, lut1, lut2,
+      temp, tint, red, green, blue, baseRed, baseGreen, baseBlue, curves, lut1, lut2,
       hslParams, splitToning, filmCurveEnabled, filmCurveProfile,
       rotation, orientation, isCropping, committedCrop, image, sourceType]);
 
@@ -214,6 +221,10 @@ export default function FilmLab({
     red,
     green,
     blue,
+    // 片基校正增益 (Pre-Inversion)
+    baseRed,
+    baseGreen,
+    baseBlue,
     rotation,
     orientation,
     cropRect: committedCrop,
@@ -221,7 +232,8 @@ export default function FilmLab({
     hslParams,
     splitToning
   }), [inverted, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, 
-      highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, 
+      highlights, shadows, whites, blacks, temp, tint, red, green, blue, 
+      baseRed, baseGreen, baseBlue, rotation, 
       orientation, committedCrop, curves, hslParams, splitToning]);
 
   // Pre-calculate geometry for canvas sizing and crop overlay sync
@@ -303,7 +315,10 @@ export default function FilmLab({
 
     const params = {
       inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
-      temp, tint, red, green, blue, curves: JSON.parse(JSON.stringify(curves)),
+      temp, tint, red, green, blue,
+      // 片基校正增益 (Pre-Inversion)
+      baseRed, baseGreen, baseBlue,
+      curves: JSON.parse(JSON.stringify(curves)),
       // New Features
       hslParams,
       splitToning,
@@ -356,6 +371,10 @@ export default function FilmLab({
     setRed(params.red);
     setGreen(params.green);
     setBlue(params.blue);
+    // 片基校正增益 (Pre-Inversion) - 兼容旧预设默认 1.0
+    setBaseRed(params.baseRed ?? 1.0);
+    setBaseGreen(params.baseGreen ?? 1.0);
+    setBaseBlue(params.baseBlue ?? 1.0);
     setCurves(JSON.parse(JSON.stringify(params.curves)));
     
     // New Params
@@ -489,6 +508,10 @@ export default function FilmLab({
     setRed(1.0);
     setGreen(1.0);
     setBlue(1.0);
+    // 重置片基校正增益
+    setBaseRed(1.0);
+    setBaseGreen(1.0);
+    setBaseBlue(1.0);
     setRotation(0);
     setOrientation(0);
     setCropRect({ x: 0, y: 0, w: 1, h: 1 });
@@ -795,16 +818,17 @@ export default function FilmLab({
 
     if (isPickingBase) {
       // Film Base Picker: 采样原始颜色，设置base gains让它变成白色
+      // 使用独立的 baseRed/Green/Blue 而非标准白平衡
       const safeR = Math.max(1, r);
       const safeG = Math.max(1, g);
       const safeB = Math.max(1, b);
       
       pushToHistory();
-      setRed(255 / safeR);
-      setGreen(255 / safeG);
-      setBlue(255 / safeB);
-      setTemp(0);
-      setTint(0);
+      // 更新片基校正增益（独立于场景白平衡）
+      setBaseRed(255 / safeR);
+      setBaseGreen(255 / safeG);
+      setBaseBlue(255 / safeB);
+      // 不再修改标准 WB 的 red/green/blue 和 temp/tint
       
       setIsPickingBase(false);
       return;
@@ -964,7 +988,10 @@ export default function FilmLab({
               
               // webglParams.inverted 已经根据 sourceType 计算过了
                 processImageWebGL(webglCanvas, image, {
-                  inverted: webglParams.inverted, inversionMode, gains, exposure, contrast, highlights, shadows, whites, blacks,
+                  inverted: webglParams.inverted, inversionMode, gains,
+                  // 片基校正增益 (Pre-Inversion)
+                  baseGains: webglParams.baseGains,
+                  exposure, contrast, highlights, shadows, whites, blacks,
                   filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
                   rotate: totalRotation,
                   cropRect: cropRect,
@@ -1075,7 +1102,9 @@ export default function FilmLab({
           lut1Intensity: lut1?.intensity ?? 1.0,
           lut2Intensity: lut2?.intensity ?? 1.0,
           inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
-          hslParams, splitToning
+          hslParams, splitToning,
+          // 片基校正增益 (Pre-Inversion)
+          baseRed, baseGreen, baseBlue
         });
         core.prepareLUTs();
 
@@ -1458,6 +1487,8 @@ export default function FilmLab({
       lut1Intensity: lut1?.intensity ?? 1.0,
       lut2Intensity: lut2?.intensity ?? 1.0,
       inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
+      // 片基校正增益 (Pre-Inversion)
+      baseRed, baseGreen, baseBlue,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1501,7 +1532,10 @@ export default function FilmLab({
         sourceType, // 传递源类型以便服务器选择正确的源文件
         inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
         inversionMode, filmCurveEnabled, filmCurveProfile,
-        exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves,
+        exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
+        // 片基校正增益 (Pre-Inversion)
+        baseRed, baseGreen, baseBlue,
+        rotation, orientation, cropRect: committedCrop, curves,
         hslParams, splitToning,
         lut1: serializeLut(lut1),
         lut2: serializeLut(lut2),
@@ -1573,7 +1607,10 @@ export default function FilmLab({
         sourceType, // 传递源类型
         inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
         inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
-        temp, tint, red, green, blue, rotation, orientation,
+        temp, tint, red, green, blue,
+        // 片基校正增益 (Pre-Inversion)
+        baseRed, baseGreen, baseBlue,
+        rotation, orientation,
         filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
         cropRect: committedCrop,
         toneCurveLut: Array.from(toneCurveLut), // Pass as array
@@ -1605,7 +1642,13 @@ export default function FilmLab({
     if (!image || !photoId) return;
     // 关键修复：使用 getEffectiveInverted 计算有效反转状态
     const effectiveInvertedForServer = getEffectiveInverted(sourceType, inverted);
-    const paramsForServer = { inverted: effectiveInvertedForServer, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue, rotation, orientation, cropRect: committedCrop, curves, sourceType };
+    const paramsForServer = { 
+      inverted: effectiveInvertedForServer, inversionMode, filmCurveEnabled, filmCurveProfile, 
+      exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
+      // 片基校正增益 (Pre-Inversion)
+      baseRed, baseGreen, baseBlue,
+      rotation, orientation, cropRect: committedCrop, curves, sourceType 
+    };
     // TIFF16 or BOTH use server render-positive endpoint for high bit depth / parity
     if (saveAsFormat === 'tiff16' || saveAsFormat === 'both') {
       try {
@@ -1707,6 +1750,8 @@ export default function FilmLab({
           inverted: effectiveInvertedValue,
           inversionMode,
           gains,
+          // 片基校正增益 (Pre-Inversion)
+          baseGains: [baseRed, baseGreen, baseBlue],
           exposure,
           contrast,
           highlights,
@@ -1815,6 +1860,8 @@ export default function FilmLab({
       lut1Intensity: lut1?.intensity ?? 1.0,
       lut2Intensity: lut2?.intensity ?? 1.0,
       inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
+      // 片基校正增益 (Pre-Inversion)
+      baseRed, baseGreen, baseBlue,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1893,17 +1940,18 @@ export default function FilmLab({
 
       // Apply Base Correction (Gain = 255 / BaseColor)
       // This maps the base color to White (255,255,255)
+      // 使用独立的 baseRed/Green/Blue 而非标准白平衡，避免被后续 Temp/Tint 调整覆盖
       const safeR = Math.max(1, rAvg);
       const safeG = Math.max(1, gAvg);
       const safeB = Math.max(1, bAvg);
       
-      setRed(255 / safeR);
-      setGreen(255 / safeG);
-      setBlue(255 / safeB);
+      // 更新片基校正增益（独立于场景白平衡）
+      setBaseRed(255 / safeR);
+      setBaseGreen(255 / safeG);
+      setBaseBlue(255 / safeB);
       
-      // Reset Temp/Tint as this is a base calibration
-      setTemp(0);
-      setTint(0);
+      // 不再重置 Temp/Tint，片基校正与场景白平衡独立
+      // 用户可以在片基校正后自由调整色温色调
     }
   };
 

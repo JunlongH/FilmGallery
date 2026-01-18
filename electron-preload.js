@@ -2,11 +2,23 @@
 const { contextBridge, ipcRenderer, shell } = require('electron');
 
 // Default API base for full version (embedded server)
-const DEFAULT_API_BASE = 'http://127.0.0.1:4000';
+const DEFAULT_PORT = 4000;
+const DEFAULT_API_BASE = `http://127.0.0.1:${DEFAULT_PORT}`;
+
+// Get dynamic server port synchronously during preload initialization
+let serverPort = DEFAULT_PORT;
+try {
+  const port = ipcRenderer.sendSync('get-server-port-sync');
+  if (port && typeof port === 'number' && port > 0) {
+    serverPort = port;
+  }
+} catch (e) {
+  console.warn('[Preload] Failed to get server port, using default:', e);
+}
 
 // Load API_BASE from saved config synchronously before exposing to renderer
 // This ensures that if user configured a remote server, we use it from startup
-let savedApiBase = DEFAULT_API_BASE; // default fallback
+let savedApiBase = `http://127.0.0.1:${serverPort}`; // use dynamic port
 try {
   // Get config synchronously during preload initialization
   const result = ipcRenderer.sendSync('config-get-api-base-sync');
@@ -20,9 +32,13 @@ try {
 
 contextBridge.exposeInMainWorld('__electron', {
   platform: process.platform,
-  // Use saved config, or env override, or default
-  API_BASE: process.env.ELECTRON_API_BASE || savedApiBase || DEFAULT_API_BASE, 
+  // Dynamic server port (for display in UI)
+  SERVER_PORT: serverPort,
+  // Use saved config, or env override, or dynamic port
+  API_BASE: process.env.ELECTRON_API_BASE || savedApiBase || `http://127.0.0.1:${serverPort}`, 
   
+  // Expose method to get current server port
+  getServerPort: () => ipcRenderer.invoke('get-server-port'),
   // Expose method to change API BASE at runtime (reload required)
   setApiBase: (url) => ipcRenderer.invoke('config-set-api-base', url),
   getApiBase: () => ipcRenderer.invoke('config-get-api-base'),

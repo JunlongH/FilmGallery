@@ -155,6 +155,18 @@ const mountRoutes = () => {
   app.use('/api/raw', require('./routes/raw')); // RAW file decoding
   app.get('/api/_profiler', (req, res) => res.json(getProfilerStats()));
   app.get('/api/_prepared-statements', (req, res) => res.json(PreparedStmt.getStats()));
+  
+  // Port discovery API for mobile/watch auto-discovery
+  // This endpoint is registered after all routes to ensure it's always available
+  app.get('/api/discover', (req, res) => {
+    const appInfo = require('./constants/app-info');
+    res.json({
+      app: appInfo.APP_IDENTIFIER,
+      version: appInfo.APP_VERSION,
+      port: global.__actualServerPort || 4000,
+      timestamp: Date.now()
+    });
+  });
 };
 
 // Ensure database schema exists before accepting requests (first-run install)
@@ -294,13 +306,78 @@ const seedLocations = async () => {
 			}, 100);
 		});
 		
-		const PORT = process.env.PORT || 4000;
-		// Listen on all interfaces (0.0.0.0) to allow mobile access
-    const server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on http://0.0.0.0:${PORT}`);
-      console.log('[PREPARED STATEMENTS] Ready for lazy initialization');
-      scheduleProfilerLog();
-    });
+		// Port configuration:
+		// - Dev mode (ELECTRON_DEV=true or explicit PORT): use fixed port for easier debugging
+		// - Production mode (spawned by Electron): try ports starting from 4000
+		const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === 'true';
+		const explicitPort = process.env.PORT ? parseInt(process.env.PORT, 10) : null;
+		
+		// Port range that mobile/watch apps will scan
+		const PORT_RANGE = [4000, 4001, 4002, 4003, 4004, 4005, 4010, 4020, 4100];
+		
+		/**
+		 * Try to listen on a port, returns a promise
+		 */
+		const tryListen = (port) => {
+			return new Promise((resolve, reject) => {
+				const server = app.listen(port, '0.0.0.0');
+				server.once('listening', () => resolve(server));
+				server.once('error', (err) => {
+					if (err.code === 'EADDRINUSE') {
+						reject(err);
+					} else {
+						reject(err);
+					}
+				});
+			});
+		};
+		
+		/**
+		 * Find an available port from the range
+		 */
+		const findAvailablePort = async () => {
+			// If explicit port is set, use it directly
+			if (explicitPort) {
+				return app.listen(explicitPort, '0.0.0.0');
+			}
+			
+			// In dev mode, prefer 4000
+			if (isDev) {
+				try {
+					return await tryListen(4000);
+				} catch (e) {
+					console.log('[SERVER] Port 4000 in use, trying alternatives...');
+				}
+			}
+			
+			// Try each port in the scan range
+			for (const port of PORT_RANGE) {
+				try {
+					const server = await tryListen(port);
+					return server;
+				} catch (e) {
+					console.log(`[SERVER] Port ${port} in use, trying next...`);
+				}
+			}
+			
+			// If all ports in range are taken, let OS assign one (fallback)
+			console.warn('[SERVER] All preferred ports in use, using OS-assigned port');
+			return app.listen(0, '0.0.0.0');
+		};
+		
+		// Start server with port discovery
+		const server = await findAvailablePort();
+		const actualPort = server.address().port;
+		
+		// Store actual port globally for /api/discover endpoint
+		global.__actualServerPort = actualPort;
+		
+		// Output special marker for electron-main.js to parse
+		// This MUST be the first line of output to ensure reliable parsing
+		console.log(`SERVER_PORT:${actualPort}`);
+		console.log(`Server running on http://0.0.0.0:${actualPort}`);
+		console.log('[PREPARED STATEMENTS] Ready for lazy initialization');
+		scheduleProfilerLog();
 		
 		// Graceful shutdown on signals
 		const gracefulShutdown = async (signal) => {

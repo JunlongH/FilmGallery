@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import LutLibrary from './Settings/LutLibrary';
+import { API_BASE } from '../api';
 
 export default function Settings() {
   const [config, setConfig] = useState({});
@@ -17,8 +18,8 @@ export default function Settings() {
       try {
         const cfg = await (window.__electron?.getConfig?.() || {});
         if (mounted) setConfig(cfg || {});
-        // Fetch actual backend paths for verification
-        const res = await fetch('http://127.0.0.1:4000/api/health');
+        // Fetch actual backend paths for verification (use dynamic API_BASE)
+        const res = await fetch(`${API_BASE}/api/health`);
         if (res.ok) {
           const data = await res.json();
           if (mounted && data.storage) setActualPaths(data.storage);
@@ -56,9 +57,9 @@ export default function Settings() {
       const res = await window.__electron?.setDataRoot?.(dir);
       if (res && res.ok) {
         setConfig(res.config || {});
-        // Refresh actual paths after change
+        // Refresh actual paths after change (use dynamic API_BASE)
         try {
-          const healthRes = await fetch('http://127.0.0.1:4000/api/health');
+          const healthRes = await fetch(`${API_BASE}/api/health`);
           if (healthRes.ok) {
             const data = await healthRes.json();
             if (data.storage) setActualPaths(data.storage);
@@ -141,6 +142,33 @@ export default function Settings() {
       {/* General Settings Tab */}
       {activeTab === 'general' && (
         <>
+          {/* Server Info Card - Show port for mobile/watch connection */}
+          {isElectron && (
+            <div className="card" style={{ padding: 16, marginBottom: 16, background: '#f8f6f2' }}>
+              <h3>📡 服务器信息 (Mobile/Watch 连接)</h3>
+              <p style={{ color: '#555', marginBottom: 12 }}>
+                Mobile 和 Watch 端可通过以下信息连接到此电脑
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16 }}>
+                <div style={{ background: '#fff', padding: '12px 16px', borderRadius: 8, border: '1px solid #e0e0e0' }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>服务端口</div>
+                  <div style={{ fontSize: 20, fontWeight: 'bold', color: '#5a4632' }}>
+                    {window.__electron?.SERVER_PORT || 4000}
+                  </div>
+                </div>
+                <div style={{ background: '#fff', padding: '12px 16px', borderRadius: 8, border: '1px solid #e0e0e0', flex: 1, minWidth: 200 }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>API 地址</div>
+                  <code style={{ fontSize: 14, color: '#333', wordBreak: 'break-all' }}>
+                    {window.__electron?.API_BASE || 'http://127.0.0.1:4000'}
+                  </code>
+                </div>
+              </div>
+              <div style={{ marginTop: 12, padding: 8, background: '#e8f5e9', borderRadius: 4, fontSize: 13, color: '#2e7d32' }}>
+                💡 在 Mobile/Watch 端设置中，只需输入此电脑的 IP 地址，即可自动发现服务端口
+              </div>
+            </div>
+          )}
+
           {!isElectron && (
         <div className="card" style={{ padding: 16, marginBottom: 16, color: '#555' }}>
           Storage path settings are only available in the Electron desktop app.

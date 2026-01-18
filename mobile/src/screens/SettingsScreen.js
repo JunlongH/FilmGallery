@@ -1,8 +1,9 @@
 import React, { useContext, useState } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { TextInput, Button, Text, Switch, useTheme } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiContext } from '../context/ApiContext';
+import { discoverPort, cleanIpAddress, validateServer } from '../utils/portDiscovery';
 
 export default function SettingsScreen({ navigation }) {
   const theme = useTheme();
@@ -10,6 +11,8 @@ export default function SettingsScreen({ navigation }) {
   const [url, setUrl] = useState(baseUrl);
   const [backup, setBackup] = useState(backupUrl || '');
   const [isDark, setIsDark] = useState(!!darkMode);
+  const [ipAddress, setIpAddress] = useState(''); // For auto-discovery
+  const [discovering, setDiscovering] = useState(false);
 
   const cleanUrlString = (input) => {
     let clean = input.trim();
@@ -19,6 +22,36 @@ export default function SettingsScreen({ navigation }) {
       clean = `http://${clean}`;
     }
     return clean;
+  };
+
+  // Auto-discover port from IP address
+  const handleAutoDiscover = async () => {
+    const ip = cleanIpAddress(ipAddress || url);
+    if (!ip) {
+      Alert.alert('提示', '请输入服务器 IP 地址');
+      return;
+    }
+    
+    setDiscovering(true);
+    try {
+      const result = await discoverPort(ip);
+      if (result) {
+        setUrl(result.fullUrl);
+        Alert.alert(
+          '发现服务', 
+          `已找到 FilmGallery 服务\n地址: ${result.fullUrl}\n版本: ${result.version}`
+        );
+      } else {
+        Alert.alert(
+          '未找到服务', 
+          '在常用端口上未发现 FilmGallery 服务。\n请检查:\n1. IP 地址是否正确\n2. 电脑上的 FilmGallery 是否已启动\n3. 防火墙是否允许连接'
+        );
+      }
+    } catch (e) {
+      Alert.alert('错误', e.message || '发现过程出错');
+    } finally {
+      setDiscovering(false);
+    }
   };
 
   const save = async () => {
@@ -68,10 +101,40 @@ export default function SettingsScreen({ navigation }) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      {/* Auto Discovery Section */}
+      <Text style={styles.sectionTitle}>🔍 自动发现 (推荐)</Text>
+      <Text style={styles.hint}>
+        只需输入电脑的 IP 地址，自动发现 FilmGallery 服务端口
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+        <TextInput
+          mode="outlined"
+          value={ipAddress}
+          onChangeText={setIpAddress}
+          placeholder="192.168.1.100"
+          autoCapitalize="none"
+          keyboardType="numeric"
+          activeOutlineColor="#5a4632"
+          style={{ backgroundColor: '#f5f0e6', flex: 1, marginRight: 8 }}
+        />
+        <Button 
+          mode="contained" 
+          onPress={handleAutoDiscover} 
+          loading={discovering}
+          disabled={discovering}
+          buttonColor="#5a4632"
+          icon="magnify"
+          compact
+        >
+          发现
+        </Button>
+      </View>
+      
+      {/* Manual Configuration Section */}
+      <Text style={styles.sectionTitle}>手动配置</Text>
       <Text style={styles.label}>Primary Server URL</Text>
       <Text style={styles.hint}>
-        Enter the IP address of your PC running FilmGallery.
-        Example: http://192.168.1.5:4000
+        完整服务器地址（自动发现后会自动填入）
       </Text>
       <TextInput
         mode="outlined"
@@ -167,6 +230,13 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     backgroundColor: '#fdfdfd',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    marginTop: 16,
+    color: '#5a4632',
   },
   label: {
     fontSize: 16,

@@ -99,6 +99,11 @@ class RenderCore {
       filmCurveDMin: input.filmCurveDMin ?? DEFAULT_FILM_CURVE.dMin,
       filmCurveDMax: input.filmCurveDMax ?? DEFAULT_FILM_CURVE.dMax,
 
+      // 片基校正增益 (Pre-Inversion, 独立于场景白平衡)
+      baseRed: input.baseRed ?? 1.0,
+      baseGreen: input.baseGreen ?? 1.0,
+      baseBlue: input.baseBlue ?? 1.0,
+
       // 白平衡
       red: input.red ?? DEFAULT_WB_PARAMS.red,
       green: input.green ?? DEFAULT_WB_PARAMS.green,
@@ -227,7 +232,19 @@ class RenderCore {
       }
     }
 
-    // ② 反转 (Inversion)
+    // ② 片基校正 (Base Correction)
+    // 将负片片基颜色中和为白色
+    // 始终应用，让用户在负片状态下就能看到效果
+    if (p.baseRed !== 1.0 || p.baseGreen !== 1.0 || p.baseBlue !== 1.0) {
+      r *= p.baseRed;
+      g *= p.baseGreen;
+      b *= p.baseBlue;
+      r = this._clamp255(r);
+      g = this._clamp255(g);
+      b = this._clamp255(b);
+    }
+
+    // ③ 反转 (Inversion)
     if (p.inverted) {
       r = applyInversion(r, p);
       g = applyInversion(g, p);
@@ -313,6 +330,9 @@ class RenderCore {
       u_filmCurveGamma: p.filmCurveGamma,
       u_filmCurveDMin: p.filmCurveDMin,
       u_filmCurveDMax: p.filmCurveDMax,
+
+      // 片基校正增益 (Pre-Inversion)
+      u_baseGains: [p.baseRed, p.baseGreen, p.baseBlue],
 
       // 白平衡
       u_wbGains: wbGains,

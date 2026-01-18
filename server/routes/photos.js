@@ -614,6 +614,10 @@ router.post('/:id/export-positive', async (req, res) => {
   const redGain = Number.isFinite(p.red) ? p.red : 1.0;
   const greenGain = Number.isFinite(p.green) ? p.green : 1.0;
   const blueGain = Number.isFinite(p.blue) ? p.blue : 1.0;
+  // 片基校正增益 (Pre-Inversion, independent of scene WB)
+  const baseRed = Number.isFinite(p.baseRed) ? p.baseRed : 1.0;
+  const baseGreen = Number.isFinite(p.baseGreen) ? p.baseGreen : 1.0;
+  const baseBlue = Number.isFinite(p.baseBlue) ? p.baseBlue : 1.0;
   const rotation = Number.isFinite(p.rotation) ? p.rotation : 0; // arbitrary degrees
   const orientation = Number.isFinite(p.orientation) ? p.orientation : 0; // multiples of 90 from UI
   
@@ -701,6 +705,8 @@ router.post('/:id/export-positive', async (req, res) => {
       blacks: Number.isFinite(p.blacks) ? p.blacks : 0,
       curves: p.curves,
       red: redGain, green: greenGain, blue: blueGain,
+      // 片基校正增益 (Pre-Inversion)
+      baseRed, baseGreen, baseBlue,
       temp, tint,
       lut1: lut1Data,
       lut2: lut2Data,

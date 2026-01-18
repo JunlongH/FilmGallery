@@ -213,6 +213,9 @@ export function processImageWebGL(canvas, image, params = {}) {
     uniform float u_filmCurveDMin;
     uniform float u_filmCurveDMax;
 
+    // Film Base Correction Gains (Pre-Inversion)
+    uniform vec3 u_baseGains;
+
     // Curve LUTs (1D textures height=1)
     uniform sampler2D u_curveRGB;
     uniform sampler2D u_curveR;
@@ -598,7 +601,13 @@ export function processImageWebGL(canvas, image, params = {}) {
         col.b = applyFilmCurve(col.b);
       }
 
-      // ② Invert if enabled
+      // ② Base Correction - neutralize film base color
+      // Apply gains to map orange/brown base to white
+      // 始终应用，让用户在负片状态下就能看到效果
+      col = col * u_baseGains;
+      col = clamp(col, 0.0, 1.0);
+
+      // ③ Invert if enabled
       if (u_inverted == 1) {
         vec3 c255 = col * 255.0;
         if (u_inversionMode == 1) {
@@ -613,7 +622,7 @@ export function processImageWebGL(canvas, image, params = {}) {
       
       vec3 c = col;
 
-      // ③ Apply gains (White Balance)
+      // ④ Apply gains (White Balance)
       c = c * u_gains;
 
       // ④ Tone Mapping: Exposure
@@ -737,6 +746,8 @@ export function processImageWebGL(canvas, image, params = {}) {
   locs.u_filmCurveGamma = gl.getUniformLocation(program, 'u_filmCurveGamma');
   locs.u_filmCurveDMin = gl.getUniformLocation(program, 'u_filmCurveDMin');
   locs.u_filmCurveDMax = gl.getUniformLocation(program, 'u_filmCurveDMax');
+  // Base Correction uniform (Pre-Inversion)
+  locs.u_baseGains = gl.getUniformLocation(program, 'u_baseGains');
   locs.u_curveRGB = gl.getUniformLocation(program, 'u_curveRGB');
   locs.u_curveR = gl.getUniformLocation(program, 'u_curveR');
   locs.u_curveG = gl.getUniformLocation(program, 'u_curveG');
@@ -813,6 +824,11 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.uniform1f(locs.u_filmCurveGamma, params.filmCurveGamma ?? 0.6);
   gl.uniform1f(locs.u_filmCurveDMin, params.filmCurveDMin ?? 0.1);
   gl.uniform1f(locs.u_filmCurveDMax, params.filmCurveDMax ?? 3.0);
+
+  // Base Correction Gains (Pre-Inversion)
+  const baseGains = params.baseGains || [1.0, 1.0, 1.0];
+  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting u_baseGains:', baseGains);
+  gl.uniform3fv(locs.u_baseGains, new Float32Array(baseGains));
 
   // Curves
   const curves = params.curves;

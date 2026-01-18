@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCompatibleLenses } from '../api';
 import { getCityCoordinates } from '../utils/geocoding';
 import GeoSearchInput from './GeoSearchInput.jsx';
@@ -11,6 +11,207 @@ const FALLBACK_LENSES = [
   '24-70mm f/2.8',
   '70-200mm f/2.8'
 ];
+
+// Entry Edit Modal Component
+function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCountry, lensOptions, nativeLenses, adaptedLenses, fixedLensInfo, cameraMount }) {
+  const [editData, setEditData] = useState({ ...entry });
+  
+  const handleGeoSelect = (result) => {
+    setEditData(prev => ({
+      ...prev,
+      detail_location: result.detail || result.displayName || '',
+      country: result.country || prev.country || '',
+      city: result.city || prev.city || '',
+      latitude: result.latitude,
+      longitude: result.longitude
+    }));
+  };
+  
+  return (
+    <div className="fg-modal-overlay" style={{ zIndex: 1100 }} onClick={onClose}>
+      <div 
+        className="fg-modal-content" 
+        style={{ maxWidth: 600, width: '90%', background: '#fff', color: '#333' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="fg-modal-header" style={{ borderBottom: '1px solid #eee', paddingBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1e293b' }}>
+            Edit Entry - {entry.date}
+          </h3>
+          <button className="fg-modal-close" onClick={onClose} style={{ color: '#64748b' }}>&times;</button>
+        </div>
+        
+        <div className="fg-modal-body" style={{ padding: 24 }}>
+          {/* Row 1: Shots, Aperture, Shutter */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
+            <div className="fg-field">
+              <label className="fg-label">Shots</label>
+              <input
+                type="number"
+                className="fg-input"
+                value={editData.count}
+                min="0"
+                onChange={e => setEditData(prev => ({ ...prev, count: Number(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="fg-field">
+              <label className="fg-label">Aperture (f/)</label>
+              <input
+                type="number"
+                step="0.1"
+                className="fg-input"
+                value={editData.aperture ?? ''}
+                placeholder="e.g. 2.8"
+                onChange={e => {
+                  const val = e.target.value === '' ? null : Number(e.target.value);
+                  setEditData(prev => ({ ...prev, aperture: Number.isFinite(val) ? val : null }));
+                }}
+              />
+            </div>
+            <div className="fg-field">
+              <label className="fg-label">Shutter Speed</label>
+              <input
+                type="text"
+                className="fg-input"
+                value={editData.shutter_speed || ''}
+                placeholder="e.g. 1/125"
+                onChange={e => setEditData(prev => ({ ...prev, shutter_speed: e.target.value }))}
+              />
+            </div>
+          </div>
+          
+          {/* Row 2: Lens */}
+          <div className="fg-field" style={{ marginBottom: 20 }}>
+            <label className="fg-label">
+              Lens {fixedLensInfo && <span style={{ color: '#10b981' }}>(Fixed)</span>}
+            </label>
+            {fixedLensInfo ? (
+              <div style={{ padding: '10px 12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, color: '#166534' }}>
+                🔒 {fixedLensInfo.text}
+              </div>
+            ) : (
+              <input
+                type="text"
+                className="fg-input"
+                value={editData.lens || ''}
+                placeholder="Lens model"
+                onChange={e => setEditData(prev => ({ ...prev, lens: e.target.value }))}
+                list="edit-lens-options"
+              />
+            )}
+            <datalist id="edit-lens-options">
+              {lensOptions.map(l => <option key={l} value={l} />)}
+            </datalist>
+          </div>
+          
+          {/* Row 3: Country, City */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+            <div className="fg-field">
+              <label className="fg-label">Country</label>
+              <input
+                type="text"
+                className="fg-input"
+                value={editData.country || ''}
+                placeholder="Country"
+                onChange={e => setEditData(prev => ({ ...prev, country: e.target.value }))}
+                list="edit-country-options"
+              />
+              <datalist id="edit-country-options">
+                {countries.map(c => (
+                  <option key={c.country_code || c.country_name} value={c.country_name || c.country_code} />
+                ))}
+              </datalist>
+            </div>
+            <div className="fg-field">
+              <label className="fg-label">City</label>
+              <input
+                type="text"
+                className="fg-input"
+                value={editData.city || ''}
+                placeholder="City"
+                onChange={e => setEditData(prev => ({ ...prev, city: e.target.value }))}
+              />
+            </div>
+          </div>
+          
+          {/* Row 4: Detail Location with Geo Search */}
+          <div className="fg-field" style={{ marginBottom: 20 }}>
+            <label className="fg-label">Detail / Address (Search for GPS)</label>
+            <GeoSearchInput
+              value={editData.detail_location || ''}
+              onChange={val => setEditData(prev => ({ ...prev, detail_location: val }))}
+              onSelect={handleGeoSelect}
+              placeholder="Search address to get coordinates..."
+            />
+          </div>
+          
+          {/* Row 5: Latitude, Longitude */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+            <div className="fg-field">
+              <label className="fg-label">Latitude</label>
+              <input
+                type="number"
+                step="0.00001"
+                className="fg-input"
+                value={editData.latitude ?? ''}
+                placeholder="e.g. 40.00119"
+                onChange={e => {
+                  const val = e.target.value === '' ? null : Number(e.target.value);
+                  setEditData(prev => ({ ...prev, latitude: Number.isFinite(val) ? val : null }));
+                }}
+              />
+            </div>
+            <div className="fg-field">
+              <label className="fg-label">Longitude</label>
+              <input
+                type="number"
+                step="0.00001"
+                className="fg-input"
+                value={editData.longitude ?? ''}
+                placeholder="e.g. 116.32000"
+                onChange={e => {
+                  const val = e.target.value === '' ? null : Number(e.target.value);
+                  setEditData(prev => ({ ...prev, longitude: Number.isFinite(val) ? val : null }));
+                }}
+              />
+            </div>
+          </div>
+          
+          {/* Coordinates Preview */}
+          {editData.latitude && editData.longitude && (
+            <div style={{ 
+              padding: 12, 
+              background: '#f0fdf4', 
+              borderRadius: 8, 
+              marginBottom: 20,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8
+            }}>
+              <span style={{ fontSize: 18 }}>📍</span>
+              <span style={{ color: '#166534', fontSize: 14 }}>
+                {editData.latitude.toFixed(5)}, {editData.longitude.toFixed(5)}
+              </span>
+            </div>
+          )}
+        </div>
+        
+        <div className="fg-modal-footer" style={{ borderTop: '1px solid #eee', padding: 16, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+          <button className="fg-btn fg-btn-secondary" onClick={onClose}>
+            Cancel
+          </button>
+          <button 
+            className="fg-btn fg-btn-primary" 
+            onClick={() => onSave(index, editData)}
+            style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', border: 'none' }}
+          >
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const [logs, setLogs] = useState([]);
@@ -42,6 +243,194 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   // Geolocation state
   const [newLatitude, setNewLatitude] = useState(null);
   const [newLongitude, setNewLongitude] = useState(null);
+  
+  // Edit Modal state
+  const [editingEntry, setEditingEntry] = useState(null); // { index, entry }
+  
+  // Import CSV state
+  const [importing, setImporting] = useState(false);
+  const [showImportOptions, setShowImportOptions] = useState(false);
+  const [pendingImportData, setPendingImportData] = useState(null);
+  const fileInputRef = useRef(null);
+
+  // CSV Template header
+  const CSV_TEMPLATE = 'date,count,lens,aperture,shutter_speed,country,city,detail_location,latitude,longitude\n2026-01-01,1,50mm f/1.8,2.8,1/125,China,Beijing,Sample Location,39.9042,116.4074';
+
+  // Parse CSV string to log entries
+  const parseCSV = (csvText) => {
+    const lines = csvText.trim().split(/\r?\n/);
+    if (lines.length < 2) return []; // Need at least header + 1 data row
+    
+    const header = lines[0].toLowerCase().split(',').map(h => h.trim());
+    const entries = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue;
+      
+      // Handle quoted fields with commas
+      const values = [];
+      let inQuotes = false;
+      let currentValue = '';
+      for (const char of line) {
+        if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          values.push(currentValue.trim());
+          currentValue = '';
+        } else {
+          currentValue += char;
+        }
+      }
+      values.push(currentValue.trim());
+      
+      const entry = {};
+      header.forEach((col, idx) => {
+        const val = values[idx] || '';
+        switch (col) {
+          case 'date':
+            entry.date = val;
+            break;
+          case 'count':
+          case 'shots':
+            entry.count = Number(val) || 0;
+            break;
+          case 'lens':
+            entry.lens = val;
+            break;
+          case 'aperture':
+          case 'f':
+            entry.aperture = val ? Number(val) : null;
+            break;
+          case 'shutter_speed':
+          case 'shutter':
+          case 's':
+            entry.shutter_speed = val;
+            break;
+          case 'country':
+            entry.country = val;
+            break;
+          case 'city':
+            entry.city = val;
+            break;
+          case 'detail_location':
+          case 'detail':
+          case 'address':
+            entry.detail_location = val;
+            break;
+          case 'latitude':
+          case 'lat':
+            entry.latitude = val ? Number(val) : null;
+            break;
+          case 'longitude':
+          case 'lng':
+          case 'lon':
+            entry.longitude = val ? Number(val) : null;
+            break;
+          // iso is ignored on import (comes from film definition)
+          default:
+            break;
+        }
+      });
+      
+      // Validate required fields
+      if (entry.date && entry.count > 0) {
+        entries.push({
+          date: entry.date,
+          count: entry.count,
+          lens: entry.lens || '',
+          aperture: Number.isFinite(entry.aperture) ? entry.aperture : null,
+          shutter_speed: entry.shutter_speed || '',
+          country: entry.country || '',
+          city: entry.city || '',
+          detail_location: entry.detail_location || '',
+          latitude: Number.isFinite(entry.latitude) ? entry.latitude : null,
+          longitude: Number.isFinite(entry.longitude) ? entry.longitude : null
+        });
+      }
+    }
+    
+    return entries;
+  };
+
+  // Handle file selection
+  const handleFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = parseCSV(text);
+      
+      if (parsed.length === 0) {
+        alert('No valid entries found in CSV. Please check the format.');
+        return;
+      }
+      
+      // Show import options dialog
+      setPendingImportData(parsed);
+      setShowImportOptions(true);
+    } catch (err) {
+      alert('Failed to read CSV: ' + (err.message || err));
+    } finally {
+      setImporting(false);
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  // Execute import with selected strategy
+  const executeImport = (strategy) => {
+    if (!pendingImportData) return;
+    
+    let newLogs;
+    switch (strategy) {
+      case 'replace':
+        newLogs = pendingImportData;
+        break;
+      case 'append':
+        newLogs = [...logs, ...pendingImportData];
+        break;
+      case 'merge':
+        // Merge by date - imported entries override existing ones with same date
+        const existingByDate = {};
+        logs.forEach(l => {
+          if (!existingByDate[l.date]) existingByDate[l.date] = [];
+          existingByDate[l.date].push(l);
+        });
+        pendingImportData.forEach(l => {
+          if (!existingByDate[l.date]) existingByDate[l.date] = [];
+          existingByDate[l.date].push(l);
+        });
+        newLogs = Object.values(existingByDate).flat();
+        break;
+      default:
+        newLogs = [...logs, ...pendingImportData];
+    }
+    
+    // Sort by date
+    newLogs.sort((a, b) => a.date.localeCompare(b.date));
+    setLogs(newLogs);
+    
+    setShowImportOptions(false);
+    setPendingImportData(null);
+    
+    alert(`Successfully imported ${pendingImportData.length} entries!`);
+  };
+
+  // Download CSV template
+  const downloadTemplate = () => {
+    const blob = new Blob([CSV_TEMPLATE], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'shot-log-template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   // Format lens for display
   const formatLensDisplay = (lens) => {
@@ -76,7 +465,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
             shutter_speed: entry.shutter_speed || '',
             country: entry.country || '',
             city: entry.city || '',
-            detail_location: entry.detail_location || ''
+            detail_location: entry.detail_location || '',
+            // Preserve latitude and longitude!
+            latitude: entry.latitude !== undefined && entry.latitude !== null ? Number(entry.latitude) : null,
+            longitude: entry.longitude !== undefined && entry.longitude !== null ? Number(entry.longitude) : null
           })).filter(e => e.date && e.count > 0);
           setLogs(normalized);
           setLensOptions((prev) => dedupeAndSort([...prev, ...normalized.map(e => e.lens).filter(Boolean)]));
@@ -288,6 +680,20 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     setLogs(updated);
   };
 
+  // Handle editing an entry via modal
+  const handleEditEntry = (index) => {
+    setEditingEntry({ index, entry: logs[index] });
+  };
+  
+  const handleSaveEditedEntry = (index, updatedEntry) => {
+    setLogs(prev => {
+      const next = [...prev];
+      next[index] = updatedEntry;
+      return next;
+    });
+    setEditingEntry(null);
+  };
+
   const handleSave = async () => {
     setLoading(true);
     try {
@@ -334,18 +740,137 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
         <div className="fg-modal-header" style={{ borderBottom: '1px solid #eee', paddingBottom: 16, marginBottom: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: '#1e293b' }}>Shot Log - {item.label || `Item #${item.id}`}</h3>
-            <button
-              type="button"
-              className="fg-btn fg-btn-sm"
-              onClick={handleExport}
-              disabled={exporting}
-              style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '6px 10px', fontSize: 12 }}
-            >
-              {exporting ? 'Exporting…' : 'Export CSV'}
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                type="button"
+                className="fg-btn fg-btn-sm"
+                onClick={handleExport}
+                disabled={exporting}
+                style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '6px 10px', fontSize: 12 }}
+              >
+                {exporting ? 'Exporting…' : '📤 Export CSV'}
+              </button>
+              <button
+                type="button"
+                className="fg-btn fg-btn-sm"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '6px 10px', fontSize: 12 }}
+              >
+                {importing ? 'Importing…' : '📥 Import CSV'}
+              </button>
+              <button
+                type="button"
+                className="fg-btn fg-btn-sm"
+                onClick={downloadTemplate}
+                style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#64748b', padding: '6px 10px', fontSize: 12 }}
+                title="Download CSV template"
+              >
+                📋 Template
+              </button>
+            </div>
+            {/* Hidden file input for CSV import */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              onChange={handleFileSelect}
+              style={{ display: 'none' }}
+            />
           </div>
           <button className="fg-modal-close" onClick={onClose} style={{ color: '#64748b' }}>&times;</button>
         </div>
+        
+        {/* Import Options Dialog */}
+        {showImportOptions && pendingImportData && (
+          <div style={{ 
+            position: 'absolute', 
+            top: 0, 
+            left: 0, 
+            right: 0, 
+            bottom: 0, 
+            background: 'rgba(0,0,0,0.5)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            zIndex: 100,
+            borderRadius: 8
+          }}>
+            <div style={{ 
+              background: '#fff', 
+              borderRadius: 12, 
+              padding: 24, 
+              maxWidth: 400, 
+              width: '90%',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+            }}>
+              <h4 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 600, color: '#1e293b' }}>
+                Import {pendingImportData.length} Entries
+              </h4>
+              <p style={{ margin: '0 0 20px', color: '#64748b', fontSize: 14 }}>
+                How would you like to import these entries?
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <button
+                  className="fg-btn"
+                  onClick={() => executeImport('append')}
+                  style={{ 
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                    color: '#fff', 
+                    border: 'none',
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    fontWeight: 500
+                  }}
+                >
+                  ➕ Append to existing ({logs.length} + {pendingImportData.length})
+                </button>
+                <button
+                  className="fg-btn"
+                  onClick={() => executeImport('merge')}
+                  style={{ 
+                    background: '#fff', 
+                    color: '#475569', 
+                    border: '1px solid #e2e8f0',
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    fontWeight: 500
+                  }}
+                >
+                  🔀 Merge (combine entries by date)
+                </button>
+                <button
+                  className="fg-btn"
+                  onClick={() => executeImport('replace')}
+                  style={{ 
+                    background: '#fff', 
+                    color: '#ef4444', 
+                    border: '1px solid #fecaca',
+                    padding: '12px 16px',
+                    borderRadius: 8,
+                    fontWeight: 500
+                  }}
+                >
+                  🔄 Replace all (delete existing {logs.length} entries)
+                </button>
+                <button
+                  className="fg-btn"
+                  onClick={() => { setShowImportOptions(false); setPendingImportData(null); }}
+                  style={{ 
+                    background: '#f8fafc', 
+                    color: '#64748b', 
+                    border: 'none',
+                    padding: '10px 16px',
+                    borderRadius: 8,
+                    marginTop: 8
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
         
         <div className="fg-modal-body" style={{ padding: 24, overflowY: 'auto' }}>
           
@@ -545,52 +1070,95 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           </div>
 
           {/* Selected Day Entries (above calendar) */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1e293b' }}>Selected Day</h4>
-              <span style={{ fontSize: 13, color: '#64748b' }}>{selectedDate || 'Pick a date'}</span>
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1e293b' }}>
+                Selected Day
+              </h4>
+              <span style={{ 
+                fontSize: 13, 
+                color: '#fff',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                padding: '4px 12px',
+                borderRadius: 6,
+                fontWeight: 500
+              }}>
+                {selectedDate || 'Pick a date'}
+              </span>
             </div>
             {selectedDayLogs.length === 0 ? (
-              <div style={{ border: '1px dashed #e2e8f0', borderRadius: 8, padding: 12, color: '#94a3b8', fontSize: 13 }}>
+              <div style={{ border: '2px dashed #e2e8f0', borderRadius: 12, padding: 20, color: '#94a3b8', fontSize: 13, textAlign: 'center' }}>
+                <div style={{ marginBottom: 4 }}>📅</div>
                 No entries for this day. Click the calendar to choose a date, then add logs above.
               </div>
             ) : (
-              <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.6fr 0.5fr 0.7fr 1fr 1fr 1.1fr 80px', background: '#f8fafc', padding: '8px 12px', fontWeight: 600, color: '#475569', fontSize: 13 }}>
-                  <div>Date</div>
-                  <div>Shots</div>
-                  <div>f</div>
-                  <div>s</div>
-                  <div>Lens</div>
-                  <div>Country / City</div>
-                  <div>Detail</div>
-                  <div></div>
-                </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {selectedDayLogs.map((entry) => (
-                  <div key={`${entry.date}-${entry.idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 0.6fr 0.5fr 0.7fr 1fr 1fr 1.1fr 80px', padding: '8px 12px', alignItems: 'center', borderTop: '1px solid #e2e8f0' }}>
-                    <div style={{ fontFamily: 'monospace', fontSize: 13 }}>{entry.date}</div>
-                    <div style={{ fontSize: 13 }}>{entry.count}</div>
-                    <div style={{ fontSize: 13 }}>{entry.aperture || entry.aperture === 0 ? `f${entry.aperture}` : '-'}</div>
-                    <div style={{ fontSize: 13 }}>{entry.shutter_speed ? `s${entry.shutter_speed}` : '-'}</div>
-                    <div style={{ fontSize: 13 }}>{entry.lens || '-'}</div>
-                    <div style={{ fontSize: 13 }}>{[entry.country, entry.city].filter(Boolean).join(' / ') || '-'}</div>
-                    <div style={{ fontSize: 13 }}>
-                      {entry.detail_location || '-'}
+                  <div 
+                    key={`${entry.date}-${entry.idx}`} 
+                    style={{ 
+                      border: '1px solid #e2e8f0', 
+                      borderRadius: 10, 
+                      padding: 12,
+                      background: '#fff',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                      <span style={{ 
+                        background: '#eff6ff', 
+                        color: '#2563eb', 
+                        padding: '4px 10px', 
+                        borderRadius: 6,
+                        fontWeight: 600,
+                        fontSize: 13
+                      }}>
+                        {entry.count} shot{entry.count !== 1 ? 's' : ''}
+                      </span>
+                      {entry.aperture && <span style={{ color: '#64748b', fontSize: 13 }}>f/{entry.aperture}</span>}
+                      {entry.shutter_speed && <span style={{ color: '#64748b', fontSize: 13 }}>{entry.shutter_speed}</span>}
+                      {entry.lens && <span style={{ color: '#475569', fontSize: 13 }}>• {entry.lens}</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {(entry.country || entry.city) && (
+                        <span style={{ color: '#64748b', fontSize: 12 }}>
+                          📍 {[entry.country, entry.city].filter(Boolean).join(' / ')}
+                        </span>
+                      )}
                       {entry.latitude && entry.longitude && (
-                        <div style={{ fontSize: 11, color: '#4ade80', marginTop: 2 }}>
-                          📍 {entry.latitude.toFixed(5)}, {entry.longitude.toFixed(5)}
-                        </div>
+                        <span style={{ 
+                          background: '#dcfce7', 
+                          color: '#166534', 
+                          padding: '2px 6px', 
+                          borderRadius: 4,
+                          fontSize: 10,
+                          fontFamily: 'monospace'
+                        }}>
+                          GPS ✓
+                        </span>
                       )}
                     </div>
-                    <button
-                      className="fg-btn"
-                      style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#ef4444', padding: '6px 10px' }}
-                      onClick={() => {
-                        if (window.confirm('Delete this log entry?')) handleRemoveIndex(entry.idx);
-                      }}
-                    >
-                      Delete
-                    </button>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        className="fg-btn"
+                        style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#475569', padding: '4px 10px', fontSize: 12 }}
+                        onClick={() => handleEditEntry(entry.idx)}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        className="fg-btn"
+                        style={{ background: '#fff', border: '1px solid #fecaca', color: '#ef4444', padding: '4px 10px', fontSize: 12 }}
+                        onClick={() => {
+                          if (window.confirm('Delete this log entry?')) handleRemoveIndex(entry.idx);
+                        }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -710,7 +1278,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           </div>
 
           {/* Summary Stats */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginTop: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginTop: 20, marginBottom: 24 }}>
               <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', padding: 20, borderRadius: 12, color: '#fff', boxShadow: '0 4px 12px rgba(102, 126, 234, 0.25)' }}>
               <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 4 }}>Total Shots</div>
               <div style={{ fontSize: 32, fontWeight: 700 }}>{totalShots}</div>
@@ -721,146 +1289,174 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
             </div>
           </div>
 
-          {/* Editable List */}
-          <div style={{ marginTop: 24 }}>
-            <h4 style={{ margin: '0 0 12px', color: '#1e293b' }}>Entries</h4>
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: 8, overflow: 'hidden' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 0.5fr 0.5fr 0.6fr 1fr 1fr 1.1fr 80px', background: '#f8fafc', padding: '10px 12px', fontWeight: 600, color: '#475569', fontSize: 13 }}>
-                <div>Date</div>
-                <div>Shots</div>
-                <div>f</div>
-                <div>s</div>
-                <div>Lens</div>
-                <div>Country / City</div>
-                <div>Detail</div>
-                <div></div>
-              </div>
-              {logs.length === 0 && (
-                <div style={{ padding: 12, color: '#94a3b8', fontSize: 13 }}>No entries yet.</div>
-              )}
-              {logs.map((entry, idx) => (
-                <div key={`${entry.date}-${idx}`} style={{ display: 'grid', gridTemplateColumns: '1fr 0.5fr 0.5fr 0.6fr 1fr 1fr 1.1fr 80px', padding: '10px 12px', alignItems: 'center', borderTop: '1px solid #e2e8f0' }}>
-                  <div style={{ fontFamily: 'monospace', fontSize: 13 }}>{entry.date}</div>
-                  <input
-                    type="number"
-                    className="fg-input"
-                    value={entry.count}
-                    min="0"
-                    onChange={e => {
-                      const val = Number(e.target.value) || 0;
-                      setLogs(prev => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], count: val };
-                        return next;
-                      });
-                    }}
-                    style={{ width: '100%', padding: '6px 8px' }}
-                  />
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="fg-input"
-                    value={entry.aperture ?? ''}
-                    placeholder="f"
-                    onChange={e => {
-                      const val = e.target.value === '' ? null : Number(e.target.value);
-                      setLogs(prev => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], aperture: Number.isFinite(val) ? val : null };
-                        return next;
-                      });
-                    }}
-                    style={{ width: '100%', padding: '6px 8px' }}
-                  />
-                  <input
-                    type="text"
-                    className="fg-input"
-                    value={entry.shutter_speed || ''}
-                    placeholder="s"
-                    onChange={e => {
-                      const val = e.target.value;
-                      setLogs(prev => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], shutter_speed: val };
-                        return next;
-                      });
-                    }}
-                    style={{ width: '100%', padding: '6px 8px' }}
-                  />
-                  <input
-                    type="text"
-                    className="fg-input"
-                    value={entry.lens || ''}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setLogs(prev => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], lens: val };
-                        return next;
-                      });
-                    }}
-                    placeholder="Lens model"
-                    style={{ width: '100%', padding: '6px 8px' }}
-                  />
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input
-                      type="text"
-                      className="fg-input"
-                      value={entry.country || ''}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setLogs(prev => {
-                          const next = [...prev];
-                          next[idx] = { ...next[idx], country: val };
-                          return next;
-                        });
-                      }}
-                      placeholder="Country"
-                      style={{ width: '100%', padding: '6px 8px' }}
-                    />
-                    <input
-                      type="text"
-                      className="fg-input"
-                      value={entry.city || ''}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setLogs(prev => {
-                          const next = [...prev];
-                          next[idx] = { ...next[idx], city: val };
-                          return next;
-                        });
-                      }}
-                      placeholder="City"
-                      style={{ width: '100%', padding: '6px 8px' }}
-                    />
-                  </div>
-                  <input
-                    type="text"
-                    className="fg-input"
-                    value={entry.detail_location || ''}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setLogs(prev => {
-                        const next = [...prev];
-                        next[idx] = { ...next[idx], detail_location: val };
-                        return next;
-                      });
-                    }}
-                    placeholder="Detail location"
-                    style={{ width: '100%', padding: '6px 8px' }}
-                  />
-                  <button
-                    className="fg-btn"
-                    style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#ef4444', padding: '6px 10px' }}
-                    onClick={() => {
-                      if (window.confirm('Delete this log entry?')) handleRemoveIndex(idx);
-                    }}
-                  >
-                    Delete
-                  </button>
-                </div>
-              ))}
+          {/* All Entries - Card Layout */}
+          <div style={{ marginTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1e293b' }}>
+                All Entries ({logs.length})
+              </h4>
             </div>
+            
+            {logs.length === 0 ? (
+              <div style={{ 
+                border: '2px dashed #e2e8f0', 
+                borderRadius: 12, 
+                padding: 32, 
+                textAlign: 'center',
+                color: '#94a3b8'
+              }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
+                <div style={{ fontSize: 14 }}>No entries yet. Use the form above to add your first shot log.</div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {logs.map((entry, idx) => (
+                  <div 
+                    key={`${entry.date}-${idx}`} 
+                    style={{ 
+                      border: '1px solid #e2e8f0', 
+                      borderRadius: 12, 
+                      padding: 16,
+                      background: '#fff',
+                      transition: 'box-shadow 0.2s',
+                      cursor: 'pointer'
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                    onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
+                    onClick={() => handleEditEntry(idx)}
+                  >
+                    {/* Row 1: Date, Shots, Camera Settings */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                        <div style={{ 
+                          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+                          color: '#fff', 
+                          padding: '8px 12px', 
+                          borderRadius: 8,
+                          fontWeight: 600,
+                          fontSize: 14
+                        }}>
+                          {entry.date}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ 
+                            background: '#eff6ff', 
+                            color: '#2563eb', 
+                            padding: '4px 10px', 
+                            borderRadius: 6,
+                            fontWeight: 600,
+                            fontSize: 13
+                          }}>
+                            {entry.count} shot{entry.count !== 1 ? 's' : ''}
+                          </span>
+                          {entry.aperture && (
+                            <span style={{ color: '#64748b', fontSize: 13 }}>f/{entry.aperture}</span>
+                          )}
+                          {entry.shutter_speed && (
+                            <span style={{ color: '#64748b', fontSize: 13 }}>{entry.shutter_speed}</span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          className="fg-btn"
+                          style={{ 
+                            background: '#fff', 
+                            border: '1px solid #e2e8f0', 
+                            color: '#475569', 
+                            padding: '6px 12px',
+                            fontSize: 12
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditEntry(idx);
+                          }}
+                        >
+                          ✏️ Edit
+                        </button>
+                        <button
+                          className="fg-btn"
+                          style={{ 
+                            background: '#fff', 
+                            border: '1px solid #fecaca', 
+                            color: '#ef4444', 
+                            padding: '6px 12px',
+                            fontSize: 12
+                          }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (window.confirm('Delete this log entry?')) handleRemoveIndex(idx);
+                          }}
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Row 2: Lens */}
+                    {entry.lens && (
+                      <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: '#94a3b8', fontSize: 12 }}>📷</span>
+                        <span style={{ color: '#475569', fontSize: 13 }}>{entry.lens}</span>
+                      </div>
+                    )}
+                    
+                    {/* Row 3: Location */}
+                    {(entry.country || entry.city || entry.detail_location) && (
+                      <div style={{ 
+                        background: '#f8fafc', 
+                        borderRadius: 8, 
+                        padding: 10,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                          <span style={{ fontSize: 14 }}>📍</span>
+                          <div>
+                            <div style={{ color: '#1e293b', fontSize: 13, fontWeight: 500 }}>
+                              {[entry.country, entry.city].filter(Boolean).join(' / ') || 'Unknown Location'}
+                            </div>
+                            {entry.detail_location && (
+                              <div style={{ color: '#64748b', fontSize: 12, marginTop: 2 }}>
+                                {entry.detail_location}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {entry.latitude && entry.longitude && (
+                          <div style={{ 
+                            background: '#dcfce7', 
+                            color: '#166534', 
+                            padding: '4px 8px', 
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontFamily: 'monospace'
+                          }}>
+                            {entry.latitude.toFixed(4)}, {entry.longitude.toFixed(4)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* No location indicator */}
+                    {!entry.country && !entry.city && !entry.detail_location && (
+                      <div style={{ 
+                        color: '#94a3b8', 
+                        fontSize: 12, 
+                        fontStyle: 'italic',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6
+                      }}>
+                        <span>📍</span>
+                        <span>No location set - click Edit to add</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -885,6 +1481,23 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           </button>
         </div>
       </div>
+      
+      {/* Entry Edit Modal */}
+      {editingEntry && (
+        <EntryEditModal
+          entry={editingEntry.entry}
+          index={editingEntry.index}
+          onSave={handleSaveEditedEntry}
+          onClose={() => setEditingEntry(null)}
+          countries={countries}
+          citiesByCountry={citiesByCountry}
+          lensOptions={lensOptions}
+          nativeLenses={nativeLenses}
+          adaptedLenses={adaptedLenses}
+          fixedLensInfo={fixedLensInfo}
+          cameraMount={cameraMount}
+        />
+      )}
     </div>
   );
 }

@@ -19,6 +19,10 @@ let gpuWindow = null;
 let gpuJobs = new Map();
 let windowState = null;
 
+// Dynamic port allocated by the server (default 4000 for dev mode)
+let actualServerPort = 4000;
+let serverPortResolve = null; // Promise resolver for port capture
+
 function getWindowStatePath() {
   try { return path.join(app.getPath('userData'), 'window-state.json'); } catch (_) { return path.join(__dirname, 'window-state.json'); }
 }
@@ -108,43 +112,47 @@ async function startServer(forceRestart = false) {
     return;
   }
 
-  const apiProbeUrl = 'http://127.0.0.1:4000/api/rolls';
-  const backendUp = await probeBackend(apiProbeUrl, 500);
+  // In dev mode, check if a dev server is already running on the default port
+  if (isDev) {
+    const apiProbeUrl = 'http://127.0.0.1:4000/api/rolls';
+    const backendUp = await probeBackend(apiProbeUrl, 500);
 
-  // If not forcing restart and backend is already up, skip spawn
-  if (!forceRestart && backendUp) {
-    LOG('startServer: Backend already responding on port 4000, skipping spawn');
-    return;
-  }
+    // If not forcing restart and backend is already up, skip spawn
+    if (!forceRestart && backendUp) {
+      LOG('startServer: Backend already responding on port 4000, skipping spawn');
+      actualServerPort = 4000;
+      return;
+    }
 
-  // If forceRestart or port is occupied (stale process), we need to kill whatever is on :4000
-  // This applies to BOTH dev and prod modes when forceRestart=true
-  if (backendUp || forceRestart) {
-    LOG('startServer: Need to take over port 4000, attempting to kill existing process...');
-    try {
-      if (process.platform === 'win32') {
-        const { execSync } = require('child_process');
-        const findCmd = 'netstat -ano | findstr :4000';
-        try {
-          const output = execSync(findCmd).toString();
-          const lines = output.split('\n').filter(l => l.includes('LISTENING'));
-          if (lines.length > 0) {
-            const parts = lines[0].trim().split(/\s+/);
-            const pid = parts[parts.length - 1];
-            if (pid && parseInt(pid) > 0) {
-              LOG(`startServer: Found PID ${pid} on :4000. Killing...`);
-              execSync(`taskkill /F /PID ${pid}`);
-              await new Promise(r => setTimeout(r, 1500)); // wait for port release
+    // If forceRestart, kill whatever is on :4000 (dev mode only)
+    if (forceRestart && backendUp) {
+      LOG('startServer: Need to take over port 4000, attempting to kill existing process...');
+      try {
+        if (process.platform === 'win32') {
+          const { execSync } = require('child_process');
+          const findCmd = 'netstat -ano | findstr :4000';
+          try {
+            const output = execSync(findCmd).toString();
+            const lines = output.split('\\n').filter(l => l.includes('LISTENING'));
+            if (lines.length > 0) {
+              const parts = lines[0].trim().split(/\\s+/);
+              const pid = parts[parts.length - 1];
+              if (pid && parseInt(pid) > 0) {
+                LOG(`startServer: Found PID ${pid} on :4000. Killing...`);
+                execSync(`taskkill /F /PID ${pid}`);
+                await new Promise(r => setTimeout(r, 1500)); // wait for port release
+              }
             }
+          } catch (e) {
+            LOG('startServer: Failed to find/kill via netstat:', e.message);
           }
-        } catch (e) {
-          LOG('startServer: Failed to find/kill via netstat:', e.message);
         }
+      } catch (e) {
+        LOG('startServer: Error during port cleanup:', e.message);
       }
-    } catch (e) {
-      LOG('startServer: Error during port cleanup:', e.message);
     }
   }
+  // In production mode, we use dynamic port, no need to kill any process
 
   const serverDir = path.join(process.resourcesPath || __dirname, 'server');
   LOG('startServer, serverDir=', serverDir);
@@ -178,13 +186,37 @@ async function startServer(forceRestart = false) {
       env.DB_ONEDRIVE_WRITE_THROUGH = '1';
     }
     LOG('startServer: spawning with env DATA_ROOT=', env.DATA_ROOT, 'UPLOADS_ROOT=', env.UPLOADS_ROOT);
+    
+    // Create a promise to wait for port capture
+    const portCapturePromise = new Promise((resolve) => {
+      serverPortResolve = resolve;
+      // Timeout fallback in case SERVER_PORT marker is not received
+      setTimeout(() => resolve(isDev ? 4000 : actualServerPort), 5000);
+    });
+    
     serverProcess = spawn(cmd, args, {
       cwd: serverDir,
       shell: false,
       env,
       stdio: ['ignore', 'pipe', 'pipe']
     });
-    serverProcess.stdout && serverProcess.stdout.on('data', d => fs.appendFileSync(outLog, d));
+    
+    // Parse stdout to capture the dynamic port
+    serverProcess.stdout && serverProcess.stdout.on('data', d => {
+      const str = d.toString();
+      fs.appendFileSync(outLog, str);
+      
+      // Parse SERVER_PORT:xxxx marker
+      const match = str.match(/SERVER_PORT:(\d+)/);
+      if (match) {
+        actualServerPort = parseInt(match[1], 10);
+        LOG(`Captured server port: ${actualServerPort}`);
+        if (serverPortResolve) {
+          serverPortResolve(actualServerPort);
+          serverPortResolve = null;
+        }
+      }
+    });
     serverProcess.stderr && serverProcess.stderr.on('data', d => fs.appendFileSync(errLog, d));
     serverProcess.on('error', e => {
       LOG('server spawn error', cmd, e && e.message);
@@ -197,6 +229,10 @@ async function startServer(forceRestart = false) {
     });
     LOG('spawned, pid=', serverProcess.pid);
     fs.appendFileSync(outLog, `spawned ${cmd} ${args.join(' ')} pid=${serverProcess.pid}\n`);
+    
+    // Wait for port to be captured before returning
+    const capturedPort = await portCapturePromise;
+    LOG(`Server started on port: ${capturedPort}`);
   } catch (e) {
     LOG('Failed to start server', e && e.message);
     fs.appendFileSync(errLog, `Failed to start server ${e && e.message}\n`);
@@ -213,10 +249,10 @@ function stopServer() {
     if (serverProcess && !serverProcess.killed) {
       LOG('[stopServer] Stopping managed serverProcess...');
       
-      // Try graceful shutdown via HTTP endpoint
+      // Try graceful shutdown via HTTP endpoint (use dynamic port)
       const req = http.request({
         hostname: '127.0.0.1',
-        port: 4000,
+        port: actualServerPort,
         path: '/api/shutdown',
         method: 'POST',
         timeout: 2000
@@ -476,15 +512,16 @@ function createWindow() {
   }
 
   // If app needs backend API, ensure server is started and ready before loading UI
-  const apiHealthUrl = 'http://127.0.0.1:4000/api/rolls'; // prefer IPv4 to avoid IPv6 resolution quirks
   const needsBackend = true; // set to true if front-end calls local API
 
   (async () => {
     try {
       if (needsBackend) {
         await startServer();
+        // Use dynamic port for health check
+        const apiHealthUrl = `http://127.0.0.1:${actualServerPort}/api/rolls`;
         LOG('waiting for backend', apiHealthUrl);
-        // wait for backend up (10s), if no health endpoint change to a reachable endpoint
+        // wait for backend up (15s), if no health endpoint change to a reachable endpoint
         await waitForUrl(apiHealthUrl, 15000).catch(() => {
           LOG('backend did not respond in time; continuing to load UI anyway');
         });
@@ -804,6 +841,23 @@ function saveConfig(next) {
 // Default API base for full version (embedded server)
 const DEFAULT_API_BASE = 'http://127.0.0.1:4000';
 
+// IPC handlers for dynamic port retrieval
+// Synchronous handler for preload script initialization
+ipcMain.on('get-server-port-sync', (event) => {
+  LOG('get-server-port-sync: returning', actualServerPort);
+  event.returnValue = actualServerPort;
+});
+
+// Async handler for runtime port retrieval
+ipcMain.handle('get-server-port', () => {
+  return actualServerPort;
+});
+
+// Get full API base URL with dynamic port
+ipcMain.handle('get-api-base-dynamic', () => {
+  return `http://127.0.0.1:${actualServerPort}`;
+});
+
 // IPC for API_BASE configuration (used by client-only mode)
 // Synchronous handler for preload script initialization
 ipcMain.on('config-get-api-base-sync', (event) => {
@@ -811,14 +865,16 @@ ipcMain.on('config-get-api-base-sync', (event) => {
   if (!appConfig || Object.keys(appConfig).length === 0) {
     appConfig = loadConfig();
   }
-  const apiBase = appConfig.apiBase || DEFAULT_API_BASE;
+  // If user has configured a custom apiBase (remote server), use that
+  // Otherwise, use dynamic port for local server
+  const apiBase = appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`;
   LOG('config-get-api-base-sync: returning', apiBase);
   event.returnValue = apiBase;
 });
 
 // Async handlers for runtime API_BASE get/set
 ipcMain.handle('config-get-api-base', () => {
-  return appConfig.apiBase || DEFAULT_API_BASE;
+  return appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`;
 });
 
 ipcMain.handle('config-set-api-base', async (e, url) => {

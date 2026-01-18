@@ -42,6 +42,13 @@ const DEFAULT_WB_PARAMS = {
   tint: 0,          // -100 to 100 (Green <-> Magenta)
 };
 
+/** 默认片基校正增益 (Pre-Inversion, 独立于场景白平衡) */
+const DEFAULT_BASE_GAINS = {
+  baseRed: 1.0,
+  baseGreen: 1.0,
+  baseBlue: 1.0,
+};
+
 /** 默认白平衡增益限制 */
 const WB_GAIN_LIMITS = {
   min: 0.05,
@@ -155,6 +162,7 @@ module.exports = {
   EXPORT_MAX_WIDTH,
   DEFAULT_TONE_PARAMS,
   DEFAULT_WB_PARAMS,
+  DEFAULT_BASE_GAINS,
   DEFAULT_INVERSION_PARAMS,
   DEFAULT_CURVES,
   DEFAULT_CROP_RECT,

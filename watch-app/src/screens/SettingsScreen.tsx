@@ -10,11 +10,14 @@ import {
   ScrollView,
 } from 'react-native';
 import { api } from '../services/api';
+import { discoverPort, cleanIpAddress } from '../utils/portDiscovery';
 
 const SettingsScreen: React.FC = () => {
   const [serverURL, setServerURL] = useState('');
+  const [ipAddress, setIpAddress] = useState(''); // For auto-discovery
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [discovering, setDiscovering] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -29,6 +32,36 @@ const SettingsScreen: React.FC = () => {
       console.error('Failed to load settings:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Auto-discover port from IP address
+  const handleAutoDiscover = async () => {
+    const ip = cleanIpAddress(ipAddress || serverURL);
+    if (!ip) {
+      Alert.alert('提示', '请输入服务器 IP 地址');
+      return;
+    }
+    
+    setDiscovering(true);
+    try {
+      const result = await discoverPort(ip);
+      if (result) {
+        setServerURL(result.fullUrl);
+        Alert.alert(
+          '发现服务', 
+          `已找到 FilmGallery 服务\n地址: ${result.fullUrl}\n版本: ${result.version}`
+        );
+      } else {
+        Alert.alert(
+          '未找到服务', 
+          '在常用端口上未发现 FilmGallery 服务。\n请检查:\n1. IP 地址是否正确\n2. 电脑上的 FilmGallery 是否已启动\n3. 防火墙是否允许连接'
+        );
+      }
+    } catch (e: any) {
+      Alert.alert('错误', e.message || '发现过程出错');
+    } finally {
+      setDiscovering(false);
     }
   };
 
@@ -67,7 +100,39 @@ const SettingsScreen: React.FC = () => {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <Text style={styles.header}>Settings</Text>
       
+      {/* Auto Discovery Section */}
       <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🔍 自动发现 (推荐)</Text>
+        <Text style={styles.hint}>
+          只需输入电脑的 IP 地址，自动发现服务端口
+        </Text>
+        <View style={styles.discoverRow}>
+          <TextInput
+            style={[styles.input, styles.ipInput]}
+            value={ipAddress}
+            onChangeText={setIpAddress}
+            placeholder="192.168.1.100"
+            placeholderTextColor="#666"
+            keyboardType="numeric"
+            autoCapitalize="none"
+          />
+          <TouchableOpacity
+            style={[styles.discoverButton, discovering && styles.saveButtonDisabled]}
+            onPress={handleAutoDiscover}
+            disabled={discovering}
+          >
+            {discovering ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.discoverButtonText}>发现</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      {/* Manual Configuration Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>手动配置</Text>
         <Text style={styles.label}>Server URL</Text>
         <TextInput
           style={styles.input}
@@ -80,7 +145,7 @@ const SettingsScreen: React.FC = () => {
           autoCorrect={false}
         />
         <Text style={styles.hint}>
-          Enter your Film Gallery server address
+          完整服务器地址（自动发现后会自动填入）
         </Text>
       </View>
 
@@ -123,6 +188,12 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 24,
   },
+  sectionTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
   label: {
     color: '#fff',
     fontSize: 14,
@@ -137,6 +208,27 @@ const styles = StyleSheet.create({
     padding: 12,
     color: '#fff',
     fontSize: 14,
+  },
+  ipInput: {
+    flex: 1,
+    marginRight: 8,
+  },
+  discoverRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  discoverButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 60,
+  },
+  discoverButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   hint: {
     color: '#666',
