@@ -225,8 +225,11 @@ export async function uploadPhotosToRoll({ rollId, files = [], onProgress, isNeg
 }
 
 // Films API
-export async function getFilms() {
-  const res = await fetch(`${API_BASE}/api/films`);
+export async function getFilms(noCache = false) {
+  const url = noCache 
+    ? `${API_BASE}/api/films?_t=${Date.now()}` 
+    : `${API_BASE}/api/films`;
+  const res = await fetch(url, noCache ? { cache: 'no-store' } : {});
   const data = await res.json();
   // 防御性处理：确保返回数组
   if (Array.isArray(data)) return data;
@@ -338,6 +341,17 @@ export async function deleteFilm(id) {
   if (ct.includes('application/json')) return resp.json();
   const text = await resp.text();
   return { ok: resp.ok, status: resp.status, text };
+}
+
+// Upload film thumbnail image
+export async function uploadFilmImage(id, file) {
+  const fd = new FormData();
+  fd.append('thumb', file);
+  const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'PUT', body: fd });
+  if (!resp.ok) {
+    throw new Error(`Upload failed: ${resp.status}`);
+  }
+  return resp.json();
 }
 
 export async function deleteRoll(id) {
@@ -615,9 +629,15 @@ export async function createFilmFormat(data) {
 }
 
 // Cameras
-export async function getCameras(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return jsonFetch(`/api/equipment/cameras${qs ? '?' + qs : ''}`);
+export async function getCameras(params = {}, noCache = false) {
+  const qs = new URLSearchParams(params);
+  if (noCache) qs.set('_t', Date.now());
+  const qsStr = qs.toString();
+  const url = `/api/equipment/cameras${qsStr ? '?' + qsStr : ''}`;
+  const opts = noCache ? { cache: 'no-store' } : {};
+  const r = await fetch(`${API_BASE}${url}`, opts);
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 export async function getCamera(id) {
@@ -653,13 +673,22 @@ export async function uploadCameraImage(id, file) {
     method: 'POST',
     body: fd
   });
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status}`);
+  }
   return res.json();
 }
 
 // Lenses
-export async function getLenses(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return jsonFetch(`/api/equipment/lenses${qs ? '?' + qs : ''}`);
+export async function getLenses(params = {}, noCache = false) {
+  const qs = new URLSearchParams(params);
+  if (noCache) qs.set('_t', Date.now());
+  const qsStr = qs.toString();
+  const url = `/api/equipment/lenses${qsStr ? '?' + qsStr : ''}`;
+  const opts = noCache ? { cache: 'no-store' } : {};
+  const r = await fetch(`${API_BASE}${url}`, opts);
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 export async function getLens(id) {
@@ -695,13 +724,22 @@ export async function uploadLensImage(id, file) {
     method: 'POST',
     body: fd
   });
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status}`);
+  }
   return res.json();
 }
 
 // Flashes
-export async function getFlashes(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return jsonFetch(`/api/equipment/flashes${qs ? '?' + qs : ''}`);
+export async function getFlashes(params = {}, noCache = false) {
+  const qs = new URLSearchParams(params);
+  if (noCache) qs.set('_t', Date.now());
+  const qsStr = qs.toString();
+  const url = `/api/equipment/flashes${qsStr ? '?' + qsStr : ''}`;
+  const opts = noCache ? { cache: 'no-store' } : {};
+  const r = await fetch(`${API_BASE}${url}`, opts);
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 export async function getFlash(id) {
@@ -737,13 +775,22 @@ export async function uploadFlashImage(id, file) {
     method: 'POST',
     body: fd
   });
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status}`);
+  }
   return res.json();
 }
 
 // Scanners
-export async function getScanners(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return jsonFetch(`/api/equipment/scanners${qs ? '?' + qs : ''}`);
+export async function getScanners(params = {}, noCache = false) {
+  const qs = new URLSearchParams(params);
+  if (noCache) qs.set('_t', Date.now());
+  const qsStr = qs.toString();
+  const url = `/api/equipment/scanners${qsStr ? '?' + qsStr : ''}`;
+  const opts = noCache ? { cache: 'no-store' } : {};
+  const r = await fetch(`${API_BASE}${url}`, opts);
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 export async function getScanner(id) {
@@ -779,6 +826,9 @@ export async function uploadScannerImage(id, file) {
     method: 'POST',
     body: fd
   });
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status}`);
+  }
   return res.json();
 }
 
@@ -786,9 +836,15 @@ export async function uploadScannerImage(id, file) {
 // FILM BACKS API
 // ========================================
 
-export async function getFilmBacks(params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  return jsonFetch(`/api/equipment/film-backs${qs ? '?' + qs : ''}`);
+export async function getFilmBacks(params = {}, noCache = false) {
+  const qs = new URLSearchParams(params);
+  if (noCache) qs.set('_t', Date.now());
+  const qsStr = qs.toString();
+  const url = `/api/equipment/film-backs${qsStr ? '?' + qsStr : ''}`;
+  const opts = noCache ? { cache: 'no-store' } : {};
+  const r = await fetch(`${API_BASE}${url}`, opts);
+  const text = await r.text();
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 export async function getFilmBack(id) {
@@ -824,6 +880,9 @@ export async function uploadFilmBackImage(id, file) {
     method: 'POST',
     body: fd
   });
+  if (!res.ok) {
+    throw new Error(`Upload failed: ${res.status}`);
+  }
   return res.json();
 }
 

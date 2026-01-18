@@ -834,6 +834,12 @@ function loadConfig() {
 }
 function saveConfig(next) {
   appConfig = { ...(appConfig||{}), ...(next||{}) };
+  // Remove null values to keep config clean
+  Object.keys(appConfig).forEach(key => {
+    if (appConfig[key] === null || appConfig[key] === undefined) {
+      delete appConfig[key];
+    }
+  });
   LOG('saveConfig: updated appConfig=', JSON.stringify(appConfig));
   try { fs.writeFileSync(CONFIG_PATH(), JSON.stringify(appConfig, null, 2)); } catch(e) { LOG('saveConfig error', e && e.message); }
 }
@@ -865,15 +871,27 @@ ipcMain.on('config-get-api-base-sync', (event) => {
   if (!appConfig || Object.keys(appConfig).length === 0) {
     appConfig = loadConfig();
   }
-  // If user has configured a custom apiBase (remote server), use that
-  // Otherwise, use dynamic port for local server
-  const apiBase = appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`;
-  LOG('config-get-api-base-sync: returning', apiBase);
+  // In local mode, always use dynamic port (ignore saved apiBase)
+  // Only use saved apiBase for remote/hybrid modes
+  const mode = appConfig.serverMode || 'local';
+  let apiBase;
+  if (mode === 'local') {
+    // Local mode: always use dynamic port from embedded server
+    apiBase = `http://127.0.0.1:${actualServerPort}`;
+  } else {
+    // Remote/Hybrid mode: use saved apiBase or fallback to local port
+    apiBase = appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`;
+  }
+  LOG('config-get-api-base-sync: mode=' + mode + ', returning', apiBase);
   event.returnValue = apiBase;
 });
 
 // Async handlers for runtime API_BASE get/set
 ipcMain.handle('config-get-api-base', () => {
+  const mode = appConfig.serverMode || 'local';
+  if (mode === 'local') {
+    return `http://127.0.0.1:${actualServerPort}`;
+  }
   return appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`;
 });
 
@@ -896,7 +914,10 @@ ipcMain.handle('config-set-server-mode', async (e, mode, options = {}) => {
     serverMode: mode,
     useLocalCompute: mode === 'hybrid' ? true : (options.useLocalCompute || false)
   };
-  if (options.remoteUrl) {
+  if (mode === 'local') {
+    // Clear apiBase when switching to local mode to avoid port mismatch
+    update.apiBase = null;
+  } else if (options.remoteUrl) {
     update.apiBase = options.remoteUrl.trim();
   }
   saveConfig(update);
@@ -906,10 +927,19 @@ ipcMain.handle('config-set-server-mode', async (e, mode, options = {}) => {
 
 // Get server mode
 ipcMain.handle('config-get-server-mode', () => {
+  const mode = appConfig.serverMode || 'local';
+  let apiBase;
+  if (mode === 'local') {
+    // Local mode: always use dynamic port
+    apiBase = `http://127.0.0.1:${actualServerPort}`;
+  } else {
+    // Remote/Hybrid mode: use saved apiBase or fallback
+    apiBase = appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`;
+  }
   return {
-    mode: appConfig.serverMode || 'local',
+    mode: mode,
     useLocalCompute: !!appConfig.useLocalCompute,
-    apiBase: appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`
+    apiBase: apiBase
   };
 });
 

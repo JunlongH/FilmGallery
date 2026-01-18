@@ -147,15 +147,14 @@ export default function ServerSettings() {
     setServerInfo(null);
     
     if (isElectron) {
-      const localUrl = `http://127.0.0.1:${currentPort}`;
-      
-      // Use new setServerMode API if available
+      // Use setServerMode API - it will clear apiBase automatically
       if (window.__electron?.setServerMode) {
         await window.__electron.setServerMode('local', { useLocalCompute: true });
       }
-      await window.__electron?.setApiBase?.(localUrl);
+      // Note: Don't call setApiBase here - local mode uses dynamic port
       
-      // Test local connection
+      // Test local connection using current port
+      const localUrl = `http://127.0.0.1:${currentPort}`;
       try {
         const res = await fetch(`${localUrl}/api/discover`);
         if (res.ok) {

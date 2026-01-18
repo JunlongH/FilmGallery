@@ -17,7 +17,7 @@ import {
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
   getScanners, createScanner, updateScanner, deleteScanner, uploadScannerImage,
   getFilmBacks, createFilmBack, updateFilmBack, deleteFilmBack, uploadFilmBackImage,
-  getFilms, createFilm, updateFilm, deleteFilm, getFilmConstants,
+  getFilms, createFilm, updateFilm, deleteFilm, uploadFilmImage, getFilmConstants,
   getEquipmentConstants, buildUploadUrl, getRolls
 } from '../api';
 import ModalDialog from './ModalDialog';
@@ -52,17 +52,17 @@ export default function EquipmentManager() {
   }, []);
 
   // Load items based on active tab
-  const loadItems = useCallback(async () => {
+  const loadItems = useCallback(async (noCache = false) => {
     setLoading(true);
     try {
       let data;
       switch (activeTab) {
-        case 'cameras': data = await getCameras(); break;
-        case 'lenses': data = await getLenses(); break;
-        case 'flashes': data = await getFlashes(); break;
-        case 'film-backs': data = await getFilmBacks(); break;
-        case 'scanners': data = await getScanners(); break;
-        case 'films': data = await getFilms(); break;
+        case 'cameras': data = await getCameras({}, noCache); break;
+        case 'lenses': data = await getLenses({}, noCache); break;
+        case 'flashes': data = await getFlashes({}, noCache); break;
+        case 'film-backs': data = await getFilmBacks({}, noCache); break;
+        case 'scanners': data = await getScanners({}, noCache); break;
+        case 'films': data = await getFilms(noCache); break;
         default: data = [];
       }
       setItems(Array.isArray(data) ? data : []);
@@ -156,13 +156,15 @@ export default function EquipmentManager() {
         case 'flashes': await uploadFlashImage(id, file); break;
         case 'film-backs': await uploadFilmBackImage(id, file); break;
         case 'scanners': await uploadScannerImage(id, file); break;
+        case 'films': await uploadFilmImage(id, file); break;
         default: return;
       }
-      // Reload items to get updated image path
-      loadItems();
+      // Reload items with cache bypass to get updated image path immediately
+      await loadItems(true);
+      alert('图片上传成功');
     } catch (err) {
       console.error('Image upload failed:', err);
-      alert('Failed to upload image');
+      alert('图片上传失败: ' + (err?.message || '未知错误'));
     }
   };
 
