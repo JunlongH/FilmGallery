@@ -1,7 +1,7 @@
 # Photo Map Feature Plan
 
 > **Created:** 2026-01-19  
-> **Status:** In Progress (Phase 1 + Globe Complete)  
+> **Status:** In Progress (Phases 1-3 Complete)  
 > **Branch:** `feature/photo-map`
 > **Last Updated:** 2026-01-19
 
@@ -269,29 +269,29 @@ When multiple photos share the **exact same coordinates** (e.g., same spot), cli
 - [x] Add click-to-zoom from globe to flat map
 - [x] Add globe-specific CSS styles
 
-### Phase 2: Clustering & Markers
-- [ ] Integrate `MarkerClusterGroup` ✅ (included in Phase 1)
-- [ ] Create custom `PhotoMarker` with thumbnails ✅ (included in Phase 1)
-- [ ] Create custom `PhotoCluster` icons ✅ (included in Phase 1)
-- [ ] Implement spiderfy for same-location photos
+### Phase 2: Clustering & Markers ✅ COMPLETED
+- [x] Integrate `MarkerClusterGroup` ✅ (included in Phase 1)
+- [x] Create custom `PhotoMarker` with thumbnails ✅ (included in Phase 1)
+- [x] Create custom `PhotoCluster` icons ✅ (included in Phase 1)
+- [x] Implement spiderfy for same-location photos (built into react-leaflet-cluster)
 
-### Phase 3: Interactions
-- [x] Implement click-to-preview popup (`MapPhotoPreview`) ✅ (included in Phase 1)
-- [x] Add navigation to RollDetail from popup ✅ (included in Phase 1)
-- [ ] Implement hover effects on markers
+### Phase 3: Interactions ✅ COMPLETED
+- [x] Implement click-to-preview popup (`MapPhotoPreview`)
+- [x] Add navigation to RollDetail from popup
+- [x] Implement hover effects on markers
 
-### Phase 4: Filters & Controls
-- [x] Create `MapFilterPanel` component ✅ (included in Phase 1)
-- [ ] Implement date range filtering (UI ready, needs connection)
-- [ ] Implement roll/location filtering
-- [x] Add tile layer toggle (dark/light/satellite) ✅ (included in Phase 1)
+### Phase 4: Filters & Controls ⏳ IN PROGRESS
+- [x] Create `MapFilterPanel` component
+- [x] Implement date range filtering (UI + API connected)
+- [ ] Implement roll/location filtering (UI ready, needs data source)
+- [x] Add tile layer toggle (dark/light/satellite)
 
 ### Phase 5: Polish & Performance
 - [ ] Bounds-based lazy loading
-- [ ] Smooth pan/zoom animations
+- [x] Smooth pan/zoom animations (built-in)
 - [ ] Loading skeleton states
-- [ ] Empty state when no geo-tagged photos
-- [ ] Error handling
+- [x] Empty state when no geo-tagged photos
+- [x] Error handling
 
 ---
 
