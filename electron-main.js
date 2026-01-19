@@ -421,7 +421,7 @@ function createWindow() {
     },
   });
 
-  // Set CSP to allow map tile providers (Esri, CartoDB, etc.) and local server images
+  // Set CSP to allow map tile providers (Esri, CartoDB, etc.), geocoding APIs, and local server images
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
@@ -429,7 +429,7 @@ function createWindow() {
         'Content-Security-Policy': [
           "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
           "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:* https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://server.arcgisonline.com; " +
-          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://server.arcgisonline.com; " +
+          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://server.arcgisonline.com https://nominatim.openstreetmap.org https://photon.komoot.io; " +
           "style-src 'self' 'unsafe-inline'; " +
           "font-src 'self' data:;"
         ]
