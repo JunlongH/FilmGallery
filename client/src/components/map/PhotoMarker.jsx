@@ -34,25 +34,33 @@ const getThumbUrl = (photo) => {
 /**
  * Create a custom div icon with photo thumbnail
  */
-const createPhotoIcon = (photo, isSelected) => {
+const createPhotoIcon = (photo, isSelected, isHovered) => {
   const thumbUrl = getThumbUrl(photo);
-  const size = isSelected ? 56 : 48;
-  const borderColor = isSelected ? '#f59e0b' : '#ffffff';
-  const borderWidth = isSelected ? 3 : 2;
+  const size = isSelected ? 56 : (isHovered ? 52 : 48);
+  const borderColor = isSelected ? '#f59e0b' : (isHovered ? '#fbbf24' : '#ffffff');
+  const borderWidth = isSelected ? 3 : (isHovered ? 3 : 2);
+  const transform = isHovered && !isSelected ? 'scale(1.1)' : 'scale(1)';
+  const zIndex = isHovered || isSelected ? 1000 : 'auto';
   
   const html = thumbUrl 
-    ? `<div class="photo-marker ${isSelected ? 'selected' : ''}" style="
+    ? `<div class="photo-marker ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}" style="
         width: ${size}px;
         height: ${size}px;
         border: ${borderWidth}px solid ${borderColor};
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        box-shadow: 0 ${isHovered ? 4 : 2}px ${isHovered ? 16 : 8}px rgba(0,0,0,${isHovered ? 0.5 : 0.3});
+        transform: ${transform};
+        z-index: ${zIndex};
+        transition: all 0.15s ease-out;
       ">
         <img src="${thumbUrl}" alt="" loading="lazy" />
       </div>`
-    : `<div class="photo-marker photo-marker-placeholder ${isSelected ? 'selected' : ''}" style="
+    : `<div class="photo-marker photo-marker-placeholder ${isSelected ? 'selected' : ''} ${isHovered ? 'hovered' : ''}" style="
         width: ${size}px;
         height: ${size}px;
         border: ${borderWidth}px solid ${borderColor};
+        transform: ${transform};
+        z-index: ${zIndex};
+        transition: all 0.15s ease-out;
       ">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
@@ -63,7 +71,7 @@ const createPhotoIcon = (photo, isSelected) => {
 
   return L.divIcon({
     html,
-    className: 'photo-marker-container',
+    className: `photo-marker-container ${isHovered ? 'hovered' : ''}`,
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
     popupAnchor: [0, -size / 2],
@@ -78,13 +86,15 @@ const createPhotoIcon = (photo, isSelected) => {
  * @param {Object} props
  * @param {Object} props.photo - Photo data with latitude, longitude, thumb_rel_path
  * @param {Function} props.onClick - Click handler
+ * @param {Function} props.onHover - Hover handler (mouseenter/mouseleave)
  * @param {boolean} props.isSelected - Whether this marker is selected
+ * @param {boolean} props.isHovered - Whether this marker is hovered
  */
-export default function PhotoMarker({ photo, onClick, isSelected }) {
+export default function PhotoMarker({ photo, onClick, onHover, isSelected, isHovered }) {
   // Memoize the icon to prevent unnecessary re-renders
   const icon = useMemo(() => {
-    return createPhotoIcon(photo, isSelected);
-  }, [photo, isSelected]);
+    return createPhotoIcon(photo, isSelected, isHovered);
+  }, [photo, isSelected, isHovered]);
 
   // Position
   const position = [photo.latitude, photo.longitude];
@@ -100,12 +110,32 @@ export default function PhotoMarker({ photo, onClick, isSelected }) {
     }
   };
 
+  /**
+   * Handle mouse enter
+   */
+  const handleMouseOver = () => {
+    if (onHover) {
+      onHover(photo, true);
+    }
+  };
+
+  /**
+   * Handle mouse leave
+   */
+  const handleMouseOut = () => {
+    if (onHover) {
+      onHover(photo, false);
+    }
+  };
+
   return (
     <Marker
       position={position}
       icon={icon}
       eventHandlers={{
         click: handleClick,
+        mouseover: handleMouseOver,
+        mouseout: handleMouseOut,
       }}
     />
   );

@@ -182,21 +182,28 @@
   border: none !important;
 }
 
+.photo-marker-container.hovered {
+  z-index: 1000 !important;
+}
+
 .photo-marker {
   border-radius: 50%;
   overflow: hidden;
   background: #2a2a2a;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition: transform 0.15s ease-out, box-shadow 0.15s ease-out, border-color 0.15s ease-out;
   cursor: pointer;
 }
 
-.photo-marker:hover {
+.photo-marker:hover,
+.photo-marker.hovered {
   transform: scale(1.15);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5) !important;
+  border-color: #fbbf24 !important;
 }
 
 .photo-marker.selected {
   transform: scale(1.2);
+  border-color: #f59e0b !important;
 }
 
 .photo-marker img {

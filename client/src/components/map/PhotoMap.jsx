@@ -179,6 +179,9 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
   // Container ref for dimensions
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  
+  // Hovered photo ID
+  const [hoveredPhotoId, setHoveredPhotoId] = useState(null);
 
   // Update dimensions on resize
   useEffect(() => {
@@ -238,6 +241,13 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
   const handleClosePreview = useCallback(() => {
     setPreviewPhoto(null);
     setPreviewPosition(null);
+  }, []);
+  
+  /**
+   * Handle marker hover
+   */
+  const handleMarkerHover = useCallback((photo, isEntering) => {
+    setHoveredPhotoId(isEntering ? photo.id : null);
   }, []);
   
   /**
@@ -386,7 +396,9 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
                   key={photo.id}
                   photo={photo}
                   onClick={handleMarkerClick}
+                  onHover={handleMarkerHover}
                   isSelected={selectedPhoto?.id === photo.id}
+                  isHovered={hoveredPhotoId === photo.id}
                 />
               ))}
             </MarkerClusterGroup>
