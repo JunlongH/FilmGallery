@@ -1,7 +1,7 @@
 # Photo Map Feature Plan
 
 > **Created:** 2026-01-19  
-> **Status:** In Progress (Phases 1-3 Complete)  
+> **Status:** Complete  
 > **Branch:** `feature/photo-map`
 > **Last Updated:** 2026-01-19
 
@@ -280,16 +280,16 @@ When multiple photos share the **exact same coordinates** (e.g., same spot), cli
 - [x] Add navigation to RollDetail from popup
 - [x] Implement hover effects on markers
 
-### Phase 4: Filters & Controls ⏳ IN PROGRESS
+### Phase 4: Filters & Controls ✅ COMPLETED
 - [x] Create `MapFilterPanel` component
 - [x] Implement date range filtering (UI + API connected)
-- [ ] Implement roll/location filtering (UI ready, needs data source)
+- [x] Implement roll filtering (dropdown with all rolls)
 - [x] Add tile layer toggle (dark/light/satellite)
 
-### Phase 5: Polish & Performance
-- [ ] Bounds-based lazy loading
+### Phase 5: Polish & Performance ✅ COMPLETED
+- [ ] Bounds-based lazy loading (deferred - not needed for current scale)
 - [x] Smooth pan/zoom animations (built-in)
-- [ ] Loading skeleton states
+- [x] Loading skeleton states
 - [x] Empty state when no geo-tagged photos
 - [x] Error handling
 

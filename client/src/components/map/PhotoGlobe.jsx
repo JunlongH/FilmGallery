@@ -52,6 +52,84 @@ const clusterPhotos = (photos, gridSize = 10) => {
 };
 
 /**
+ * Create HTML element for globe marker
+ */
+const createMarkerElement = (cluster, onClick) => {
+  const container = document.createElement('div');
+  container.className = 'globe-marker';
+  container.style.cssText = `
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    background: #2a2a2a;
+    position: relative;
+  `;
+  
+  // Get first photo's thumbnail
+  const thumbUrl = cluster.photos[0] ? getThumbUrl(cluster.photos[0]) : null;
+  
+  if (thumbUrl) {
+    const img = document.createElement('img');
+    img.src = thumbUrl;
+    img.alt = '';
+    img.style.cssText = `
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    `;
+    img.loading = 'lazy';
+    container.appendChild(img);
+  }
+  
+  // Add count badge if multiple photos
+  if (cluster.count > 1) {
+    const badge = document.createElement('div');
+    badge.className = 'globe-marker-count';
+    badge.textContent = cluster.count;
+    badge.style.cssText = `
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: #000;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 5px;
+      border-radius: 10px;
+      min-width: 18px;
+      text-align: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    `;
+    container.appendChild(badge);
+  }
+  
+  // Hover effects
+  container.addEventListener('mouseenter', () => {
+    container.style.transform = 'scale(1.2)';
+    container.style.boxShadow = '0 4px 20px rgba(245, 158, 11, 0.6)';
+    container.style.borderColor = '#f59e0b';
+    container.style.zIndex = '1000';
+  });
+  
+  container.addEventListener('mouseleave', () => {
+    container.style.transform = 'scale(1)';
+    container.style.boxShadow = '0 2px 12px rgba(0,0,0,0.5)';
+    container.style.borderColor = '#fff';
+    container.style.zIndex = 'auto';
+  });
+  
+  // Store cluster data for click handler
+  container.__clusterData = cluster;
+  
+  return container;
+};
+
+/**
  * PhotoGlobe Component
  * 
  * Renders a 3D globe with photo markers.
@@ -103,76 +181,39 @@ export default function PhotoGlobe({
   }, []);
 
   /**
-   * Handle click on a cluster point
+   * Handle click on a marker element
    */
-  const handlePointClick = useCallback((point) => {
-    if (point && point.photos && point.photos.length > 0) {
-      if (point.count === 1) {
+  const handleElementClick = useCallback((el) => {
+    const cluster = el.__clusterData;
+    if (cluster && cluster.photos && cluster.photos.length > 0) {
+      if (cluster.count === 1) {
         // Single photo - show preview
         if (onPhotoClick) {
-          onPhotoClick(point.photos[0], { x: width / 2, y: height / 2 });
+          onPhotoClick(cluster.photos[0], { x: width / 2, y: height / 2 });
         }
       } else {
         // Multiple photos - zoom into flat map at this location
         if (onZoomIn) {
-          onZoomIn({ lat: point.lat, lng: point.lng, zoom: 8 });
+          onZoomIn({ lat: cluster.lat, lng: cluster.lng, zoom: 8 });
         }
       }
     }
   }, [onPhotoClick, onZoomIn, width, height]);
 
   /**
-   * Handle hover on a cluster point
+   * Handle hover on a marker element
    */
-  const handlePointHover = useCallback((point) => {
-    setHoveredCluster(point);
-    // Change cursor
-    document.body.style.cursor = point ? 'pointer' : 'grab';
+  const handleElementHover = useCallback((el) => {
+    const cluster = el ? el.__clusterData : null;
+    setHoveredCluster(cluster);
+    document.body.style.cursor = el ? 'pointer' : 'grab';
   }, []);
 
   /**
-   * Render custom HTML element for each point
+   * Create HTML element for each cluster
    */
-  const pointLabel = useCallback((point) => {
-    if (!point) return '';
-    
-    const thumbUrl = point.photos[0] ? getThumbUrl(point.photos[0]) : null;
-    const countBadge = point.count > 1 
-      ? `<div class="globe-point-count">${point.count}</div>` 
-      : '';
-    
-    return `
-      <div class="globe-point-tooltip">
-        ${thumbUrl ? `<img src="${thumbUrl}" alt="" />` : ''}
-        ${countBadge}
-        <div class="globe-point-location">
-          ${point.photos[0]?.city || point.photos[0]?.country || 'Unknown location'}
-        </div>
-      </div>
-    `;
-  }, []);
-
-  /**
-   * Custom point color based on cluster size
-   */
-  const pointColor = useCallback((point) => {
-    if (point.count > 50) return '#ef4444'; // red for large clusters
-    if (point.count > 10) return '#f59e0b'; // amber for medium
-    return '#22c55e'; // green for small
-  }, []);
-
-  /**
-   * Point altitude (height above globe surface)
-   */
-  const pointAltitude = useCallback((point) => {
-    return 0.01 + Math.min(point.count / 100, 0.1);
-  }, []);
-
-  /**
-   * Point radius based on cluster size
-   */
-  const pointRadius = useCallback((point) => {
-    return 0.3 + Math.min(point.count / 20, 0.8);
+  const htmlElementAccessor = useCallback((cluster) => {
+    return createMarkerElement(cluster);
   }, []);
 
   return (
@@ -189,16 +230,14 @@ export default function PhotoGlobe({
         bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
         backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
         
-        // Points (photo clusters)
-        pointsData={clusters}
-        pointLat="lat"
-        pointLng="lng"
-        pointColor={pointColor}
-        pointAltitude={pointAltitude}
-        pointRadius={pointRadius}
-        pointLabel={pointLabel}
-        onPointClick={handlePointClick}
-        onPointHover={handlePointHover}
+        // HTML Elements (photo thumbnails)
+        htmlElementsData={clusters}
+        htmlLat="lat"
+        htmlLng="lng"
+        htmlAltitude={0.02}
+        htmlElement={htmlElementAccessor}
+        onHtmlElementClick={handleElementClick}
+        onHtmlElementHover={handleElementHover}
         
         // Atmosphere
         atmosphereColor="#3a82f7"

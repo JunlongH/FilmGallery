@@ -6,7 +6,18 @@
  * 
  * @module components/map/MapFilterPanel
  */
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { API_BASE } from '../../api';
+
+/**
+ * Fetch all rolls for the dropdown
+ */
+async function fetchRolls() {
+  const response = await fetch(`${API_BASE}/api/rolls`);
+  if (!response.ok) throw new Error('Failed to fetch rolls');
+  return response.json();
+}
 
 /**
  * MapFilterPanel Component
@@ -25,6 +36,13 @@ export default function MapFilterPanel({
   isOpen, 
   onClose 
 }) {
+  // Fetch rolls for dropdown
+  const { data: rolls = [] } = useQuery({
+    queryKey: ['rolls'],
+    queryFn: fetchRolls,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  });
+
   /**
    * Handle date range change
    */
@@ -38,6 +56,14 @@ export default function MapFilterPanel({
     } else {
       onChange({ dateRange: newDateRange });
     }
+  };
+
+  /**
+   * Handle roll selection change
+   */
+  const handleRollChange = (e) => {
+    const value = e.target.value;
+    onChange({ rollId: value ? parseInt(value, 10) : null });
   };
 
   /**
@@ -84,19 +110,22 @@ export default function MapFilterPanel({
         </div>
       </div>
 
-      {/* Future: Roll selector */}
-      {/* 
+      {/* Roll selector */}
       <div className="map-filter-section">
         <label className="map-filter-label">Roll</label>
         <select 
           className="map-filter-select"
           value={filters.rollId || ''}
-          onChange={(e) => onChange({ rollId: e.target.value || null })}
+          onChange={handleRollChange}
         >
           <option value="">All Rolls</option>
+          {rolls.map(roll => (
+            <option key={roll.id} value={roll.id}>
+              {roll.title || roll.name || `Roll #${roll.id}`}
+            </option>
+          ))}
         </select>
       </div>
-      */}
 
       {/* Clear filters button */}
       {hasActiveFilters && (

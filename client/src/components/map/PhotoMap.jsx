@@ -273,11 +273,18 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
 
   return (
     <div className="photo-map-wrapper" ref={containerRef}>
-      {/* Loading overlay */}
+      {/* Loading skeleton overlay */}
       {isLoading && (
         <div className="map-loading-overlay">
-          <div className="map-loading-spinner" />
-          <span>Loading photos...</span>
+          <div className="map-loading-skeleton">
+            <div className="map-skeleton-globe">
+              <div className="map-skeleton-pulse" />
+            </div>
+            <div className="map-skeleton-text">
+              <div className="map-loading-spinner" />
+              <span>Loading photo locations...</span>
+            </div>
+          </div>
         </div>
       )}
 
