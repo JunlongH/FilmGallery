@@ -43,20 +43,25 @@ const getThumbUrl = (photo) => {
  * Tile layer configurations
  */
 const TILE_LAYERS = {
-  dark: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    name: 'Dark',
-  },
   light: {
     url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
     name: 'Light',
+    options: { maxZoom: 19, crossOrigin: 'anonymous' }
+  },
+  dark: {
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    name: 'Dark',
+    options: { maxZoom: 19, crossOrigin: 'anonymous' }
   },
   satellite: {
+    // ArcGIS World Imagery (ESRI) - widely used, but may fail under strict CSP/hosting setups.
+    // Add crossOrigin to reduce canvas tainting and provide maxZoom hint.
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: 'Tiles &copy; Esri',
     name: 'Satellite',
+    options: { maxZoom: 19, crossOrigin: 'anonymous' }
   },
 };
 
@@ -295,8 +300,8 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
   // Default to 'flat' for faster initial load and more practical use
   const [viewMode, setViewMode] = useState('flat');
   
-  // Tile layer state
-  const [tileLayer, setTileLayer] = useState('dark');
+  // Tile layer state (default to light/bright mode)
+  const [tileLayer, setTileLayer] = useState('light');
   
   // Map bounds for lazy loading (future use)
   const [bounds, setBounds] = useState(null);
@@ -493,6 +498,22 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
             <TileLayer
               url={currentTileLayer.url}
               attribution={currentTileLayer.attribution}
+              {...(currentTileLayer.options || {})}
+              eventHandlers={{
+                // If tiles fail to load (common with some providers in packaged apps),
+                // automatically fallback to a safe layer and log a warning.
+                tileerror: (err) => {
+                  try {
+                    console.warn('Tile load error for layer', tileLayer, err);
+                    if (tileLayer === 'satellite') {
+                      // fallback to dark layer if satellite fails
+                      setTileLayer('dark');
+                    }
+                  } catch (e) {
+                    // swallow
+                  }
+                }
+              }}
             />
 
             <MapEventHandler onBoundsChange={handleBoundsChange} />

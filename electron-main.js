@@ -417,7 +417,24 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'electron-preload.js'),
+      webSecurity: true,
     },
+  });
+
+  // Set CSP to allow map tile providers (Esri, CartoDB, etc.) and local server images
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; " +
+          "img-src 'self' data: blob: http://127.0.0.1:* http://localhost:* https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://server.arcgisonline.com; " +
+          "connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:* https://*.tile.openstreetmap.org https://*.basemaps.cartocdn.com https://server.arcgisonline.com; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "font-src 'self' data:;"
+        ]
+      }
+    });
   });
 
   ipcMain.handle('window-minimize', () => mainWindow?.minimize());
