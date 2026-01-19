@@ -17,13 +17,15 @@
     "piexifjs": "^1.0.6",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-globe.gl": "^2.37.0",
     "react-lazy-load-image-component": "^1.6.3",
     "react-leaflet": "^4.2.1",
     "react-leaflet-cluster": "^4.0.0",
     "react-router-dom": "^7.9.6",
     "react-scripts": "5.0.1",
     "react-window": "^1.8.10",
-    "recharts": "^3.5.1"
+    "recharts": "^3.5.1",
+    "three": "^0.182.0"
   },
   "eslintConfig": {
     "extends": [

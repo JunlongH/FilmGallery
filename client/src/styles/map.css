@@ -658,3 +658,226 @@
     color: #888;
   }
 }
+
+/* ===================================
+   VIEW MODE TOGGLE (Globe/Flat)
+   =================================== */
+
+.map-view-toggle {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  z-index: 1001;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 4px;
+  border-radius: 10px;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.map-view-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.map-view-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.map-view-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.map-view-btn.active {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  opacity: 1;
+  color: #000;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+
+/* ===================================
+   EMPTY STATE
+   =================================== */
+
+.map-empty-state {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: #fff;
+  z-index: 100;
+  max-width: 400px;
+  padding: 40px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 16px;
+  backdrop-filter: blur(8px);
+}
+
+.map-empty-state svg {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.map-empty-state h3 {
+  margin: 0 0 12px 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.map-empty-state p {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.7;
+  line-height: 1.5;
+}
+
+/* ===================================
+   3D GLOBE STYLES
+   =================================== */
+
+.photo-globe-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background: #000;
+  cursor: grab;
+}
+
+.photo-globe-wrapper:active {
+  cursor: grabbing;
+}
+
+/* Globe photo count */
+.globe-photo-count {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 24px;
+  font-size: 13px;
+  backdrop-filter: blur(8px);
+  z-index: 100;
+}
+
+.globe-photo-count svg {
+  width: 18px;
+  height: 18px;
+  opacity: 0.8;
+}
+
+/* Globe point tooltip */
+.globe-point-tooltip {
+  background: rgba(0, 0, 0, 0.85);
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 120px;
+  text-align: center;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.globe-point-tooltip img {
+  width: 100px;
+  height: 100px;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 6px;
+}
+
+.globe-point-count {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: #f59e0b;
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.globe-point-location {
+  font-size: 12px;
+  color: #ccc;
+  margin-top: 4px;
+}
+
+/* Globe zoom to flat button */
+.globe-zoom-flat-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 24px;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s ease;
+  z-index: 100;
+}
+
+.globe-zoom-flat-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.globe-zoom-flat-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Globe hover info */
+.globe-hover-info {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  backdrop-filter: blur(8px);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.globe-hover-info strong {
+  color: #f59e0b;
+}
+
+.globe-hover-info span {
+  opacity: 0.7;
+  font-size: 12px;
+}

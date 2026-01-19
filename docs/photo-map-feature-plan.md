@@ -1,7 +1,7 @@
 # Photo Map Feature Plan
 
 > **Created:** 2026-01-19  
-> **Status:** In Progress (Phase 1 Complete)  
+> **Status:** In Progress (Phase 1 + Globe Complete)  
 > **Branch:** `feature/photo-map`
 > **Last Updated:** 2026-01-19
 
@@ -15,6 +15,7 @@ This feature introduces an interactive **Photo Map View** that visualizes the us
 - Pan, zoom, and interact with the map seamlessly
 - See photos cluster together when zoomed out, and disperse when zoomed in
 - Click on individual photos or clusters to preview and navigate to full details
+- **NEW:** View photos on a 3D spherical globe when at world-level zoom
 
 The goal is to provide an intuitive, visually appealing way to explore photos by location.
 
@@ -26,6 +27,7 @@ The goal is to provide an intuitive, visually appealing way to explore photos by
 |-----------|------------|-----------|
 | **Map Renderer** | [Leaflet](https://leafletjs.com/) + [react-leaflet](https://react-leaflet.js.org/) | Open-source, lightweight, highly customizable |
 | **Clustering** | [react-leaflet-cluster](https://www.npmjs.com/package/react-leaflet-cluster) | Native Leaflet.markercluster integration for React |
+| **3D Globe** | [react-globe.gl](https://github.com/vasturiano/react-globe.gl) + [Three.js](https://threejs.org/) | Interactive 3D Earth visualization |
 | **Tile Provider** | CartoDB Dark Matter or Stamen Toner Lite | Minimalist aesthetic that lets photos stand out |
 | **State Management** | Existing Redux store | Consistent with app architecture |
 | **Routing** | react-router-dom (v7) | Add `/map` route |
@@ -259,6 +261,14 @@ When multiple photos share the **exact same coordinates** (e.g., same spot), cli
 - [x] Add sidebar navigation link
 - [x] Add `/api/photos/geo` endpoint
 
+### Phase 1.5: Globe View ✅ COMPLETED
+- [x] Install 3D dependencies (`react-globe.gl`, `three`)
+- [x] Create `PhotoGlobe` component with auto-rotation
+- [x] Implement clustering on globe (15° grid)
+- [x] Add Globe/Flat view toggle button
+- [x] Add click-to-zoom from globe to flat map
+- [x] Add globe-specific CSS styles
+
 ### Phase 2: Clustering & Markers
 - [ ] Integrate `MarkerClusterGroup` ✅ (included in Phase 1)
 - [ ] Create custom `PhotoMarker` with thumbnails ✅ (included in Phase 1)
@@ -330,7 +340,8 @@ router.get('/geo', async (req, res) => {
 
 ```bash
 cd client
-npm install leaflet react-leaflet react-leaflet-cluster
+npm install leaflet react-leaflet@4.2.1 react-leaflet-cluster --legacy-peer-deps
+npm install react-globe.gl three --legacy-peer-deps
 ```
 
 **Leaflet CSS** must be imported in the app:
@@ -347,14 +358,15 @@ import 'leaflet/dist/leaflet.css';
 | File | Purpose | Phase | Status |
 |------|---------|-------|--------|
 | `client/src/pages/MapPage.jsx` | Main page component | 1 | ✅ Done |
-| `client/src/components/map/PhotoMap.jsx` | Leaflet map container | 1 | ✅ Done |
+| `client/src/components/map/PhotoMap.jsx` | Leaflet map container + view toggle | 1 | ✅ Done |
+| `client/src/components/map/PhotoGlobe.jsx` | 3D spherical globe view | 1.5 | ✅ Done |
 | `client/src/components/map/PhotoMarker.jsx` | Custom thumbnail marker | 2 | ✅ Done |
 | `client/src/components/map/PhotoCluster.jsx` | Custom cluster icon | 2 | ⏳ Integrated in PhotoMap |
 | `client/src/components/map/MapPhotoPreview.jsx` | Click popup preview | 3 | ✅ Done |
 | `client/src/components/map/MapControls.jsx` | Zoom, layer controls | 4 | ⏳ Integrated in PhotoMap |
 | `client/src/components/map/MapFilterPanel.jsx` | Filter sidebar | 4 | ✅ Done |
 | `client/src/hooks/useGeoPhotos.js` | Data fetching hook | 1 | ✅ Done |
-| `client/src/styles/map.css` | Map-specific styles | 1 | ✅ Done |
+| `client/src/styles/map.css` | Map + Globe styles | 1 | ✅ Done |
 | `client/src/utils/geo-helpers.js` | Coordinate utilities | 1 | ⏳ Deferred |
 | `server/routes/photos.js` | Add `/geo` endpoint | 1 | ✅ Done |
 

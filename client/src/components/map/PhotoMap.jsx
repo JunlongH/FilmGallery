@@ -3,15 +3,17 @@
  * 
  * Core map component using Leaflet to display photo markers.
  * Implements clustering, custom markers, and smooth interactions.
+ * Supports switching between 3D Globe view and 2D flat map.
  * 
  * @module components/map/PhotoMap
  */
-import React, { useMemo, useCallback, useEffect, useState } from 'react';
+import React, { useMemo, useCallback, useEffect, useState, useRef } from 'react';
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import MarkerClusterGroup from 'react-leaflet-cluster';
 import L from 'leaflet';
 import PhotoMarker from './PhotoMarker';
 import MapPhotoPreview from './MapPhotoPreview';
+import PhotoGlobe from './PhotoGlobe';
 import useGeoPhotos from '../../hooks/useGeoPhotos';
 
 // Import Leaflet CSS
@@ -158,6 +160,9 @@ function FitBoundsToPhotos({ photos }) {
  * @param {Object} props.selectedPhoto - Currently selected photo
  */
 export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
+  // View mode: 'globe' for 3D Earth, 'flat' for Leaflet map
+  const [viewMode, setViewMode] = useState('globe');
+  
   // Tile layer state
   const [tileLayer, setTileLayer] = useState('dark');
   
@@ -167,12 +172,35 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
   // Preview popup state
   const [previewPhoto, setPreviewPhoto] = useState(null);
   const [previewPosition, setPreviewPosition] = useState(null);
+  
+  // Initial map position when switching from globe
+  const [initialMapView, setInitialMapView] = useState({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM });
+  
+  // Container ref for dimensions
+  const containerRef = useRef(null);
+  const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  // Update dimensions on resize
+  useEffect(() => {
+    const updateDimensions = () => {
+      if (containerRef.current) {
+        setDimensions({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
+    
+    updateDimensions();
+    window.addEventListener('resize', updateDimensions);
+    return () => window.removeEventListener('resize', updateDimensions);
+  }, []);
 
   // Fetch photos with geo data
   const { photos, isLoading, error, total } = useGeoPhotos({
     rollId: filters?.rollId,
     dateRange: filters?.dateRange,
-    bounds: bounds,
+    bounds: viewMode === 'flat' ? bounds : null, // Only use bounds in flat mode
   });
 
   // Filter photos that have valid coordinates
@@ -211,12 +239,30 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
     setPreviewPhoto(null);
     setPreviewPosition(null);
   }, []);
+  
+  /**
+   * Handle zoom from globe to flat map
+   */
+  const handleZoomToFlat = useCallback(({ lat, lng, zoom }) => {
+    setInitialMapView({
+      center: [lat, lng],
+      zoom: zoom || 6,
+    });
+    setViewMode('flat');
+  }, []);
+  
+  /**
+   * Toggle between globe and flat views
+   */
+  const handleToggleView = useCallback(() => {
+    setViewMode(prev => prev === 'globe' ? 'flat' : 'globe');
+  }, []);
 
   // Current tile layer config
   const currentTileLayer = TILE_LAYERS[tileLayer];
 
   return (
-    <div className="photo-map-wrapper">
+    <div className="photo-map-wrapper" ref={containerRef}>
       {/* Loading overlay */}
       {isLoading && (
         <div className="map-loading-overlay">
@@ -231,6 +277,45 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
           <span>Failed to load photos: {error.message}</span>
         </div>
       )}
+      
+      {/* Empty state */}
+      {!isLoading && !error && geoPhotos.length === 0 && (
+        <div className="map-empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+            <circle cx="12" cy="10" r="3"/>
+          </svg>
+          <h3>No photos with location data</h3>
+          <p>Upload photos with GPS coordinates or add location info manually to see them on the map.</p>
+        </div>
+      )}
+
+      {/* View mode toggle */}
+      <div className="map-view-toggle">
+        <button
+          className={`map-view-btn ${viewMode === 'globe' ? 'active' : ''}`}
+          onClick={() => setViewMode('globe')}
+          title="3D Globe View"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="2" y1="12" x2="22" y2="12"/>
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          Globe
+        </button>
+        <button
+          className={`map-view-btn ${viewMode === 'flat' ? 'active' : ''}`}
+          onClick={() => setViewMode('flat')}
+          title="Flat Map View"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <path d="M3 9h18M9 3v18"/>
+          </svg>
+          Flat
+        </button>
+      </div>
 
       {/* Photo count badge */}
       <div className="map-photo-count">
@@ -245,53 +330,69 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
         )}
       </div>
 
-      {/* Tile layer switcher */}
-      <TileLayerSwitcher 
-        currentLayer={tileLayer} 
-        onChange={setTileLayer} 
-      />
-
-      {/* Main Map */}
-      <MapContainer
-        center={DEFAULT_CENTER}
-        zoom={DEFAULT_ZOOM}
-        className="photo-map"
-        scrollWheelZoom={true}
-        zoomControl={true}
-      >
-        <TileLayer
-          url={currentTileLayer.url}
-          attribution={currentTileLayer.attribution}
+      {/* 3D Globe View */}
+      {viewMode === 'globe' && geoPhotos.length > 0 && (
+        <PhotoGlobe
+          photos={geoPhotos}
+          onPhotoClick={handleMarkerClick}
+          onZoomIn={handleZoomToFlat}
+          width={dimensions.width}
+          height={dimensions.height}
         />
+      )}
 
-        <MapEventHandler onBoundsChange={handleBoundsChange} />
-        
-        {/* Auto-fit bounds on first load */}
-        {!isLoading && geoPhotos.length > 0 && (
-          <FitBoundsToPhotos photos={geoPhotos} />
-        )}
+      {/* Flat Map View */}
+      {viewMode === 'flat' && (
+        <>
+          {/* Tile layer switcher */}
+          <TileLayerSwitcher 
+            currentLayer={tileLayer} 
+            onChange={setTileLayer} 
+          />
 
-        {/* Clustered markers */}
-        <MarkerClusterGroup
-          chunkedLoading
-          iconCreateFunction={createClusterCustomIcon}
-          maxClusterRadius={60}
-          spiderfyOnMaxZoom={true}
-          showCoverageOnHover={false}
-          zoomToBoundsOnClick={true}
-          animate={true}
-          animateAddingMarkers={true}
-        >
-          {geoPhotos.map((photo) => (
-            <PhotoMarker
-              key={photo.id}
-              photo={photo}
-              onClick={handleMarkerClick}
-              isSelected={selectedPhoto?.id === photo.id}
+          {/* Main Map */}
+          <MapContainer
+            center={initialMapView.center}
+            zoom={initialMapView.zoom}
+            className="photo-map"
+            scrollWheelZoom={true}
+            zoomControl={true}
+          >
+            <TileLayer
+              url={currentTileLayer.url}
+              attribution={currentTileLayer.attribution}
             />
-          ))}
-        </MarkerClusterGroup>
-      </MapContainer>
+
+            <MapEventHandler onBoundsChange={handleBoundsChange} />
+            
+            {/* Auto-fit bounds on first load */}
+            {!isLoading && geoPhotos.length > 0 && initialMapView.zoom === DEFAULT_ZOOM && (
+              <FitBoundsToPhotos photos={geoPhotos} />
+            )}
+
+            {/* Clustered markers */}
+            <MarkerClusterGroup
+              chunkedLoading
+              iconCreateFunction={createClusterCustomIcon}
+              maxClusterRadius={60}
+              spiderfyOnMaxZoom={true}
+              showCoverageOnHover={false}
+              zoomToBoundsOnClick={true}
+              animate={true}
+              animateAddingMarkers={true}
+            >
+              {geoPhotos.map((photo) => (
+                <PhotoMarker
+                  key={photo.id}
+                  photo={photo}
+                  onClick={handleMarkerClick}
+                  isSelected={selectedPhoto?.id === photo.id}
+                />
+              ))}
+            </MarkerClusterGroup>
+          </MapContainer>
+        </>
+      )}
 
       {/* Photo preview popup */}
       {previewPhoto && (
