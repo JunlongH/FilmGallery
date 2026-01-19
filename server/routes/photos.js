@@ -1354,4 +1354,107 @@ router.post('/:id/download-with-exif', async (req, res) => {
   }
 });
 
+// ============================================
+// GET /api/photos/geo - Photos with GPS data
+// ============================================
+/**
+ * Fetch photos that have geographic coordinates (latitude/longitude).
+ * Supports filtering by bounds, roll_id, and date range.
+ * 
+ * Query params:
+ *   - bounds: "sw_lat,sw_lng,ne_lat,ne_lng" - filter to map viewport
+ *   - roll_id: number - filter by specific roll
+ *   - date_start: "YYYY-MM-DD" - filter by start date
+ *   - date_end: "YYYY-MM-DD" - filter by end date
+ *   - limit: number - max photos to return (default: 2000)
+ */
+router.get('/geo', async (req, res) => {
+  try {
+    const { bounds, roll_id, date_start, date_end, limit = 2000 } = req.query;
+    
+    let sql = `
+      SELECT 
+        p.id,
+        p.roll_id,
+        p.latitude,
+        p.longitude,
+        p.thumb_rel_path,
+        p.positive_thumb_rel_path,
+        p.negative_thumb_rel_path,
+        p.full_rel_path,
+        p.positive_rel_path,
+        p.negative_rel_path,
+        p.date_taken,
+        p.taken_at,
+        p.detail_location,
+        p.city,
+        p.country,
+        p.camera,
+        p.lens
+      FROM photos p
+      WHERE p.latitude IS NOT NULL 
+        AND p.longitude IS NOT NULL
+        AND p.latitude != 0
+        AND p.longitude != 0
+    `;
+    
+    const params = [];
+    
+    // Filter by roll ID
+    if (roll_id) {
+      sql += ` AND p.roll_id = ?`;
+      params.push(Number(roll_id));
+    }
+    
+    // Filter by date range
+    if (date_start) {
+      sql += ` AND (p.date_taken >= ? OR p.taken_at >= ?)`;
+      params.push(date_start, date_start);
+    }
+    
+    if (date_end) {
+      sql += ` AND (p.date_taken <= ? OR p.taken_at <= ?)`;
+      params.push(date_end, date_end);
+    }
+    
+    // Filter by map bounds (sw_lat, sw_lng, ne_lat, ne_lng)
+    if (bounds) {
+      const [sw_lat, sw_lng, ne_lat, ne_lng] = bounds.split(',').map(Number);
+      if (!isNaN(sw_lat) && !isNaN(sw_lng) && !isNaN(ne_lat) && !isNaN(ne_lng)) {
+        sql += ` AND p.latitude BETWEEN ? AND ? AND p.longitude BETWEEN ? AND ?`;
+        params.push(sw_lat, ne_lat, sw_lng, ne_lng);
+      }
+    }
+    
+    // Order by date (newest first) for consistent results
+    sql += ` ORDER BY COALESCE(p.date_taken, p.taken_at) DESC`;
+    
+    // Apply limit
+    sql += ` LIMIT ?`;
+    params.push(Number(limit));
+    
+    const photos = await allAsync(sql, params);
+    
+    // Get total count of geo-tagged photos (without limit)
+    const countResult = await getAsync(`
+      SELECT COUNT(*) as total 
+      FROM photos 
+      WHERE latitude IS NOT NULL 
+        AND longitude IS NOT NULL
+        AND latitude != 0
+        AND longitude != 0
+    `);
+    
+    res.json({
+      photos: photos || [],
+      total: countResult?.total || 0,
+      returned: photos?.length || 0,
+    });
+    
+  } catch (err) {
+    console.error('[GET /api/photos/geo] Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

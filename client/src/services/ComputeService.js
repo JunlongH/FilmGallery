@@ -625,7 +625,7 @@ export async function batchProcess(photoIds, params, options = {}) {
   };
 }
 
-export default {
+const ComputeService = {
   // 能力检测
   getServerCapabilities,
   isComputeAvailable,
@@ -653,3 +653,5 @@ export default {
   // 错误码
   ComputeErrorCodes
 };
+
+export default ComputeService;

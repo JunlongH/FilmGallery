@@ -6,22 +6,40 @@ import EquipmentSelector from './EquipmentSelector';
 import '../styles/forms.css';
 import '../styles/sidebar.css';
 
+// Field definitions for modular saving
+const FIELD_GROUPS = {
+  time: ['date_taken', 'time_taken'],
+  equipment: ['camera', 'lens', 'camera_equip_id', 'lens_equip_id', 'photographer'],
+  params: ['aperture', 'shutter_speed', 'iso'],
+  location: ['location_id', 'country', 'city', 'detail_location', 'latitude', 'longitude'],
+  scanning: ['scanner_equip_id', 'scan_resolution', 'scan_software', 'scan_lab', 'scan_date', 'scan_cost', 'scan_notes']
+};
+
+const ALL_FIELDS = Object.values(FIELD_GROUPS).flat();
+
 export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSaved }) {
   const isBatch = Array.isArray(photos) && photos.length > 1;
   const base = photo || (isBatch ? photos[0] : null);
   
+  // Dirty fields tracking
+  const [dirtyFields, setDirtyFields] = useState(new Set());
+
+  // Form States
   const [dateTaken, setDateTaken] = useState(base?.date_taken || '');
   const [timeTaken, setTimeTaken] = useState(base?.time_taken || '');
-  const [detailLocation, setDetailLocation] = useState(base?.detail_location || '');
+  
   const [camera, setCamera] = useState(base?.camera || roll?.camera || '');
   const [lens, setLens] = useState(base?.lens || roll?.lens || '');
   const [cameraEquipId, setCameraEquipId] = useState(base?.camera_equip_id || roll?.camera_equip_id || null);
   const [lensEquipId, setLensEquipId] = useState(base?.lens_equip_id || roll?.lens_equip_id || null);
   const [selectedCamera, setSelectedCamera] = useState(null);
   const [photographer, setPhotographer] = useState(base?.photographer || roll?.photographer || '');
+  
   const [aperture, setAperture] = useState(base?.aperture != null ? base.aperture : '');
   const [shutterSpeed, setShutterSpeed] = useState(base?.shutter_speed || '');
   const [iso, setIso] = useState(base?.iso != null ? base.iso : '');
+  
+  const [detailLocation, setDetailLocation] = useState(base?.detail_location || '');
   const [location, setLocation] = useState({
     location_id: base?.location_id || null,
     country_name: base?.country_name || null,
@@ -29,6 +47,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
     latitude: base?.latitude,
     longitude: base?.longitude,
   });
+  
   const [scannerEquipId, setScannerEquipId] = useState(base?.scanner_equip_id || roll?.scanner_equip_id || null);
   const [scanResolution, setScanResolution] = useState(base?.scan_resolution || roll?.scan_resolution || '');
   const [scanSoftware, setScanSoftware] = useState(base?.scan_software || roll?.scan_software || '');
@@ -36,6 +55,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   const [scanDate, setScanDate] = useState(base?.scan_date || roll?.scan_date || '');
   const [scanCost, setScanCost] = useState(base?.scan_cost || roll?.scan_cost || '');
   const [scanNotes, setScanNotes] = useState(base?.scan_notes || roll?.scan_notes || '');
+  
   const [options, setOptions] = useState({ cameras: [], lenses: [], photographers: [] });
 
   // Load metadata options for autocomplete
@@ -48,6 +68,9 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   // Update states when photo changes (for navigation between photos)
   useEffect(() => {
     if (!base) return;
+    // Reset dirty fields when switching base photo
+    setDirtyFields(new Set());
+
     setDateTaken(base.date_taken || '');
     setTimeTaken(base.time_taken || '');
     setCamera(base.camera || roll?.camera || '');
@@ -75,32 +98,72 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
     setScanNotes(base.scan_notes || roll?.scan_notes || '');
   }, [base, roll]);
 
-  async function handleSave() {
-    const payload = {
-      date_taken: dateTaken || null,
-      time_taken: timeTaken || null,
-      location_id: location.location_id || null,
-      country: location.country_name || null,
-      city: location.city_name || null,
-      detail_location: detailLocation || null,
-      latitude: location.latitude ?? null,
-      longitude: location.longitude ?? null,
-      camera: camera || null,
-      lens: lens || null,
-      camera_equip_id: cameraEquipId || null,
-      lens_equip_id: lensEquipId || null,
-      photographer: photographer || null,
-      aperture: aperture !== '' ? parseFloat(aperture) : null,
-      shutter_speed: shutterSpeed || null,
-      iso: iso !== '' ? parseInt(iso) : null,
-      scanner_equip_id: scannerEquipId || null,
-      scan_resolution: scanResolution || null,
-      scan_software: scanSoftware || null,
-      scan_lab: scanLab || null,
-      scan_date: scanDate || null,
-      scan_cost: scanCost || null,
-      scan_notes: scanNotes || null
-    };
+  // Dirty marking helper
+  const markDirty = (fields) => {
+    const fieldArray = Array.isArray(fields) ? fields : [fields];
+    setDirtyFields(prev => {
+      const next = new Set(prev);
+      fieldArray.forEach(f => next.add(f));
+      return next;
+    });
+  };
+
+  const isSectionDirty = (sectionName) => {
+    const sectionFields = FIELD_GROUPS[sectionName];
+    return sectionFields ? sectionFields.some(f => dirtyFields.has(f)) : false;
+  };
+
+  const hasAnyDirty = dirtyFields.size > 0;
+
+  // Retrieve current value for a field key
+  const getFieldValue = (field) => {
+    switch (field) {
+      case 'date_taken': return dateTaken || null;
+      case 'time_taken': return timeTaken || null;
+      case 'location_id': return location.location_id || null;
+      case 'country': return location.country_name || null;
+      case 'city': return location.city_name || null;
+      case 'detail_location': return detailLocation || null;
+      case 'latitude': return location.latitude ?? null;
+      case 'longitude': return location.longitude ?? null;
+      case 'camera': return camera || null;
+      case 'lens': return lens || null;
+      case 'camera_equip_id': return cameraEquipId || null;
+      case 'lens_equip_id': return lensEquipId || null;
+      case 'photographer': return photographer || null;
+      case 'aperture': return aperture !== '' ? parseFloat(aperture) : null;
+      case 'shutter_speed': return shutterSpeed || null;
+      case 'iso': return iso !== '' ? parseInt(iso) : null;
+      case 'scanner_equip_id': return scannerEquipId || null;
+      case 'scan_resolution': return scanResolution || null;
+      case 'scan_software': return scanSoftware || null;
+      case 'scan_lab': return scanLab || null;
+      case 'scan_date': return scanDate || null;
+      case 'scan_cost': return scanCost || null;
+      case 'scan_notes': return scanNotes || null;
+      default: return null;
+    }
+  };
+
+  async function handleSave(targetSection = null) {
+    const payload = {};
+    
+    // Determine which fields to save
+    const candidateFields = targetSection 
+      ? FIELD_GROUPS[targetSection] 
+      : ALL_FIELDS;
+
+    // Only include dirty fields
+    candidateFields.forEach(field => {
+      if (dirtyFields.has(field)) {
+        payload[field] = getFieldValue(field);
+      }
+    });
+
+    if (Object.keys(payload).length === 0) {
+      return; // Nothing to save
+    }
+
     try {
       const targets = isBatch ? photos : [photo];
       for (const p of targets) {
@@ -111,12 +174,25 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         }).then(r=>r.text()).catch(()=>null);
       }
 
-      // Server-side logic now handles roll metadata sync automatically
-      onSaved && onSaved(payload);
-      onClose && onClose();
+      // Cleanup saved fields from dirty state
+      setDirtyFields(prev => {
+        const next = new Set(prev);
+        Object.keys(payload).forEach(f => next.delete(f));
+        return next;
+      });
+
+      // Notify parent
+      if (!targetSection) {
+        // Global save
+        onSaved && onSaved(payload);
+        onClose && onClose();
+      } else {
+        // Section save - keep open but maybe show feedback in future
+        onSaved && onSaved(payload); 
+      }
     } catch (e) {
       console.error('Batch/Single save failed', e);
-      onClose && onClose();
+      // Don't close on error
     }
   }
 
@@ -132,6 +208,30 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
 
   const [closing, setClosing] = useState(false);
   const handleClose = () => { setClosing(true); setTimeout(()=> onClose && onClose(), 200); };
+
+  const SectionHeader = ({ title, sectionKey }) => (
+    <div className="fg-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+      <div className="fg-section-label">{title}</div>
+      <button 
+        type="button" 
+        className="fg-btn-mini" 
+        style={{ 
+          fontSize: '0.75rem', 
+          padding: '2px 8px', 
+          opacity: isSectionDirty(sectionKey) ? 1 : 0.5,
+          cursor: isSectionDirty(sectionKey) ? 'pointer' : 'default',
+          border: '1px solid currentColor',
+          borderRadius: 4,
+          background: 'transparent'
+        }}
+        disabled={!isSectionDirty(sectionKey)}
+        onClick={() => handleSave(sectionKey)}
+      >
+        Save
+      </button>
+    </div>
+  );
+
   return (
     <div role="presentation" onClick={handleClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.25)', zIndex:10019 }}>
     <aside
@@ -147,20 +247,40 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         <button className="fg-sidepanel-close" onClick={handleClose} aria-label="Close sidebar">×</button>
       </header>
 
+      {/* --- TIME SECTION --- */}
       <section className="fg-sidepanel-section">
-        <div className="fg-section-label">Capture</div>
+        <SectionHeader title="Time" sectionKey="time" />
         <div className="fg-separator" />
         <div className="fg-sidepanel-groupGrid cols-2">
           <div className="fg-field">
             <label className="fg-label">Date Taken</label>
-            <input className="fg-input" type="date" lang="en" value={dateTaken} onChange={e=>setDateTaken(e.target.value)} min={roll?.start_date || ''} max={roll?.end_date || ''} />
+            <input 
+              className="fg-input" 
+              type="date" 
+              lang="en" 
+              value={dateTaken} 
+              onChange={e=>{ setDateTaken(e.target.value); markDirty('date_taken'); }} 
+              min={roll?.start_date || ''} 
+              max={roll?.end_date || ''} 
+            />
           </div>
           <div className="fg-field">
             <label className="fg-label">Time Taken</label>
-            <input className="fg-input" type="time" value={timeTaken} onChange={e=>setTimeTaken(e.target.value)} />
+            <input 
+              className="fg-input" 
+              type="time" 
+              value={timeTaken} 
+              onChange={e=>{ setTimeTaken(e.target.value); markDirty('time_taken'); }} 
+            />
           </div>
         </div>
-        <div className="fg-sidepanel-groupGrid cols-2" style={{ marginTop: 10 }}>
+      </section>
+
+       {/* --- EQUIPMENT SECTION --- */}
+      <section className="fg-sidepanel-section">
+        <SectionHeader title="Equipment & Photographer" sectionKey="equipment" />
+        <div className="fg-separator" />
+        <div className="fg-sidepanel-groupGrid cols-2">
           <div className="fg-field">
             <label className="fg-label">Camera</label>
             <EquipmentSelector 
@@ -170,11 +290,15 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
                 setCameraEquipId(id);
                 setSelectedCamera(item);
                 setCamera(item ? `${item.brand} ${item.model}` : '');
+                
+                const dirtyList = ['camera_equip_id', 'camera'];
                 // If camera has fixed lens, clear lens selection
                 if (item?.has_fixed_lens) {
                   setLensEquipId(null);
                   setLens(item.fixed_lens_focal_length ? `${item.fixed_lens_focal_length}mm f/${item.fixed_lens_max_aperture || '?'}` : 'Fixed');
+                  dirtyList.push('lens_equip_id', 'lens');
                 }
+                markDirty(dirtyList);
               }}
               placeholder={roll?.camera ? `Default: ${roll.camera}` : 'Select camera...'}
             />
@@ -190,51 +314,15 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
               <EquipmentSelector 
                 type="lens" 
                 value={lensEquipId} 
-                cameraId={cameraEquipId}
+                cameraId={cameraEquipId} 
                 onChange={(id, item) => {
                   setLensEquipId(id);
                   setLens(item ? `${item.brand} ${item.model}` : '');
+                  markDirty(['lens_equip_id', 'lens']);
                 }}
                 placeholder={roll?.lens ? `Default: ${roll.lens}` : 'Select lens...'}
               />
             )}
-          </div>
-        </div>
-        <div className="fg-sidepanel-groupGrid cols-3" style={{ marginTop: 8 }}>
-          <div className="fg-field">
-            <label className="fg-label">Aperture</label>
-            <input 
-              className="fg-input" 
-              type="number" 
-              step="0.1"
-              min="0.5"
-              max="64"
-              placeholder="e.g. 2.8" 
-              value={aperture} 
-              onChange={e=>setAperture(e.target.value)} 
-            />
-          </div>
-          <div className="fg-field">
-            <label className="fg-label">Shutter</label>
-            <input 
-              className="fg-input" 
-              type="text" 
-              placeholder="e.g. 1/125" 
-              value={shutterSpeed} 
-              onChange={e=>setShutterSpeed(e.target.value)} 
-            />
-          </div>
-          <div className="fg-field">
-            <label className="fg-label">ISO</label>
-            <input 
-              className="fg-input" 
-              type="number" 
-              min="6"
-              max="25600"
-              placeholder="e.g. 400" 
-              value={iso} 
-              onChange={e=>setIso(e.target.value)} 
-            />
           </div>
         </div>
         <div className="fg-sidepanel-groupGrid cols-1" style={{ marginTop: 8 }}>
@@ -246,7 +334,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
               list="photographer-options"
               placeholder={roll?.photographer ? `Default: ${roll.photographer}` : 'e.g. Xiaoming'} 
               value={photographer} 
-              onChange={e=>setPhotographer(e.target.value)} 
+              onChange={e=>{ setPhotographer(e.target.value); markDirty('photographer'); }} 
             />
             <datalist id="photographer-options">
               {(options.photographers || []).map((p, i) => <option key={i} value={p} />)}
@@ -255,14 +343,59 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         </div>
       </section>
 
+      {/* --- PARAMS SECTION --- */}
       <section className="fg-sidepanel-section">
-        <div className="fg-section-label">Location</div>
+        <SectionHeader title="Shooting Parameters" sectionKey="params" />
+        <div className="fg-separator" />
+        <div className="fg-sidepanel-groupGrid cols-3">
+          <div className="fg-field">
+            <label className="fg-label">Aperture</label>
+            <input 
+              className="fg-input" 
+              type="number" 
+              step="0.1"
+              min="0.5"
+              max="64"
+              placeholder="e.g. 2.8" 
+              value={aperture} 
+              onChange={e=>{ setAperture(e.target.value); markDirty('aperture'); }} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Shutter</label>
+            <input 
+              className="fg-input" 
+              type="text" 
+              placeholder="e.g. 1/125" 
+              value={shutterSpeed} 
+              onChange={e=>{ setShutterSpeed(e.target.value); markDirty('shutter_speed'); }} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">ISO</label>
+            <input 
+              className="fg-input" 
+              type="number" 
+              min="6"
+              max="25600"
+              placeholder="e.g. 400" 
+              value={iso} 
+              onChange={e=>{ setIso(e.target.value); markDirty('iso'); }} 
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* --- LOCATION SECTION --- */}
+      <section className="fg-sidepanel-section">
+        <SectionHeader title="Location" sectionKey="location" />
         <div className="fg-separator" />
         <div className="fg-field">
           <label className="fg-label">Country / City</label>
           <LocationInput value={location} onChange={(loc) => {
             if (!loc) {
               setLocation({ location_id: null, country_name: null, city_name: null, latitude: null, longitude: null });
+              markDirty(['location_id', 'country', 'city', 'latitude', 'longitude']);
               return;
             }
             setLocation(prev => ({
@@ -272,23 +405,43 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
               latitude: loc.latitude ?? prev.latitude,
               longitude: loc.longitude ?? prev.longitude
             }));
+            markDirty(['location_id', 'country', 'city', 'latitude', 'longitude']);
           }} />
         </div>
         <div className="fg-sidepanel-groupGrid cols-2">
           <div className="fg-field">
             <label className="fg-label">Latitude</label>
-            <input className="fg-input" type="number" value={location.latitude || ''} onChange={e=>setLocation(l=>({ ...l, latitude: parseFloat(e.target.value) }))} />
+            <input 
+              className="fg-input" 
+              type="number" 
+              value={location.latitude || ''} 
+              onChange={e=>{
+                setLocation(l=>({ ...l, latitude: parseFloat(e.target.value) }));
+                markDirty('latitude');
+              }} 
+            />
           </div>
           <div className="fg-field">
             <label className="fg-label">Longitude</label>
-            <input className="fg-input" type="number" value={location.longitude || ''} onChange={e=>setLocation(l=>({ ...l, longitude: parseFloat(e.target.value) }))} />
+            <input 
+              className="fg-input" 
+              type="number" 
+              value={location.longitude || ''} 
+              onChange={e=>{
+                setLocation(l=>({ ...l, longitude: parseFloat(e.target.value) }));
+                markDirty('longitude');
+              }} 
+            />
           </div>
         </div>
         <div className="fg-field">
           <label className="fg-label">Detail Location</label>
           <GeoSearchInput
             value={detailLocation}
-            onChange={setDetailLocation}
+            onChange={(val) => {
+               setDetailLocation(val);
+               markDirty('detail_location');
+            }}
             onSelect={(result) => {
               // 更新经纬度
               setLocation(l => ({
@@ -300,14 +453,17 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
               if (result.detail) {
                 setDetailLocation(result.detail);
               }
+              // Mark everything dirty
+              markDirty(['detail_location', 'latitude', 'longitude']);
             }}
             placeholder="Search address or type detail..."
           />
         </div>
       </section>
 
+      {/* --- SCANNING SECTION --- */}
       <section className="fg-sidepanel-section">
-        <div className="fg-section-label">Scanning Info</div>
+        <SectionHeader title="Scanning Info" sectionKey="scanning" />
         <div className="fg-separator" />
         <div className="fg-sidepanel-groupGrid cols-2">
           <div className="fg-field">
@@ -315,34 +471,71 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
             <EquipmentSelector 
               type="scanner" 
               value={scannerEquipId} 
-              onChange={(id) => setScannerEquipId(id)}
+              onChange={(id) => {
+                setScannerEquipId(id);
+                markDirty('scanner_equip_id');
+              }}
               placeholder="Select scanner..."
             />
           </div>
           <div className="fg-field">
             <label className="fg-label">Scan Lab</label>
-            <input className="fg-input" placeholder="e.g. Film Lab, Home scan" value={scanLab} onChange={e=>setScanLab(e.target.value)} />
+            <input 
+              className="fg-input" 
+              placeholder="e.g. Film Lab, Home scan" 
+              value={scanLab} 
+              onChange={e=>{ setScanLab(e.target.value); markDirty('scan_lab'); }} 
+            />
           </div>
           <div className="fg-field">
             <label className="fg-label">Scan Date</label>
-            <input className="fg-input" type="date" value={scanDate} onChange={e=>setScanDate(e.target.value)} lang="en-US" />
+            <input 
+              className="fg-input" 
+              type="date" 
+              value={scanDate} 
+              onChange={e=>{ setScanDate(e.target.value); markDirty('scan_date'); }} 
+              lang="en-US" 
+            />
           </div>
           <div className="fg-field">
             <label className="fg-label">Resolution (DPI)</label>
-            <input className="fg-input" type="number" placeholder="e.g. 3200, 4800" value={scanResolution} onChange={e=>setScanResolution(e.target.value)} />
+            <input 
+              className="fg-input" 
+              type="number" 
+              placeholder="e.g. 3200, 4800" 
+              value={scanResolution} 
+              onChange={e=>{ setScanResolution(e.target.value); markDirty('scan_resolution'); }} 
+            />
           </div>
           <div className="fg-field">
             <label className="fg-label">Scan Software</label>
-            <input className="fg-input" placeholder="e.g. VueScan, Epson Scan 2" value={scanSoftware} onChange={e=>setScanSoftware(e.target.value)} />
+            <input 
+              className="fg-input" 
+              placeholder="e.g. VueScan, Epson Scan 2" 
+              value={scanSoftware} 
+              onChange={e=>{ setScanSoftware(e.target.value); markDirty('scan_software'); }} 
+            />
           </div>
           <div className="fg-field">
             <label className="fg-label">Scan Cost</label>
-            <input className="fg-input" type="number" placeholder="0.00" value={scanCost} onChange={e=>setScanCost(e.target.value)} />
+            <input 
+              className="fg-input" 
+              type="number" 
+              placeholder="0.00" 
+              value={scanCost} 
+              onChange={e=>{ setScanCost(e.target.value); markDirty('scan_cost'); }} 
+            />
           </div>
         </div>
         <div className="fg-field" style={{ marginTop: 8 }}>
           <label className="fg-label">Scan Notes</label>
-          <textarea className="fg-textarea" style={{ minHeight: 60, resize: 'vertical' }} placeholder="Scan parameters, issues, etc..." value={scanNotes} onChange={e=>setScanNotes(e.target.value)} />
+          <textarea 
+            className="fg-textarea" 
+            style={{ minHeight: 60, resize: 'vertical' }} 
+            placeholder="Scan parameters, issues, etc..." 
+            value={scanNotes} 
+            onChange={e=>{ setScanNotes(e.target.value); markDirty('scan_notes'); }} 
+          />
         </div>
       </section>
 
@@ -350,7 +543,15 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         <div className="fg-separator" />
         <div className="fg-sidepanel-actions">
           <button type="button" className="fg-btn" onClick={handleClose}>Cancel</button>
-          <button type="button" className="fg-btn fg-btn-primary" onClick={handleSave}>Save</button>
+          <button 
+            type="button" 
+            className="fg-btn fg-btn-primary" 
+            onClick={() => handleSave(null)}
+            disabled={!hasAnyDirty}
+            style={{ opacity: hasAnyDirty ? 1 : 0.6 }}
+          >
+            Save All {hasAnyDirty && `(${dirtyFields.size})`} changes
+          </button>
         </div>
       </section>
     </aside>
