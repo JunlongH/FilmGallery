@@ -7,7 +7,7 @@
  * @module hooks/useGeoPhotos
  */
 import { useQuery } from '@tanstack/react-query';
-import { getApiBase } from '../api';
+import { API_BASE } from '../api';
 
 /**
  * Fetch geo-tagged photos from the API
@@ -19,7 +19,7 @@ import { getApiBase } from '../api';
  * @param {number} options.limit - Maximum photos to fetch
  */
 async function fetchGeoPhotos({ rollId, dateRange, bounds, limit = 2000 }) {
-  const apiBase = getApiBase();
+  const apiBase = API_BASE;
   const params = new URLSearchParams();
   
   if (limit) {

@@ -9,13 +9,13 @@
 import React, { useMemo } from 'react';
 import { Marker } from 'react-leaflet';
 import L from 'leaflet';
-import { getApiBase } from '../../api';
+import { API_BASE } from '../../api';
 
 /**
  * Get the thumbnail URL for a photo
  */
 const getThumbUrl = (photo) => {
-  const apiBase = getApiBase();
+  const apiBase = API_BASE;
   const thumbPath = photo.thumb_rel_path || photo.positive_thumb_rel_path || photo.negative_thumb_rel_path;
   
   if (thumbPath) {

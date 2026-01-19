@@ -8,13 +8,13 @@
  */
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { getApiBase } from '../../api';
+import { API_BASE } from '../../api';
 
 /**
  * Get the full image URL for preview
  */
 const getPreviewUrl = (photo) => {
-  const apiBase = getApiBase();
+  const apiBase = API_BASE;
   const path = photo.thumb_rel_path || photo.positive_thumb_rel_path || 
                photo.full_rel_path || photo.positive_rel_path || 
                photo.negative_rel_path;
