@@ -15,6 +15,7 @@ import Settings from './components/Settings';
 import TitleBar from './components/TitleBar';
 import ConflictBanner from './components/ConflictBanner';
 import EquipmentManager from './components/EquipmentManager';
+import MapPage from './pages/MapPage';
 import { getTags } from './api';
 import FloatingRefreshButton from './components/FloatingRefreshButton';
 
@@ -107,6 +108,12 @@ function Layout() {
                 </Link>
               </li>
               <li>
+                <Link to="/map">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  Map
+                </Link>
+              </li>
+              <li>
                 <Link to="/favorites">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 6.6a5.5 5.5 0 0 0-7.8 0L12 7.6l-1-1a5.5 5.5 0 0 0-7.8 7.8L6.3 16l5.7 5.6L17.7 16l1.4-1.4a5.5 5.5 0 0 0 0-7.8z"/></svg>
                   Favorites
@@ -160,6 +167,7 @@ function Layout() {
             <Routes>
               <Route path="/" element={<Overview />} />
               <Route path="/calendar" element={<CalendarView />} />
+              <Route path="/map" element={<MapPage />} />
               <Route path="/stats" element={<Statistics />} />
               <Route path="/spending" element={<Statistics mode="spending" />} />
               <Route path="/rolls" element={<RollLibrary />} />

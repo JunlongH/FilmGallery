@@ -1,8 +1,9 @@
 # Photo Map Feature Plan
 
 > **Created:** 2026-01-19  
-> **Status:** Planning  
+> **Status:** In Progress (Phase 1 Complete)  
 > **Branch:** `feature/photo-map`
+> **Last Updated:** 2026-01-19
 
 ---
 
@@ -249,29 +250,31 @@ When multiple photos share the **exact same coordinates** (e.g., same spot), cli
 
 ## 8. Implementation Phases
 
-### Phase 1: Foundation (Core Map)
-- [ ] Install dependencies (`leaflet`, `react-leaflet`, `react-leaflet-cluster`)
-- [ ] Create `/map` route and `MapPage` component
-- [ ] Implement basic `PhotoMap` with tile layer
-- [ ] Add `useGeoPhotos` hook fetching all photos with coordinates
-- [ ] Display simple circle markers
+### Phase 1: Foundation (Core Map) ✅ COMPLETED
+- [x] Install dependencies (`leaflet`, `react-leaflet@4.2.1`, `react-leaflet-cluster`)
+- [x] Create `/map` route and `MapPage` component
+- [x] Implement basic `PhotoMap` with tile layer
+- [x] Add `useGeoPhotos` hook fetching all photos with coordinates
+- [x] Display photo thumbnail markers
+- [x] Add sidebar navigation link
+- [x] Add `/api/photos/geo` endpoint
 
 ### Phase 2: Clustering & Markers
-- [ ] Integrate `MarkerClusterGroup`
-- [ ] Create custom `PhotoMarker` with thumbnails
-- [ ] Create custom `PhotoCluster` icons
+- [ ] Integrate `MarkerClusterGroup` ✅ (included in Phase 1)
+- [ ] Create custom `PhotoMarker` with thumbnails ✅ (included in Phase 1)
+- [ ] Create custom `PhotoCluster` icons ✅ (included in Phase 1)
 - [ ] Implement spiderfy for same-location photos
 
 ### Phase 3: Interactions
-- [ ] Implement click-to-preview popup (`MapPhotoPreview`)
-- [ ] Add navigation to RollDetail from popup
+- [x] Implement click-to-preview popup (`MapPhotoPreview`) ✅ (included in Phase 1)
+- [x] Add navigation to RollDetail from popup ✅ (included in Phase 1)
 - [ ] Implement hover effects on markers
 
 ### Phase 4: Filters & Controls
-- [ ] Create `MapFilterPanel` component
-- [ ] Implement date range filtering
+- [x] Create `MapFilterPanel` component ✅ (included in Phase 1)
+- [ ] Implement date range filtering (UI ready, needs connection)
 - [ ] Implement roll/location filtering
-- [ ] Add tile layer toggle (dark/light/satellite)
+- [x] Add tile layer toggle (dark/light/satellite) ✅ (included in Phase 1)
 
 ### Phase 5: Polish & Performance
 - [ ] Bounds-based lazy loading
@@ -341,19 +344,19 @@ import 'leaflet/dist/leaflet.css';
 
 ## 11. File Checklist
 
-| File | Purpose | Phase |
-|------|---------|-------|
-| `client/src/pages/MapPage.jsx` | Main page component | 1 |
-| `client/src/components/map/PhotoMap.jsx` | Leaflet map container | 1 |
-| `client/src/components/map/PhotoMarker.jsx` | Custom thumbnail marker | 2 |
-| `client/src/components/map/PhotoCluster.jsx` | Custom cluster icon | 2 |
-| `client/src/components/map/MapPhotoPreview.jsx` | Click popup preview | 3 |
-| `client/src/components/map/MapControls.jsx` | Zoom, layer controls | 4 |
-| `client/src/components/map/MapFilterPanel.jsx` | Filter sidebar | 4 |
-| `client/src/hooks/useGeoPhotos.js` | Data fetching hook | 1 |
-| `client/src/styles/map.css` | Map-specific styles | 1 |
-| `client/src/utils/geo-helpers.js` | Coordinate utilities | 1 |
-| `server/routes/photos.js` | Add `/geo` endpoint | 1 |
+| File | Purpose | Phase | Status |
+|------|---------|-------|--------|
+| `client/src/pages/MapPage.jsx` | Main page component | 1 | ✅ Done |
+| `client/src/components/map/PhotoMap.jsx` | Leaflet map container | 1 | ✅ Done |
+| `client/src/components/map/PhotoMarker.jsx` | Custom thumbnail marker | 2 | ✅ Done |
+| `client/src/components/map/PhotoCluster.jsx` | Custom cluster icon | 2 | ⏳ Integrated in PhotoMap |
+| `client/src/components/map/MapPhotoPreview.jsx` | Click popup preview | 3 | ✅ Done |
+| `client/src/components/map/MapControls.jsx` | Zoom, layer controls | 4 | ⏳ Integrated in PhotoMap |
+| `client/src/components/map/MapFilterPanel.jsx` | Filter sidebar | 4 | ✅ Done |
+| `client/src/hooks/useGeoPhotos.js` | Data fetching hook | 1 | ✅ Done |
+| `client/src/styles/map.css` | Map-specific styles | 1 | ✅ Done |
+| `client/src/utils/geo-helpers.js` | Coordinate utilities | 1 | ⏳ Deferred |
+| `server/routes/photos.js` | Add `/geo` endpoint | 1 | ✅ Done |
 
 ---
 
