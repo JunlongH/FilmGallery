@@ -583,7 +583,14 @@ router.post('/:id/ingest-positive', uploadDefault.single('image'), async (req, r
 
     const updatedPhoto = await PreparedStmt.getAsync('photos.getById', [id]);
     console.log('[INGEST-POSITIVE] Success! Returning updated photo');
-    res.json({ ok: true, photo: updatedPhoto, positive_rel_path: newFullRelPath, positive_thumb_rel_path: relThumb });
+    // Return both relative path (for DB) and absolute path (for showInFolder)
+    res.json({ 
+      ok: true, 
+      photo: updatedPhoto, 
+      positive_rel_path: newFullRelPath, 
+      positive_abs_path: newFullPath,
+      positive_thumb_rel_path: relThumb 
+    });
   } catch (err) {
     console.error('[INGEST-POSITIVE] error', err);
     res.status(500).json({ error: err.message });
@@ -831,6 +838,7 @@ router.post('/:id/export-positive', async (req, res) => {
 // Ad-hoc render (no DB mutation) of processed positive image
 // POST /api/photos/:id/render-positive
 // Body: { params: {...}, format: 'jpeg' | 'tiff16' }
+// Uses RenderCore for consistent processing including Film Curve gamma
 router.post('/:id/render-positive', async (req, res) => {
   const id = req.params.id;
   const body = req.body || {};
@@ -852,6 +860,13 @@ router.post('/:id/render-positive', async (req, res) => {
   const blueGain = Number.isFinite(p.blue) ? p.blue : 1.0;
   const rotation = Number.isFinite(p.rotation) ? p.rotation : 0;
   const orientation = Number.isFinite(p.orientation) ? p.orientation : 0;
+  const filmCurveEnabled = !!p.filmCurveEnabled;
+  const filmCurveProfile = p.filmCurveProfile || 'default';
+  // 片基校正增益 (Pre-Inversion)
+  const baseRed = Number.isFinite(p.baseRed) ? p.baseRed : 1.0;
+  const baseGreen = Number.isFinite(p.baseGreen) ? p.baseGreen : 1.0;
+  const baseBlue = Number.isFinite(p.baseBlue) ? p.baseBlue : 1.0;
+
   try {
     const row = await getAsync('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [id]);
     if (!row) return res.status(404).json({ error: 'Photo not found' });
@@ -872,120 +887,72 @@ router.post('/:id/render-positive', async (req, res) => {
     }
     
     const relSource = sourceResult.path;
-    console.log(`[RENDER-POSITIVE] Photo ${id}: sourceType=${sourceType}, actual=${sourceResult.actualType}`);
+    console.log(`[RENDER-POSITIVE] Photo ${id}: sourceType=${sourceType}, actual=${sourceResult.actualType}, filmCurveEnabled=${filmCurveEnabled}`);
     
     const sourceAbs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(sourceAbs)) return res.status(404).json({ error: 'Source file missing on disk' });
 
-    if (format === 'tiff16') {
-      // Sharp pipeline without JS tone/curves for now (parity later)
-        const imgTiffBase = await buildPipeline(sourceAbs, {
-          inverted, inversionMode, exposure, contrast, temp, tint,
-          red: redGain, green: greenGain, blue: blueGain, rotation, orientation
-        }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true });
-        const { data: raw8, info: info8 } = await imgTiffBase.raw().toBuffer({ resolveWithObject: true });
-        const width8 = info8.width; const height8 = info8.height; const channels8 = info8.channels;
-        
-        // Build LUTs and WB gains for JS processing
-        const toneLUT = buildToneLUT({
-          exposure, contrast,
-          highlights: Number.isFinite(p.highlights) ? p.highlights : 0,
-          shadows: Number.isFinite(p.shadows) ? p.shadows : 0,
-          whites: Number.isFinite(p.whites) ? p.whites : 0,
-          blacks: Number.isFinite(p.blacks) ? p.blacks : 0,
-        });
-        const curves = p.curves || { rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }], red: [{ x: 0, y: 0 }, { x: 255, y: 255 }], green: [{ x: 0, y: 0 }, { x: 255, y: 255 }], blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }] };
-        const lutRGB = buildCurveLUT(curves.rgb || []);
-        const lutR = buildCurveLUT(curves.red || []);
-        const lutG = buildCurveLUT(curves.green || []);
-        const lutB = buildCurveLUT(curves.blue || []);
-        const { computeWBGains } = require('../../packages/shared');
-        const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
-        const needsLogInversion = inverted && inversionMode === 'log';
-        const needsWbInJs = needsLogInversion;
-        
-        // Apply log inversion, WB, tone, curves before 16-bit conversion
-        for (let i = 0; i < raw8.length; i += channels8) {
-          let r = raw8[i]; let g = raw8[i + 1]; let b = raw8[i + 2];
-          if (needsLogInversion) {
-            r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-            g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-            b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-          }
-          if (needsWbInJs) {
-            r *= rBal; g *= gBal; b *= bBal;
-            r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
-          }
-          r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
-          r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-          r = lutR[r]; g = lutG[g]; b = lutB[b];
-          raw8[i] = r; raw8[i + 1] = g; raw8[i + 2] = b;
-        }
-        
-        const raw16 = Buffer.allocUnsafe(width8 * height8 * channels8 * 2);
-        for (let i=0, j=0; i<raw8.length; i++, j+=2) {
-          const v8 = raw8[i];
-          const v16 = (v8 << 8) | v8;
-          raw16[j] = v16 & 0xFF;
-          raw16[j+1] = (v16 >> 8) & 0xFF;
-        }
-        const buf = await sharp(raw16, { raw: { width: width8, height: height8, channels: channels8, depth: 'ushort' } })
-          .tiff({ compression: 'lzw', bitdepth: 16 })
-          .toBuffer();
-      res.setHeader('Content-Type', 'image/tiff');
-      res.setHeader('Content-Disposition', 'attachment; filename="render_positive_'+id+'_'+Date.now()+'.tiff"');
-      return res.send(buf);
-    }
-    // JPEG path with JS tone & curves
-    let imgBase = await buildPipeline(sourceAbs, {
-      inverted, inversionMode, exposure, contrast, temp, tint,
-      red: redGain, green: greenGain, blue: blueGain, rotation, orientation
-    }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true });
-    const toneLUT = buildToneLUT({
+    // 使用 RenderCore 统一渲染（与 export-positive 保持一致）
+    const core = new RenderCore({
       exposure, contrast,
       highlights: Number.isFinite(p.highlights) ? p.highlights : 0,
       shadows: Number.isFinite(p.shadows) ? p.shadows : 0,
       whites: Number.isFinite(p.whites) ? p.whites : 0,
       blacks: Number.isFinite(p.blacks) ? p.blacks : 0,
+      curves: p.curves,
+      red: redGain, green: greenGain, blue: blueGain,
+      // 片基校正增益 (Pre-Inversion)
+      baseRed, baseGreen, baseBlue,
+      temp, tint,
+      inverted, inversionMode,
+      filmCurveEnabled, filmCurveProfile,
+      hslParams: p.hslParams || null,
+      splitToning: p.splitToning || null
     });
-    const curves = p.curves || { rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }], red: [{ x: 0, y: 0 }, { x: 255, y: 255 }], green: [{ x: 0, y: 0 }, { x: 255, y: 255 }], blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }] };
-    const lutRGB = buildCurveLUT(curves.rgb || []);
-    const lutR = buildCurveLUT(curves.red || []);
-    const lutG = buildCurveLUT(curves.green || []);
-    const lutB = buildCurveLUT(curves.blue || []);
-    
-    // WB gains and log inversion flags for JS processing
-    const { computeWBGains } = require('../../packages/shared');
-    const [rBal, gBal, bBal] = computeWBGains({ red: redGain, green: greenGain, blue: blueGain, temp, tint });
-    const needsLogInversion = inverted && inversionMode === 'log';
-    const needsWbInJs = needsLogInversion;
-    
+    core.prepareLUTs();
+
+    // Build base image with Sharp (geometry only, color ops deferred to RenderCore)
+    const imgBase = await buildPipeline(sourceAbs, {
+      inverted, inversionMode, exposure, contrast, temp, tint,
+      red: redGain, green: greenGain, blue: blueGain, rotation, orientation,
+      filmCurveEnabled
+    }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true, skipColorOps: true });
+
     const { data, info } = await imgBase.raw().toBuffer({ resolveWithObject: true });
     const width = info.width; const height = info.height; const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
+
     for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      let r = data[i]; let g = data[i + 1]; let b = data[i + 2];
-      
-      // Log inversion
-      if (needsLogInversion) {
-        r = 255 * (1 - Math.log(r + 1) / Math.log(256));
-        g = 255 * (1 - Math.log(g + 1) / Math.log(256));
-        b = 255 * (1 - Math.log(b + 1) / Math.log(256));
-      }
-      // WB gains
-      if (needsWbInJs) {
-        r *= rBal; g *= gBal; b *= bBal;
-        r = Math.max(0, Math.min(255, r)); g = Math.max(0, Math.min(255, g)); b = Math.max(0, Math.min(255, b));
-      }
-      
-      r = toneLUT[Math.floor(r)]; g = toneLUT[Math.floor(g)]; b = toneLUT[Math.floor(b)];
-      r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-      r = lutR[r]; g = lutG[g]; b = lutB[b];
-      out[j] = r; out[j + 1] = g; out[j + 2] = b;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      const [rC, gC, bC] = core.processPixel(r, g, b);
+      out[j] = rC;
+      out[j + 1] = gC;
+      out[j + 2] = bC;
     }
+
+    if (format === 'tiff16') {
+      // Convert 8-bit processed data to 16-bit TIFF
+      const raw16 = Buffer.allocUnsafe(width * height * 3 * 2);
+      for (let i = 0, j = 0; i < out.length; i++, j += 2) {
+        const v8 = out[i];
+        const v16 = (v8 << 8) | v8;
+        raw16[j] = v16 & 0xFF;
+        raw16[j + 1] = (v16 >> 8) & 0xFF;
+      }
+      const buf = await sharp(raw16, { raw: { width, height, channels: 3, depth: 'ushort' } })
+        .tiff({ compression: 'lzw', bitdepth: 16 })
+        .toBuffer();
+      res.setHeader('Content-Type', 'image/tiff');
+      res.setHeader('Content-Disposition', 'attachment; filename="render_positive_' + id + '_' + Date.now() + '.tiff"');
+      return res.send(buf);
+    }
+
+    // JPEG path
     const jpegBuf = await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
     res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Content-Disposition', 'attachment; filename="render_positive_'+id+'_'+Date.now()+'.jpg"');
+    res.setHeader('Content-Disposition', 'attachment; filename="render_positive_' + id + '_' + Date.now() + '.jpg"');
     return res.send(jpegBuf);
   } catch (err) {
     console.error('[RENDER-POSITIVE] Error:', err);

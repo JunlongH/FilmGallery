@@ -805,8 +805,10 @@ _ipcMainAlias.on('filmlab-gpu:result', async (_e, result) => {
         
         LOG('[GPU-RESULT] Backend response:', JSON.stringify(data));
         if (data && (data.ok || data.photo)) {
-          LOG('[GPU-RESULT] Upload successful, filePath:', data.positive_rel_path);
-          return done({ ok: true, stored: true, photo: data.photo || null, filePath: data.positive_rel_path });
+          // Use absolute path for showInFolder, fall back to relative path
+          const filePath = data.positive_abs_path || data.positive_rel_path;
+          LOG('[GPU-RESULT] Upload successful, filePath:', filePath);
+          return done({ ok: true, stored: true, photo: data.photo || null, filePath });
         } else {
            // If backend returned error, propagate it
            LOG('[GPU-RESULT] Backend returned error:', data.error);
