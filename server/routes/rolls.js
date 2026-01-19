@@ -66,6 +66,12 @@ router.post('/', (req, res) => {
       const scan_date = body.scan_date || null;
       const scan_cost = body.scan_cost ? Number(body.scan_cost) : null;
       const scan_notes = body.scan_notes || null;
+      
+      // Default location for fallback
+      const default_location_id = body.default_location_id ? Number(body.default_location_id) : null;
+      const default_country = body.default_country || null;
+      const default_city = body.default_city || null;
+      
       let filmId = filmIdRaw;
       let filmIso = null;
       const notes = body.notes || null;
@@ -580,18 +586,32 @@ router.post('/', (req, res) => {
              if (!meta.shutter_speed && rawMetadata.shutterSpeed) meta.shutter_speed = rawMetadata.shutterSpeed;
           }
 
+          // Fallback logic for Date: Meta Only (No fallback to roll start_date as requested)
           const dateTaken = meta.date || null;
           const takenAt = dateTaken ? `${dateTaken}T12:00:00` : null;
+          
           const lensForPhoto = meta.lens || lens || null;
           const cameraForPhoto = rawMetadata?.camera || camera || null;
           const photographerForPhoto = photographer || null;
           const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' ? Number(meta.aperture) : null;
           const shutterForPhoto = meta.shutter_speed || null;
           const isoForPhoto = filmIso !== null && filmIso !== undefined ? filmIso : null;
-          const locationId = await ensureLocationId(meta.country, meta.city);
+          
+          // Fallback logic for Location: Meta > Roll Default Location
+          const countryForPhoto = meta.country || default_country || null;
+          const cityForPhoto = meta.city || default_city || null;
+          
+          // If meta provides specific country/city, we need to ensure ID for it.
+          // IF meta is missing, but we have default roll location ID, use that directly to avoid lookup.
+          let locationId = null;
+          if (meta.country || meta.city) {
+            locationId = await ensureLocationId(meta.country, meta.city);
+          } else {
+             // Fallback to roll location
+             locationId = default_location_id; 
+          }
+          
           const detailLoc = meta.detail_location || null;
-          const countryForPhoto = meta.country || null;
-          const cityForPhoto = meta.city || null;
           const latitudeForPhoto = meta.latitude !== undefined && meta.latitude !== null && meta.latitude !== '' ? Number(meta.latitude) : null;
           const longitudeForPhoto = meta.longitude !== undefined && meta.longitude !== null && meta.longitude !== '' ? Number(meta.longitude) : null;
           if (locationId) rollLocationIds.add(locationId);

@@ -199,6 +199,10 @@ export default function NewRollForm({ onCreated }) {
         photographer, 
         exposures, 
         notes,
+        // Default locations for fallback (from first location in list if available)
+        default_location_id: rollLocations[0] ? rollLocations[0].location_id : null,
+        default_country: rollLocations[0] ? (rollLocations[0].country_name || null) : null,
+        default_city: rollLocations[0] ? (rollLocations[0].city_name || null) : null,
         // Scanning/Digitization fields
         scanner_equip_id: scannerEquipId || null,
         scan_resolution: scanResolution ? Number(scanResolution) : null,
