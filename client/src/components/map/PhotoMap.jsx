@@ -15,6 +15,7 @@ import PhotoMarker from './PhotoMarker';
 import MapPhotoPreview from './MapPhotoPreview';
 import PhotoGlobe from './PhotoGlobe';
 import useGeoPhotos from '../../hooks/useGeoPhotos';
+import { API_BASE } from '../../api';
 
 // Import Leaflet CSS
 import 'leaflet/dist/leaflet.css';
@@ -26,6 +27,17 @@ L.Icon.Default.mergeOptions({
   iconUrl: require('leaflet/dist/images/marker-icon.png'),
   shadowUrl: require('leaflet/dist/images/marker-shadow.png'),
 });
+
+/**
+ * Get thumbnail URL for a photo
+ */
+const getThumbUrl = (photo) => {
+  const thumbPath = photo.thumb_rel_path || photo.positive_thumb_rel_path || photo.negative_thumb_rel_path;
+  if (thumbPath) {
+    return `${API_BASE}/uploads/${thumbPath}`;
+  }
+  return null;
+};
 
 /**
  * Tile layer configurations
@@ -55,27 +67,146 @@ const DEFAULT_CENTER = [30, 0];
 const DEFAULT_ZOOM = 2;
 
 /**
- * Custom cluster icon creator
+ * Custom cluster icon creator with thumbnail mosaic
+ * Shows up to 4 thumbnails arranged in a grid pattern with count badge
  */
 const createClusterCustomIcon = (cluster) => {
   const count = cluster.getChildCount();
-  let size = 'small';
-  let dimension = 40;
+  const childMarkers = cluster.getAllChildMarkers();
   
-  if (count >= 100) {
-    size = 'large';
-    dimension = 56;
+  // Get photos from markers (up to 4 for display)
+  const photos = childMarkers
+    .slice(0, 4)
+    .map(marker => marker.options.photo)
+    .filter(Boolean);
+  
+  // Determine size based on count
+  let containerSize = 64;
+  let mainSize = 48;
+  let miniSize = 24;
+  
+  if (count >= 50) {
+    containerSize = 80;
+    mainSize = 56;
+    miniSize = 28;
   } else if (count >= 10) {
-    size = 'medium';
-    dimension = 48;
+    containerSize = 72;
+    mainSize = 52;
+    miniSize = 26;
   }
+  
+  // Build thumbnail HTML
+  let thumbnailsHtml = '';
+  
+  if (photos.length > 0) {
+    const mainPhoto = photos[0];
+    const mainThumbUrl = getThumbUrl(mainPhoto);
+    
+    // Main center thumbnail
+    if (mainThumbUrl) {
+      thumbnailsHtml += `
+        <div class="cluster-main-thumb" style="
+          width: ${mainSize}px;
+          height: ${mainSize}px;
+          border-radius: 50%;
+          overflow: hidden;
+          border: 2px solid #fff;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 2;
+        ">
+          <img src="${mainThumbUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />
+        </div>
+      `;
+    }
+    
+    // Mini thumbnails around (up to 3)
+    const miniPhotos = photos.slice(1, 4);
+    const positions = [
+      { top: '5%', left: '5%' },      // top-left
+      { top: '5%', right: '5%' },     // top-right
+      { bottom: '5%', left: '50%', transform: 'translateX(-50%)' },  // bottom-center
+    ];
+    
+    miniPhotos.forEach((photo, index) => {
+      const thumbUrl = getThumbUrl(photo);
+      if (thumbUrl && positions[index]) {
+        const pos = positions[index];
+        const posStyle = Object.entries(pos).map(([k, v]) => `${k}:${v}`).join(';');
+        thumbnailsHtml += `
+          <div class="cluster-mini-thumb" style="
+            width: ${miniSize}px;
+            height: ${miniSize}px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 1.5px solid #fff;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+            position: absolute;
+            ${posStyle};
+            z-index: 1;
+          ">
+            <img src="${thumbUrl}" alt="" style="width:100%;height:100%;object-fit:cover;" loading="lazy" />
+          </div>
+        `;
+      }
+    });
+  }
+  
+  // Count badge
+  const badgeHtml = `
+    <div class="cluster-count-badge" style="
+      position: absolute;
+      bottom: -4px;
+      right: -4px;
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      color: #000;
+      font-size: ${count >= 100 ? '10px' : '11px'};
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 10px;
+      min-width: 20px;
+      text-align: center;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      z-index: 3;
+    ">${count}</div>
+  `;
 
   return L.divIcon({
-    html: `<div class="photo-cluster photo-cluster-${size}">
-      <span class="photo-cluster-count">${count}</span>
-    </div>`,
+    html: `
+      <div class="photo-cluster-mosaic" style="
+        width: ${containerSize}px;
+        height: ${containerSize}px;
+        position: relative;
+        cursor: pointer;
+        transition: transform 0.15s ease;
+      ">
+        ${thumbnailsHtml || `<div class="cluster-fallback" style="
+          width: ${mainSize}px;
+          height: ${mainSize}px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        ">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <circle cx="8.5" cy="8.5" r="1.5"/>
+            <polyline points="21,15 16,10 5,21"/>
+          </svg>
+        </div>`}
+        ${badgeHtml}
+      </div>
+    `,
     className: 'photo-cluster-container',
-    iconSize: L.point(dimension, dimension, true),
+    iconSize: L.point(containerSize, containerSize, true),
   });
 };
 
@@ -161,7 +292,8 @@ function FitBoundsToPhotos({ photos }) {
  */
 export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
   // View mode: 'globe' for 3D Earth, 'flat' for Leaflet map
-  const [viewMode, setViewMode] = useState('globe');
+  // Default to 'flat' for faster initial load and more practical use
+  const [viewMode, setViewMode] = useState('flat');
   
   // Tile layer state
   const [tileLayer, setTileLayer] = useState('dark');
@@ -179,9 +311,6 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
   // Container ref for dimensions
   const containerRef = useRef(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
-  
-  // Hovered photo ID
-  const [hoveredPhotoId, setHoveredPhotoId] = useState(null);
 
   // Update dimensions on resize
   useEffect(() => {
@@ -244,13 +373,6 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
   }, []);
   
   /**
-   * Handle marker hover
-   */
-  const handleMarkerHover = useCallback((photo, isEntering) => {
-    setHoveredPhotoId(isEntering ? photo.id : null);
-  }, []);
-  
-  /**
    * Handle zoom from globe to flat map
    */
   const handleZoomToFlat = useCallback(({ lat, lng, zoom }) => {
@@ -259,13 +381,6 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
       zoom: zoom || 6,
     });
     setViewMode('flat');
-  }, []);
-  
-  /**
-   * Toggle between globe and flat views
-   */
-  const handleToggleView = useCallback(() => {
-    setViewMode(prev => prev === 'globe' ? 'flat' : 'globe');
   }, []);
 
   // Current tile layer config
@@ -393,19 +508,22 @@ export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
               iconCreateFunction={createClusterCustomIcon}
               maxClusterRadius={60}
               spiderfyOnMaxZoom={true}
+              disableClusteringAtZoom={16}
               showCoverageOnHover={false}
               zoomToBoundsOnClick={true}
+              spiderfyDistanceMultiplier={2}
               animate={true}
-              animateAddingMarkers={true}
+              animateAddingMarkers={false}
+              removeOutsideVisibleBounds={true}
+              // Prevent spiderfy from closing on marker interaction
+              spiderLegPolylineOptions={{ weight: 1.5, color: '#666', opacity: 0.5 }}
             >
               {geoPhotos.map((photo) => (
                 <PhotoMarker
                   key={photo.id}
                   photo={photo}
                   onClick={handleMarkerClick}
-                  onHover={handleMarkerHover}
                   isSelected={selectedPhoto?.id === photo.id}
-                  isHovered={hoveredPhotoId === photo.id}
                 />
               ))}
             </MarkerClusterGroup>

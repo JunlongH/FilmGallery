@@ -52,15 +52,15 @@ export default function RemoteFileBrowser({
       const data = await res.json();
       if (data.ok) {
         setRoots(data.roots || []);
-        // 如果只有一个根目录，自动进入
-        if (data.roots?.length === 1) {
-          browsePath(data.roots[0].path);
-        }
+        // 返回根目录列表，让调用方决定是否自动进入
+        return data.roots || [];
       } else {
         setError(data.error || 'Failed to load roots');
+        return [];
       }
     } catch (err) {
       setError(err.message || 'Network error');
+      return [];
     } finally {
       setLoading(false);
     }
@@ -101,7 +101,12 @@ export default function RemoteFileBrowser({
       if (initialPath) {
         browsePath(initialPath);
       } else {
-        fetchRoots();
+        // 获取根目录，如果只有一个则自动进入
+        fetchRoots().then(roots => {
+          if (roots?.length === 1) {
+            browsePath(roots[0].path);
+          }
+        });
         setCurrentPath(null);
         setItems([]);
       }

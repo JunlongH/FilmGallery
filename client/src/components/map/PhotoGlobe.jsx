@@ -24,6 +24,7 @@ const getThumbUrl = (photo) => {
 
 /**
  * Group nearby photos into clusters for globe display
+ * Uses actual average coordinates of photos in cluster for accurate positioning
  */
 const clusterPhotos = (photos, gridSize = 10) => {
   const clusters = new Map();
@@ -36,19 +37,26 @@ const clusterPhotos = (photos, gridSize = 10) => {
     
     if (!clusters.has(key)) {
       clusters.set(key, {
-        lat: latCell + gridSize / 2,
-        lng: lngCell + gridSize / 2,
         photos: [],
         count: 0,
+        sumLat: 0,
+        sumLng: 0,
       });
     }
     
     const cluster = clusters.get(key);
     cluster.photos.push(photo);
     cluster.count++;
+    cluster.sumLat += photo.latitude;
+    cluster.sumLng += photo.longitude;
   });
   
-  return Array.from(clusters.values());
+  // Calculate average coordinates for each cluster
+  return Array.from(clusters.values()).map(cluster => ({
+    ...cluster,
+    lat: cluster.sumLat / cluster.count,
+    lng: cluster.sumLng / cluster.count,
+  }));
 };
 
 /**
@@ -136,14 +144,12 @@ const createMarkerElement = (cluster, onClick) => {
  * 
  * @param {Object} props
  * @param {Array} props.photos - Array of photos with lat/lng
- * @param {Function} props.onPhotoClick - Click handler for photo/cluster
  * @param {Function} props.onZoomIn - Called when user wants to zoom into flat map
  * @param {number} props.width - Container width
  * @param {number} props.height - Container height
  */
 export default function PhotoGlobe({ 
   photos = [], 
-  onPhotoClick, 
   onZoomIn,
   width,
   height 
@@ -182,23 +188,19 @@ export default function PhotoGlobe({
 
   /**
    * Handle click on a marker element
+   * Always navigates to flat map at the clicked location for detailed exploration
    */
   const handleElementClick = useCallback((el) => {
     const cluster = el.__clusterData;
     if (cluster && cluster.photos && cluster.photos.length > 0) {
-      if (cluster.count === 1) {
-        // Single photo - show preview
-        if (onPhotoClick) {
-          onPhotoClick(cluster.photos[0], { x: width / 2, y: height / 2 });
-        }
-      } else {
-        // Multiple photos - zoom into flat map at this location
-        if (onZoomIn) {
-          onZoomIn({ lat: cluster.lat, lng: cluster.lng, zoom: 8 });
-        }
+      // Always zoom into flat map at this location
+      // Use higher zoom for single photo, lower for clusters
+      const zoomLevel = cluster.count === 1 ? 14 : 10;
+      if (onZoomIn) {
+        onZoomIn({ lat: cluster.lat, lng: cluster.lng, zoom: zoomLevel });
       }
     }
-  }, [onPhotoClick, onZoomIn, width, height]);
+  }, [onZoomIn]);
 
   /**
    * Handle hover on a marker element
@@ -226,9 +228,9 @@ export default function PhotoGlobe({
         ref={globeRef}
         width={width}
         height={height}
-        globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
-        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-        backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
+        globeImageUrl="https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+        bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
+        backgroundImageUrl="https://unpkg.com/three-globe/example/img/night-sky.png"
         
         // HTML Elements (photo thumbnails)
         htmlElementsData={clusters}

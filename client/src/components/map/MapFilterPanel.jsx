@@ -6,7 +6,7 @@
  * 
  * @module components/map/MapFilterPanel
  */
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { API_BASE } from '../../api';
 
