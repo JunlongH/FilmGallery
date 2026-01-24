@@ -396,7 +396,7 @@ function buildExifData(photo, roll, options = {}) {
   }
   
   // 软件标识
-  exif.Software = 'FilmGallery v1.9.1';
+  exif.Software = 'FilmGallery v1.9.2';
   
   // 胶片信息 (用于 XMP)
   if (photo.film_name || photo.film_type) {

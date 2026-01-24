@@ -1,13 +1,14 @@
 {
   "name": "film-gallery",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "description": "Film Manager desktop app (Electron + Express backend + React frontend)",
   "main": "server.js",
   "scripts": {
     "start:server": "node server.js",
     "start:server:dev": "nodemon --watch . --ext js,json --exec \"node server.js\"",
     "rebuild:dev": "npm rebuild",
-    "rebuild:electron": "electron-rebuild -v 26.6.10",
+    "rebuild:electron": "npx @electron/rebuild -v 26.6.10 -m .",
+    "rebuild:libraw": "cd ../packages/@filmgallery/libraw-native && npx @electron/rebuild -v 26.6.10",
     "init-db": "node init-db.js",
     "seed-db": "if [ -f ./seed.sql ]; then sqlite3 ./film.db < ./seed.sql; else echo 'no seed.sql'; fi",
     "migrate-roll-folders": "node migrate-roll-folders.js",
@@ -22,6 +23,7 @@
   "author": "JunlongHuang",
   "license": "MIT",
   "dependencies": {
+    "@filmgallery/libraw-native": "file:../packages/@filmgallery/libraw-native",
     "body-parser": "^1.20.2",
     "compression": "^1.8.1",
     "cors": "^2.8.5",

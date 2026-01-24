@@ -1,0 +1,76 @@
+{
+  "name": "@filmgallery/libraw-native",
+  "version": "1.0.0",
+  "description": "Native LibRaw 0.22 bindings for Node.js with N-API",
+  "main": "lib/index.js",
+  "types": "types/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./lib/index.js",
+      "types": "./types/index.d.ts"
+    },
+    "./processor": {
+      "require": "./lib/processor.js"
+    }
+  },
+  "scripts": {
+    "install": "node-gyp-build || echo 'Native build skipped, will try to build on first use'",
+    "download-libraw": "node scripts/download-libraw.js",
+    "prebuild": "node scripts/download-libraw.js",
+    "build": "node-gyp rebuild",
+    "build:debug": "node-gyp rebuild --debug",
+    "rebuild": "npm run clean && npm run build",
+    "clean": "node-gyp clean",
+    "prebuildify": "prebuildify --napi --strip",
+    "prebuildify:all": "prebuildify --napi --strip --platform win32 --arch x64 && prebuildify --napi --strip --platform darwin --arch x64 && prebuildify --napi --strip --platform linux --arch x64",
+    "test": "node test/test-decode.js",
+    "prepare": "npm run download-libraw || true"
+  },
+  "keywords": [
+    "libraw",
+    "raw",
+    "image",
+    "photography",
+    "cr2",
+    "cr3",
+    "nef",
+    "arw",
+    "rw2",
+    "raf",
+    "dng",
+    "native",
+    "napi"
+  ],
+  "author": "FilmGallery",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/filmgallery/libraw-native"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "dependencies": {
+    "node-addon-api": "^7.0.0",
+    "node-gyp-build": "^4.8.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.0.0",
+    "prebuildify": "^6.0.0"
+  },
+  "binary": {
+    "napi_versions": [8]
+  },
+  "files": [
+    "lib/",
+    "types/",
+    "src/",
+    "deps/libraw/libraw/",
+    "deps/libraw/src/",
+    "deps/libraw/internal/",
+    "binding.gyp",
+    "prebuilds/",
+    "README.md"
+  ],
+  "private": true
+}

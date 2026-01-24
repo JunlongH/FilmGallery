@@ -1,6 +1,6 @@
 {
   "name": "film-gallery-desktop",
-  "version": "1.9.1",
+  "version": "1.9.2",
   "private": true,
   "description": "Film Gallery — Electron desktop wrapper for the Film Manager app",
   "main": "electron-main.js",
@@ -8,7 +8,7 @@
   "license": "MIT",
   "scripts": {
     "postinstall": "cd client && npm install && cd ../server && npm install",
-    "dev:client": "cd client && cross-env PORT=3000 REACT_APP_API_BASE=http://127.0.0.1:4000 npm start",
+    "dev:client": "cd client && cross-env PORT=3000 REACT_APP_API_BASE=http://127.0.0.1:3000 npm start",
     "dev:server": "cd server && npm start",
     "dev:electron": "cross-env ELECTRON_DEV=true electron .",
     "dev:web": "concurrently -k -n SERVER,CLIENT \"npm:dev:server\" \"npm:dev:client\"",
@@ -16,11 +16,13 @@
     "dev": "concurrently -k -n CLIENT,ELECTRON \"npm:dev:client\" \"wait-on http://localhost:3000 && npm run dev:electron\"",
     "build-client": "cd client && npm run build",
     "build": "npm run build-client",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
+    "rebuild:electron": "cd server && npm run rebuild:electron && cd ../packages/@filmgallery/libraw-native && npx @electron/rebuild -v 26.6.10",
+    "pack": "npm run build && npm run rebuild:electron && electron-builder --dir",
+    "dist": "npm run build && npm run rebuild:electron && electron-builder",
     "start": "electron ."
   },
   "devDependencies": {
+    "@electron/rebuild": "^4.0.2",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0.3",
     "electron": "26.6.10",

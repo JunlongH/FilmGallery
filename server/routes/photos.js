@@ -630,6 +630,13 @@ router.post('/:id/export-positive', async (req, res) => {
   const baseDensityR = Number.isFinite(p.baseDensityR) ? p.baseDensityR : 0.0;
   const baseDensityG = Number.isFinite(p.baseDensityG) ? p.baseDensityG : 0.0;
   const baseDensityB = Number.isFinite(p.baseDensityB) ? p.baseDensityB : 0.0;
+  // 密度色阶 (Density Levels) - 对数域自动色阶
+  const densityLevelsEnabled = !!p.densityLevelsEnabled;
+  const densityLevels = p.densityLevels && typeof p.densityLevels === 'object' ? {
+    red: { min: Number.isFinite(p.densityLevels.red?.min) ? p.densityLevels.red.min : 0.0, max: Number.isFinite(p.densityLevels.red?.max) ? p.densityLevels.red.max : 3.0 },
+    green: { min: Number.isFinite(p.densityLevels.green?.min) ? p.densityLevels.green.min : 0.0, max: Number.isFinite(p.densityLevels.green?.max) ? p.densityLevels.green.max : 3.0 },
+    blue: { min: Number.isFinite(p.densityLevels.blue?.min) ? p.densityLevels.blue.min : 0.0, max: Number.isFinite(p.densityLevels.blue?.max) ? p.densityLevels.blue.max : 3.0 }
+  } : null;
   const rotation = Number.isFinite(p.rotation) ? p.rotation : 0; // arbitrary degrees
   const orientation = Number.isFinite(p.orientation) ? p.orientation : 0; // multiples of 90 from UI
   
@@ -720,6 +727,8 @@ router.post('/:id/export-positive', async (req, res) => {
       // 片基校正增益 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
       baseMode, baseDensityR, baseDensityG, baseDensityB,
+      // 密度色阶 (Density Levels)
+      densityLevelsEnabled, densityLevels,
       temp, tint,
       lut1: lut1Data,
       lut2: lut2Data,
@@ -877,6 +886,13 @@ router.post('/:id/render-positive', async (req, res) => {
   const baseDensityR = Number.isFinite(p.baseDensityR) ? p.baseDensityR : 0.0;
   const baseDensityG = Number.isFinite(p.baseDensityG) ? p.baseDensityG : 0.0;
   const baseDensityB = Number.isFinite(p.baseDensityB) ? p.baseDensityB : 0.0;
+  // 密度色阶 (Density Levels) - 对数域自动色阶
+  const densityLevelsEnabled = !!p.densityLevelsEnabled;
+  const densityLevels = p.densityLevels && typeof p.densityLevels === 'object' ? {
+    red: { min: Number.isFinite(p.densityLevels.red?.min) ? p.densityLevels.red.min : 0.0, max: Number.isFinite(p.densityLevels.red?.max) ? p.densityLevels.red.max : 3.0 },
+    green: { min: Number.isFinite(p.densityLevels.green?.min) ? p.densityLevels.green.min : 0.0, max: Number.isFinite(p.densityLevels.green?.max) ? p.densityLevels.green.max : 3.0 },
+    blue: { min: Number.isFinite(p.densityLevels.blue?.min) ? p.densityLevels.blue.min : 0.0, max: Number.isFinite(p.densityLevels.blue?.max) ? p.densityLevels.blue.max : 3.0 }
+  } : null;
 
   try {
     const row = await getAsync('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [id]);
@@ -915,6 +931,8 @@ router.post('/:id/render-positive', async (req, res) => {
       // 片基校正增益 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
       baseMode, baseDensityR, baseDensityG, baseDensityB,
+      // 密度色阶 (Density Levels)
+      densityLevelsEnabled, densityLevels,
       temp, tint,
       inverted, inversionMode,
       filmCurveEnabled, filmCurveProfile,
@@ -1273,7 +1291,7 @@ router.post('/:id/download-with-exif', async (req, res) => {
     }
     
     // Software tag
-    exifData.Software = 'FilmGallery v1.9.1';
+    exifData.Software = 'FilmGallery v1.9.2';
     
     // Scanner/Digitization info (XMP custom namespace)
     // This preserves the original scanner/digitizer metadata

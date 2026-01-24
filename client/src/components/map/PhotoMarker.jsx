@@ -34,6 +34,7 @@ const getThumbUrl = (photo) => {
 /**
  * Create a custom div icon with photo thumbnail
  * Hover effects are handled by CSS to avoid React re-renders that collapse spiderfy
+ * Uses background-image for reliable center cropping of non-square thumbnails
  */
 const createPhotoIcon = (photo, isSelected) => {
   const thumbUrl = getThumbUrl(photo);
@@ -48,9 +49,11 @@ const createPhotoIcon = (photo, isSelected) => {
         border: ${borderWidth}px solid ${borderColor};
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         transition: all 0.15s ease-out;
-      ">
-        <img src="${thumbUrl}" alt="" loading="lazy" />
-      </div>`
+        background-image: url('${thumbUrl}');
+        background-size: cover;
+        background-position: center center;
+        background-repeat: no-repeat;
+      "></div>`
     : `<div class="photo-marker photo-marker-placeholder ${isSelected ? 'selected' : ''}" style="
         width: ${size}px;
         height: ${size}px;

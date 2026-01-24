@@ -28,43 +28,68 @@ router.get('/summary', async (req, res) => {
 });
 
 // GET /api/stats/gear
+// Statistics are based on PHOTO count (not roll count)
 router.get('/gear', async (req, res) => {
   try {
+    // Camera statistics - count photos per camera
+    // Priority: photo.camera > roll.camera (equipment or text)
     const sqlCameras = `
-      SELECT value as name, COUNT(*) as count FROM roll_gear WHERE type='camera' AND value NOT IN ('', '-', '--', '—') GROUP BY value
-      UNION ALL
-      SELECT camera as name, COUNT(*) as count FROM rolls WHERE camera IS NOT NULL AND camera != '' AND camera NOT IN ('-','--','—') AND camera_equip_id IS NULL GROUP BY camera
-      UNION ALL
-      SELECT (c.brand || ' ' || c.model) as name, COUNT(*) as count 
-      FROM rolls r 
-      JOIN equip_cameras c ON r.camera_equip_id = c.id 
-      GROUP BY c.id
+      SELECT camera_name as name, COUNT(*) as count FROM (
+        SELECT COALESCE(
+          (SELECT brand || ' ' || model FROM equip_cameras WHERE id = p.camera_equip_id),
+          p.camera,
+          (SELECT brand || ' ' || model FROM equip_cameras WHERE id = r.camera_equip_id),
+          r.camera
+        ) as camera_name
+        FROM photos p
+        JOIN rolls r ON p.roll_id = r.id
+      ) 
+      WHERE camera_name IS NOT NULL AND camera_name != '' AND camera_name NOT IN ('-', '--', '—')
+      GROUP BY camera_name
     `;
 
+    // Lens statistics - count photos per lens
+    // For fixed-lens cameras: always use camera's built-in lens description (ignore lens_equip_id)
+    // For interchangeable lens cameras: use lens_equip_id or text
     const sqlLenses = `
-      SELECT value as name, COUNT(*) as count FROM roll_gear WHERE type='lens' AND value NOT IN ('', '-', '--', '—') GROUP BY value
-      UNION ALL
-      SELECT lens as name, COUNT(*) as count FROM rolls 
-      WHERE lens IS NOT NULL AND lens != '' AND lens NOT IN ('-','--','—') 
-        AND lens_equip_id IS NULL 
-        AND (camera_equip_id IS NULL OR camera_equip_id NOT IN (SELECT id FROM equip_cameras WHERE has_fixed_lens = 1))
-      GROUP BY lens
-      UNION ALL
-      SELECT (l.brand || ' ' || l.model) as name, COUNT(*) as count 
-      FROM rolls r 
-      JOIN equip_lenses l ON r.lens_equip_id = l.id 
-      GROUP BY l.id
-      UNION ALL
-      SELECT (c.brand || ' ' || c.model || ' ' || COALESCE(c.fixed_lens_focal_length, '') || 'mm') as name, COUNT(*) as count 
-      FROM rolls r 
-      JOIN equip_cameras c ON r.camera_equip_id = c.id 
-      WHERE c.has_fixed_lens = 1 
-      GROUP BY c.id
+      SELECT lens_name as name, COUNT(*) as count FROM (
+        SELECT 
+          CASE 
+            -- Check if roll's camera is a fixed-lens camera
+            WHEN EXISTS (
+              SELECT 1 FROM equip_cameras c 
+              WHERE c.id = COALESCE(p.camera_equip_id, r.camera_equip_id) 
+              AND c.has_fixed_lens = 1
+            ) THEN (
+              -- Fixed lens camera: build full description from camera data
+              SELECT 
+                c.brand || ' ' || c.model || ' ' || 
+                CAST(CAST(c.fixed_lens_focal_length AS INTEGER) AS TEXT) || 'mm f/' || 
+                c.fixed_lens_max_aperture
+              FROM equip_cameras c 
+              WHERE c.id = COALESCE(p.camera_equip_id, r.camera_equip_id)
+            )
+            ELSE COALESCE(
+              -- Photo's own lens
+              (SELECT name FROM equip_lenses WHERE id = p.lens_equip_id),
+              p.lens,
+              -- Roll's lens
+              (SELECT name FROM equip_lenses WHERE id = r.lens_equip_id),
+              r.lens
+            )
+          END as lens_name
+        FROM photos p
+        JOIN rolls r ON p.roll_id = r.id
+      )
+      WHERE lens_name IS NOT NULL AND lens_name != '' AND lens_name NOT IN ('-', '--', '—')
+      GROUP BY lens_name
     `;
 
+    // Film statistics - count photos per film stock
     const sqlFilms = `
-      SELECT f.name, COUNT(r.id) as count 
-      FROM rolls r 
+      SELECT f.name, COUNT(p.id) as count 
+      FROM photos p
+      JOIN rolls r ON p.roll_id = r.id
       JOIN films f ON r.filmId = f.id 
       GROUP BY f.name
     `;
@@ -75,12 +100,27 @@ router.get('/gear', async (req, res) => {
       allAsync(sqlFilms)
     ]);
 
-    // Merge duplicates
-    const merge = (arr) => {
+    // Normalize lens name for deduplication
+    // Handles: "35.0mm" → "35mm", "f/3.50" → "f/3.5"
+    const normalizeLensName = (name) => {
+      if (!name) return '';
+      return name
+        // Normalize decimal focal lengths: 35.0mm → 35mm
+        .replace(/(\d+)\.0+mm/g, '$1mm')
+        // Normalize decimal apertures: f/3.50 → f/3.5
+        .replace(/f\/(\d+)\.0+$/g, 'f/$1')
+        // Trim extra spaces
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    // Merge duplicates with normalization for lenses
+    const merge = (arr, normalize = false) => {
       const map = {};
       arr.forEach(item => {
         if (!item.name) return;
-        map[item.name] = (map[item.name] || 0) + item.count;
+        const key = normalize ? normalizeLensName(item.name) : item.name;
+        map[key] = (map[key] || 0) + item.count;
       });
       return Object.entries(map)
         .map(([name, count]) => ({ name, count }))
@@ -89,7 +129,7 @@ router.get('/gear', async (req, res) => {
 
     res.json({
       cameras: merge(cameras).slice(0, 10),
-      lenses: merge(lenses).slice(0, 10),
+      lenses: merge(lenses, true).slice(0, 10),
       films: films.sort((a, b) => b.count - a.count).slice(0, 10)
     });
   } catch (err) {

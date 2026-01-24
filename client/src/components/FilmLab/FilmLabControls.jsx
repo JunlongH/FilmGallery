@@ -247,6 +247,262 @@ function FilmCurveProfileSelector({
   );
 }
 
+/**
+ * Density Levels Panel Component
+ * 
+ * Advanced panel for log-domain auto-levels adjustment.
+ * Works in density domain (before inversion) for physically accurate negative processing.
+ */
+function DensityLevelsPanel({
+  densityLevelsEnabled,
+  setDensityLevelsEnabled,
+  densityLevels,
+  setDensityLevels,
+  handleDensityAutoLevels,
+  handleResetDensityLevels,
+  pushToHistory
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+
+  // Helper to update a single channel's min or max
+  const updateChannelLevel = (channel, field, value) => {
+    if (pushToHistory) pushToHistory();
+    setDensityLevels(prev => ({
+      ...prev,
+      [channel]: {
+        ...prev[channel],
+        [field]: parseFloat(value) || 0
+      }
+    }));
+  };
+
+  // Compact display of current levels
+  const getLevelsSummary = () => {
+    if (!densityLevelsEnabled) return 'Disabled';
+    const { red, green, blue } = densityLevels;
+    return `R:${red.min.toFixed(2)}-${red.max.toFixed(2)} G:${green.min.toFixed(2)}-${green.max.toFixed(2)} B:${blue.min.toFixed(2)}-${blue.max.toFixed(2)}`;
+  };
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      {/* Collapsible Header */}
+      <div 
+        onClick={() => setExpanded(!expanded)}
+        style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          cursor: 'pointer',
+          padding: '4px 0',
+          borderTop: '1px dashed #444'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 10, color: '#888' }}>{expanded ? '▼' : '▶'}</span>
+          <span style={{ fontSize: 10, fontWeight: 600, color: '#888' }}>DENSITY LEVELS</span>
+          {densityLevelsEnabled && (
+            <span style={{ 
+              fontSize: 9, 
+              padding: '1px 4px', 
+              background: '#2e7d32', 
+              borderRadius: 2, 
+              color: '#fff' 
+            }}>ON</span>
+          )}
+        </div>
+        {!expanded && (
+          <span style={{ fontSize: 9, color: '#666', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {getLevelsSummary()}
+          </span>
+        )}
+      </div>
+
+      {/* Expanded Content */}
+      {expanded && (
+        <div style={{ 
+          padding: 8, 
+          background: '#1a1a1a', 
+          borderRadius: 4, 
+          marginTop: 4,
+          border: '1px solid #333'
+        }}>
+          {/* Enable Toggle */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <label style={{ fontSize: 10, color: '#aaa', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={densityLevelsEnabled}
+                onChange={(e) => {
+                  if (pushToHistory) pushToHistory();
+                  setDensityLevelsEnabled(e.target.checked);
+                }}
+                style={{ margin: 0 }}
+              />
+              Enable Density Levels
+            </label>
+          </div>
+
+          {/* Channel Controls */}
+          <div style={{ opacity: densityLevelsEnabled ? 1 : 0.5, pointerEvents: densityLevelsEnabled ? 'auto' : 'none' }}>
+            {/* Red Channel */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: '#f44336', width: 14 }}>R</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="3"
+                value={densityLevels.red.min}
+                onChange={(e) => updateChannelLevel('red', 'min', e.target.value)}
+                style={{ 
+                  width: 50, 
+                  fontSize: 10, 
+                  padding: '2px 4px', 
+                  background: '#2a2a2a', 
+                  border: '1px solid #444', 
+                  borderRadius: 2, 
+                  color: '#eee',
+                  textAlign: 'center'
+                }}
+              />
+              <div style={{ flex: 1, height: 4, background: 'linear-gradient(to right, #400, #f44336)', borderRadius: 2 }} />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="3"
+                value={densityLevels.red.max}
+                onChange={(e) => updateChannelLevel('red', 'max', e.target.value)}
+                style={{ 
+                  width: 50, 
+                  fontSize: 10, 
+                  padding: '2px 4px', 
+                  background: '#2a2a2a', 
+                  border: '1px solid #444', 
+                  borderRadius: 2, 
+                  color: '#eee',
+                  textAlign: 'center'
+                }}
+              />
+            </div>
+
+            {/* Green Channel */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+              <span style={{ fontSize: 10, color: '#4caf50', width: 14 }}>G</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="3"
+                value={densityLevels.green.min}
+                onChange={(e) => updateChannelLevel('green', 'min', e.target.value)}
+                style={{ 
+                  width: 50, 
+                  fontSize: 10, 
+                  padding: '2px 4px', 
+                  background: '#2a2a2a', 
+                  border: '1px solid #444', 
+                  borderRadius: 2, 
+                  color: '#eee',
+                  textAlign: 'center'
+                }}
+              />
+              <div style={{ flex: 1, height: 4, background: 'linear-gradient(to right, #040, #4caf50)', borderRadius: 2 }} />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="3"
+                value={densityLevels.green.max}
+                onChange={(e) => updateChannelLevel('green', 'max', e.target.value)}
+                style={{ 
+                  width: 50, 
+                  fontSize: 10, 
+                  padding: '2px 4px', 
+                  background: '#2a2a2a', 
+                  border: '1px solid #444', 
+                  borderRadius: 2, 
+                  color: '#eee',
+                  textAlign: 'center'
+                }}
+              />
+            </div>
+
+            {/* Blue Channel */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8 }}>
+              <span style={{ fontSize: 10, color: '#2196f3', width: 14 }}>B</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="3"
+                value={densityLevels.blue.min}
+                onChange={(e) => updateChannelLevel('blue', 'min', e.target.value)}
+                style={{ 
+                  width: 50, 
+                  fontSize: 10, 
+                  padding: '2px 4px', 
+                  background: '#2a2a2a', 
+                  border: '1px solid #444', 
+                  borderRadius: 2, 
+                  color: '#eee',
+                  textAlign: 'center'
+                }}
+              />
+              <div style={{ flex: 1, height: 4, background: 'linear-gradient(to right, #004, #2196f3)', borderRadius: 2 }} />
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                max="3"
+                value={densityLevels.blue.max}
+                onChange={(e) => updateChannelLevel('blue', 'max', e.target.value)}
+                style={{ 
+                  width: 50, 
+                  fontSize: 10, 
+                  padding: '2px 4px', 
+                  background: '#2a2a2a', 
+                  border: '1px solid #444', 
+                  borderRadius: 2, 
+                  color: '#eee',
+                  textAlign: 'center'
+                }}
+              />
+            </div>
+
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                className="iv-btn"
+                onClick={handleDensityAutoLevels}
+                style={{ flex: 1, fontSize: 10, padding: '4px 8px' }}
+                title="Analyze image and auto-detect density range"
+              >
+                AUTO ANALYZE
+              </button>
+              <button
+                className="iv-btn"
+                onClick={handleResetDensityLevels}
+                style={{ fontSize: 10, padding: '4px 8px' }}
+                title="Reset to default (0.00 - 3.00)"
+              >
+                RESET
+              </button>
+            </div>
+          </div>
+
+          {/* Help Text */}
+          <div style={{ marginTop: 8, fontSize: 9, color: '#666', lineHeight: 1.4 }}>
+            Density Levels works in the log domain before inversion. 
+            Use AUTO ANALYZE to detect the actual density range of your negative, 
+            then the system will stretch it to full range for optimal contrast.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function FilmLabControls({
   onFinishBatchParams,
   currentParams,
@@ -262,6 +518,11 @@ export default function FilmLabControls({
   baseMode, setBaseMode,
   isPickingBase, setIsPickingBase,
   handleAutoBase,
+  // Density Levels (Log domain auto-levels)
+  densityLevelsEnabled, setDensityLevelsEnabled,
+  densityLevels, setDensityLevels,
+  handleDensityAutoLevels,
+  handleResetDensityLevels,
   isPickingWB, setIsPickingWB,
   handleAutoColor,
   handleUndo, handleRedo, handleReset,
@@ -561,6 +822,19 @@ export default function FilmLabControls({
               AUTO DETECT
             </button>
           </div>
+
+          {/* Density Levels - Advanced Panel (Collapsible) */}
+          {baseMode === 'log' && (
+            <DensityLevelsPanel
+              densityLevelsEnabled={densityLevelsEnabled}
+              setDensityLevelsEnabled={setDensityLevelsEnabled}
+              densityLevels={densityLevels}
+              setDensityLevels={setDensityLevels}
+              handleDensityAutoLevels={handleDensityAutoLevels}
+              handleResetDensityLevels={handleResetDensityLevels}
+              pushToHistory={pushToHistory}
+            />
+          )}
         </div>
 
         {/* WB Tools */}

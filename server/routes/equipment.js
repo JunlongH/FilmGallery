@@ -322,22 +322,36 @@ router.get('/lenses', async (req, res) => {
   try {
     const { mount, status, includeDeleted, camera_id } = req.query;
     
-    let sql = `SELECT * FROM equip_lenses WHERE 1=1`;
+    // Exclude lenses that are actually fixed-lens camera entries (PS cameras)
+    // These are identified by having names matching fixed-lens camera patterns
+    let sql = `
+      SELECT l.* FROM equip_lenses l
+      WHERE 1=1
+        AND l.id NOT IN (
+          SELECT l2.id FROM equip_lenses l2
+          JOIN equip_cameras c ON (
+            l2.name LIKE c.brand || ' ' || c.model || '%'
+            OR l2.name LIKE c.name || '%'
+            OR (l2.brand = c.brand AND l2.model LIKE c.model || '%')
+          )
+          WHERE c.has_fixed_lens = 1
+        )
+    `;
     const params = [];
 
     if (!includeDeleted) {
-      sql += ` AND deleted_at IS NULL`;
+      sql += ` AND l.deleted_at IS NULL`;
     }
     if (mount) {
-      sql += ` AND mount = ?`;
+      sql += ` AND l.mount = ?`;
       params.push(mount);
     }
     if (status) {
-      sql += ` AND status = ?`;
+      sql += ` AND l.status = ?`;
       params.push(status);
     }
 
-    sql += ` ORDER BY brand, focal_length_min, name`;
+    sql += ` ORDER BY l.brand, l.focal_length_min, l.name`;
 
     let lenses = await allAsync(sql, params);
 

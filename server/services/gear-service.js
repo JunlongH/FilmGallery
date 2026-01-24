@@ -1,5 +1,130 @@
 const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
 
+// ============================================================================
+// FIXED LENS CAMERA UTILITIES
+// ============================================================================
+
+/**
+ * Format fixed lens description for a camera
+ * Generates a standardized string like "Konica bigmini 201 35mm f/3.5"
+ * 
+ * @param {Object} camera - Camera object with brand, model, fixed_lens_focal_length, fixed_lens_max_aperture
+ * @returns {string|null} Formatted lens description or null if not a fixed-lens camera
+ */
+function formatFixedLensDescription(camera) {
+  if (!camera) return null;
+  
+  const focal = camera.fixed_lens_focal_length;
+  const aperture = camera.fixed_lens_max_aperture;
+  
+  // Must have focal length at minimum
+  if (!focal) return null;
+  
+  // Build lens spec: "35mm f/3.5" or "35mm" if no aperture
+  const lensSpec = aperture ? `${focal}mm f/${aperture}` : `${focal}mm`;
+  
+  // Build camera prefix: "Konica bigmini 201" or empty
+  const brand = camera.brand || camera.camera_brand || '';
+  const model = camera.model || camera.camera_model || '';
+  const cameraPrefix = [brand, model].filter(Boolean).join(' ').trim();
+  
+  // Return full description: "Konica bigmini 201 35mm f/3.5"
+  return cameraPrefix ? `${cameraPrefix} ${lensSpec}` : lensSpec;
+}
+
+/**
+ * Check if a camera has a fixed lens and get the formatted description
+ * 
+ * @param {number} cameraEquipId - Camera equipment ID
+ * @returns {Promise<{isFixedLens: boolean, lensDescription: string|null, camera: Object|null}>}
+ */
+async function getFixedLensInfo(cameraEquipId) {
+  if (!cameraEquipId) {
+    return { isFixedLens: false, lensDescription: null, camera: null };
+  }
+  
+  try {
+    const camera = await getAsync(`
+      SELECT id, brand, model, has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture
+      FROM equip_cameras WHERE id = ?
+    `, [cameraEquipId]);
+    
+    if (!camera || camera.has_fixed_lens !== 1) {
+      return { isFixedLens: false, lensDescription: null, camera };
+    }
+    
+    const lensDescription = formatFixedLensDescription(camera);
+    return { isFixedLens: true, lensDescription, camera };
+  } catch (error) {
+    console.error('[gear-service] getFixedLensInfo failed:', error);
+    return { isFixedLens: false, lensDescription: null, camera: null };
+  }
+}
+
+/**
+ * Clean up roll_gear lens entries for a fixed-lens camera roll
+ * Removes fragmented lens data and ensures only the canonical description exists
+ * 
+ * @param {number} rollId - Roll ID
+ * @param {string} canonicalLens - The correct lens description to keep
+ * @returns {Promise<{removed: number, added: boolean}>}
+ */
+async function cleanupFixedLensGear(rollId, canonicalLens) {
+  if (!rollId || !canonicalLens) {
+    return { removed: 0, added: false };
+  }
+  
+  try {
+    // Get all current lens entries for this roll
+    const existingLenses = await allAsync(
+      'SELECT value FROM roll_gear WHERE roll_id = ? AND type = ?',
+      [rollId, 'lens']
+    );
+    
+    let removed = 0;
+    const canonicalLower = canonicalLens.toLowerCase();
+    
+    // Remove entries that are substrings of or contain partial matches with the canonical
+    for (const { value } of existingLenses) {
+      if (value === canonicalLens) continue; // Keep exact match
+      
+      const valueLower = value.toLowerCase();
+      
+      // Remove if:
+      // 1. Value is a substring of canonical (e.g., "35mm f/3.5" in "Konica bigmini 201 35mm f/3.5")
+      // 2. Canonical is a substring of value (shouldn't happen but handle it)
+      // 3. Value looks like a partial lens spec (contains "mm" pattern but missing camera name)
+      const isSubstring = canonicalLower.includes(valueLower) || valueLower.includes(canonicalLower);
+      const isPartialSpec = /^\d+mm/.test(value) && !value.includes(' '); // "35mm" alone
+      const isSpecWithAperture = /^\d+mm\s*f\/[\d.]+$/i.test(value); // "35mm f/3.5" alone
+      
+      if (isSubstring || isPartialSpec || isSpecWithAperture) {
+        await runAsync(
+          'DELETE FROM roll_gear WHERE roll_id = ? AND type = ? AND value = ?',
+          [rollId, 'lens', value]
+        );
+        removed++;
+      }
+    }
+    
+    // Ensure canonical lens exists
+    const result = await runAsync(
+      'INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?, ?, ?)',
+      [rollId, 'lens', canonicalLens]
+    );
+    const added = result && result.changes > 0;
+    
+    return { removed, added };
+  } catch (error) {
+    console.error('[gear-service] cleanupFixedLensGear failed:', error);
+    return { removed: 0, added: false };
+  }
+}
+
+// ============================================================================
+// GEAR MANAGEMENT FUNCTIONS
+// ============================================================================
+
 /**
  * Add or update gear for a roll with intelligent deduplication
  * - Removes old values that are substrings of new values
@@ -246,6 +371,11 @@ async function deduplicateAllGear() {
 }
 
 module.exports = {
+  // Fixed lens utilities
+  formatFixedLensDescription,
+  getFixedLensInfo,
+  cleanupFixedLensGear,
+  // Gear management
   addOrUpdateGear,
   addGearBatch,
   removeGear,

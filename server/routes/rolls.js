@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Required for prepared statements in batch insert
 const { recomputeRollSequence } = require('../services/roll-service');
-const { addOrUpdateGear } = require('../services/gear-service');
+const { addOrUpdateGear, formatFixedLensDescription, getFixedLensInfo, cleanupFixedLensGear } = require('../services/gear-service');
 const scanExifService = require('../services/scan-exif-service');
 const fs = require('fs');
 const path = require('path');
@@ -117,7 +117,7 @@ router.post('/', (req, res) => {
       // ==============================
       // If the selected camera has a fixed lens, enforce implicit lens:
       // - Set lens_equip_id to NULL (lens is derived from camera)
-      // - Optionally set legacy text for backward compatibility
+      // - Set legacy text to full description: "Brand Model Xmm f/Y"
       // Also look up camera's format for roll inheritance
       let finalLensEquipId = lens_equip_id;
       let finalLensText = lens;
@@ -126,7 +126,7 @@ router.post('/', (req, res) => {
       if (camera_equip_id) {
         try {
           const camRow = await getAsync(`
-            SELECT c.has_fixed_lens, c.fixed_lens_focal_length, c.fixed_lens_max_aperture, f.name as format_name
+            SELECT c.brand, c.model, c.has_fixed_lens, c.fixed_lens_focal_length, c.fixed_lens_max_aperture, f.name as format_name
             FROM equip_cameras c
             LEFT JOIN ref_film_formats f ON c.format_id = f.id
             WHERE c.id = ?
@@ -137,10 +137,10 @@ router.post('/', (req, res) => {
               rollFormat = camRow.format_name;
               console.log(`[CREATE ROLL] Camera format: ${rollFormat}`);
             }
-            // Fixed lens camera: nullify explicit lens, set text for backward compat
+            // Fixed lens camera: nullify explicit lens, set full description for backward compat
             if (camRow.has_fixed_lens === 1) {
               finalLensEquipId = null;
-              finalLensText = `${camRow.fixed_lens_focal_length}mm f/${camRow.fixed_lens_max_aperture}`;
+              finalLensText = formatFixedLensDescription(camRow);
               console.log(`[CREATE ROLL] Fixed lens camera detected. Setting implicit lens: ${finalLensText}`);
             }
           }
@@ -1141,14 +1141,17 @@ router.put('/:id', async (req, res) => {
   // ==============================
   // If the camera being set has a fixed lens, enforce implicit lens:
   // - Set lens_equip_id to NULL
-  // - Set legacy lens text for backward compatibility
+  // - Set legacy lens text to full description: "Brand Model Xmm f/Y"
   if (camera_equip_id !== undefined && camera_equip_id !== null) {
     try {
-      const camRow = await getAsync('SELECT has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture FROM equip_cameras WHERE id = ?', [camera_equip_id]);
+      const camRow = await getAsync(`
+        SELECT brand, model, has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture 
+        FROM equip_cameras WHERE id = ?
+      `, [camera_equip_id]);
       if (camRow && camRow.has_fixed_lens === 1) {
-        // Fixed lens camera: nullify explicit lens, set text for backward compat
+        // Fixed lens camera: nullify explicit lens, set full description for backward compat
         lens_equip_id = null;
-        lens = `${camRow.fixed_lens_focal_length}mm f/${camRow.fixed_lens_max_aperture}`;
+        lens = formatFixedLensDescription(camRow);
         console.log(`[UPDATE ROLL ${id}] Fixed lens camera detected. Setting implicit lens: ${lens}`);
       }
     } catch (camErr) {
@@ -1180,7 +1183,15 @@ router.put('/:id', async (req, res) => {
       
       // Update gear with intelligent deduplication
       if (camera !== undefined) await addOrUpdateGear(id, 'camera', camera).catch(e => console.error('Update camera failed', e));
-      if (lens !== undefined) await addOrUpdateGear(id, 'lens', lens).catch(e => console.error('Update lens failed', e));
+      if (lens !== undefined) {
+        // For fixed lens cameras, clean up fragmented data and ensure canonical format
+        const fixedInfo = await getFixedLensInfo(camera_equip_id);
+        if (fixedInfo.isFixedLens && fixedInfo.lensDescription) {
+          await cleanupFixedLensGear(id, fixedInfo.lensDescription).catch(e => console.error('Cleanup fixed lens gear failed', e));
+        } else {
+          await addOrUpdateGear(id, 'lens', lens).catch(e => console.error('Update lens failed', e));
+        }
+      }
       if (photographer !== undefined) await addOrUpdateGear(id, 'photographer', photographer).catch(e => console.error('Update photographer failed', e));
     }
     if (Array.isArray(locations)) {
@@ -1472,15 +1483,23 @@ router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) =
     }
 
     // Fetch roll defaults for metadata if not provided explicitly
-    // Also apply RAW metadata if available
+    // 注意：对于 RAW 文件，相机信息不写入 camera（camera 是胶片相机）
+    // RAW 文件的数码相机信息写入 source_make/source_model
     const rollMeta = await getAsync('SELECT camera, lens, photographer FROM rolls WHERE id = ?', [rollId]) || { camera: null, lens: null, photographer: null };
-    const finalCamera = photoCamera || (rawMetadata?.camera) || rollMeta.camera || null;
-    const finalLens = photoLens || (rawMetadata?.lens) || rollMeta.lens || null;
+    
+    // 对于 RAW 文件，不要用 RAW 元数据覆盖相机/镜头（那是数码相机，不是胶片相机）
+    const finalCamera = photoCamera || rollMeta.camera || null;
+    const finalLens = photoLens || rollMeta.lens || null;
     const finalPhotographer = photoPhotographer || rollMeta.photographer || null;
 
-    const sql = `INSERT INTO photos (roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path, caption, taken_at, rating, camera, lens, photographer) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`;
-    const result = await runAsync(sql, [rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath, caption, taken_at, rating, finalCamera, finalLens, finalPhotographer]);
-    res.status(201).json({ ok: true, id: result?.lastID, filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, camera: finalCamera, lens: finalLens, photographer: finalPhotographer });
+    // 对于 RAW 文件，将相机信息写入 source_make/source_model（数码来源设备）
+    const sourceMake = isRawFile ? (rawMetadata?.make || null) : null;
+    const sourceModel = isRawFile ? (rawMetadata?.camera || null) : null;
+    const sourceSoftware = isRawFile ? (rawMetadata?.software || null) : null;
+
+    const sql = `INSERT INTO photos (roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path, caption, taken_at, rating, camera, lens, photographer, source_make, source_model, source_software) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+    const result = await runAsync(sql, [rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath, caption, taken_at, rating, finalCamera, finalLens, finalPhotographer, sourceMake, sourceModel, sourceSoftware]);
+    res.status(201).json({ ok: true, id: result?.lastID, filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, camera: finalCamera, lens: finalLens, photographer: finalPhotographer, sourceMake, sourceModel });
 
   } catch (err) {
       console.error('Upload photo error', err);

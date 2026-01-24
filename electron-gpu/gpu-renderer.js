@@ -123,6 +123,11 @@ const FS_GL2 = `#version 300 es
   uniform vec3 u_baseGains; // Linear mode: r,g,b gains
   uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
 
+  // Density Levels (Log domain auto-levels)
+  uniform float u_densityLevelsEnabled; // 0 = disabled, 1 = enabled
+  uniform vec3 u_densityLevelsMin; // R,G,B minimum density values
+  uniform vec3 u_densityLevelsMax; // R,G,B maximum density values
+
   // HSL parameters (8 channels: red, orange, yellow, green, cyan, blue, purple, magenta)
   uniform vec3 u_hslRed;
   uniform vec3 u_hslOrange;
@@ -359,6 +364,47 @@ const FS_GL2 = `#version 300 es
       c = clamp(c, 0.0, 1.0);
     }
     
+    // Density Levels (Log domain auto-levels)
+    // Maps detected [Dmin, Dmax] to standard output range [0, targetRange]
+    // targetRange = 2.2 balances 8-bit output capability (~2.4) with typical film range
+    if (u_densityLevelsEnabled > 0.5) {
+      float minT = 0.001;
+      float log10 = log(10.0);
+      float targetRange = 2.2;
+      
+      // Red channel
+      float Tr = max(c.r, minT);
+      float Dr = -log(Tr) / log10;
+      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+      if (rangeR > 0.001) {
+        float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
+        float DrNew = normR * targetRange;
+        c.r = pow(10.0, -DrNew);
+      }
+      
+      // Green channel
+      float Tg = max(c.g, minT);
+      float Dg = -log(Tg) / log10;
+      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+      if (rangeG > 0.001) {
+        float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
+        float DgNew = normG * targetRange;
+        c.g = pow(10.0, -DgNew);
+      }
+      
+      // Blue channel
+      float Tb = max(c.b, minT);
+      float Db = -log(Tb) / log10;
+      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+      if (rangeB > 0.001) {
+        float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
+        float DbNew = normB * targetRange;
+        c.b = pow(10.0, -DbNew);
+      }
+      
+      c = clamp(c, 0.0, 1.0);
+    }
+    
     // Inversion
     if (u_inverted > 0.5) {
       if (u_logMode > 0.5) {
@@ -466,6 +512,11 @@ const FS_GL1 = `
   uniform float u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
   uniform vec3 u_baseGains; // Linear mode: r,g,b gains
   uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
+
+  // Density Levels (Log domain auto-levels)
+  uniform float u_densityLevelsEnabled; // 0 = disabled, 1 = enabled
+  uniform vec3 u_densityLevelsMin; // R,G,B minimum density values
+  uniform vec3 u_densityLevelsMax; // R,G,B maximum density values
 
   // HSL parameters (8 channels)
   uniform vec3 u_hslRed;
@@ -653,6 +704,47 @@ const FS_GL1 = `
     } else {
       // Linear mode: simple gain multiplication
       c = c * u_baseGains;
+      c = clamp(c, 0.0, 1.0);
+    }
+    
+    // Density Levels (Log domain auto-levels)
+    // Maps detected [Dmin, Dmax] to standard output range [0, targetRange]
+    // targetRange = 2.2 balances 8-bit output capability (~2.4) with typical film range
+    if (u_densityLevelsEnabled > 0.5) {
+      float minT = 0.001;
+      float log10 = log(10.0);
+      float targetRange = 2.2;
+      
+      // Red channel
+      float Tr = max(c.r, minT);
+      float Dr = -log(Tr) / log10;
+      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+      if (rangeR > 0.001) {
+        float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
+        float DrNew = normR * targetRange;
+        c.r = pow(10.0, -DrNew);
+      }
+      
+      // Green channel
+      float Tg = max(c.g, minT);
+      float Dg = -log(Tg) / log10;
+      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+      if (rangeG > 0.001) {
+        float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
+        float DgNew = normG * targetRange;
+        c.g = pow(10.0, -DgNew);
+      }
+      
+      // Blue channel
+      float Tb = max(c.b, minT);
+      float Db = -log(Tb) / log10;
+      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+      if (rangeB > 0.001) {
+        float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
+        float DbNew = normB * targetRange;
+        c.b = pow(10.0, -DbNew);
+      }
+      
       c = clamp(c, 0.0, 1.0);
     }
     
@@ -926,6 +1018,24 @@ function runJob(job) {
       gl.uniform3fv(u_baseGains, new Float32Array(baseGains));
       const u_baseDensity = gl.getUniformLocation(prog, 'u_baseDensity');
       gl.uniform3fv(u_baseDensity, new Float32Array(baseDensity));
+
+      // Density Levels (Log domain auto-levels)
+      const densityLevelsEnabled = (params?.densityLevelsEnabled && baseMode > 0.5) ? 1.0 : 0.0;
+      const densityLevels = params?.densityLevels || { red: { min: 0, max: 3 }, green: { min: 0, max: 3 }, blue: { min: 0, max: 3 } };
+      const u_densityLevelsEnabled = gl.getUniformLocation(prog, 'u_densityLevelsEnabled');
+      gl.uniform1f(u_densityLevelsEnabled, densityLevelsEnabled);
+      const u_densityLevelsMin = gl.getUniformLocation(prog, 'u_densityLevelsMin');
+      gl.uniform3fv(u_densityLevelsMin, new Float32Array([
+        densityLevels.red?.min ?? 0,
+        densityLevels.green?.min ?? 0,
+        densityLevels.blue?.min ?? 0
+      ]));
+      const u_densityLevelsMax = gl.getUniformLocation(prog, 'u_densityLevelsMax');
+      gl.uniform3fv(u_densityLevelsMax, new Float32Array([
+        densityLevels.red?.max ?? 3,
+        densityLevels.green?.max ?? 3,
+        densityLevels.blue?.max ?? 3
+      ]));
 
       // HSL Uniforms
       const hslParams = params?.hslParams || {};

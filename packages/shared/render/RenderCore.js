@@ -110,6 +110,14 @@ class RenderCore {
       baseDensityG: input.baseDensityG ?? 0.0,
       baseDensityB: input.baseDensityB ?? 0.0,
 
+      // 密度域色阶 (Density Levels) - Log 域 AutoLevels
+      densityLevelsEnabled: input.densityLevelsEnabled ?? false,
+      densityLevels: input.densityLevels ?? {
+        red: { min: 0.0, max: 3.0 },
+        green: { min: 0.0, max: 3.0 },
+        blue: { min: 0.0, max: 3.0 }
+      },
+
       // 白平衡
       red: input.red ?? DEFAULT_WB_PARAMS.red,
       green: input.green ?? DEFAULT_WB_PARAMS.green,
@@ -253,6 +261,12 @@ class RenderCore {
       }
     }
 
+    // ②.5 密度域色阶 (Density Levels)
+    // 在密度域进行自动色阶，独立于后处理 AutoLevels
+    if (p.densityLevelsEnabled && p.baseMode === 'log') {
+      [r, g, b] = this._applyDensityLevels(r, g, b);
+    }
+
     // ③ 反转 (Inversion)
     if (p.inverted) {
       r = applyInversion(r, p);
@@ -344,6 +358,19 @@ class RenderCore {
       u_baseMode: p.baseMode === 'log' ? 1.0 : 0.0,
       u_baseGains: [p.baseRed, p.baseGreen, p.baseBlue],  // 线性模式
       u_baseDensity: [p.baseDensityR, p.baseDensityG, p.baseDensityB],  // 对数模式
+
+      // 密度域色阶 (Density Levels)
+      u_densityLevelsEnabled: (p.densityLevelsEnabled && p.baseMode === 'log') ? 1.0 : 0.0,
+      u_densityLevelsMin: [
+        p.densityLevels?.red?.min ?? 0.0,
+        p.densityLevels?.green?.min ?? 0.0,
+        p.densityLevels?.blue?.min ?? 0.0
+      ],
+      u_densityLevelsMax: [
+        p.densityLevels?.red?.max ?? 3.0,
+        p.densityLevels?.green?.max ?? 3.0,
+        p.densityLevels?.blue?.max ?? 3.0
+      ],
 
       // 白平衡
       u_wbGains: wbGains,
@@ -610,6 +637,54 @@ vec3 applySplitTone(vec3 color, float highlightHue, float highlightSat,
 
   _clamp255(v) {
     return Math.max(0, Math.min(255, v));
+  }
+
+  /**
+   * 应用密度域色阶校正
+   * 在密度域进行线性拉伸，将实际密度范围映射到标准输出范围
+   * 
+   * @param {number} r - 红色 (0-255)
+   * @param {number} g - 绿色 (0-255)
+   * @param {number} b - 蓝色 (0-255)
+   * @returns {[number, number, number]} 处理后的 RGB
+   */
+  _applyDensityLevels(r, g, b) {
+    const levels = this.params.densityLevels;
+    if (!levels) return [r, g, b];
+
+    const minT = 0.001;
+    const log10 = Math.log(10);
+    const targetRange = 2.2; // 输出密度范围，匹配 8 位动态范围 (~2.4)
+
+    // 处理每个通道
+    // 将检测到的 [Dmin, Dmax] 映射到标准输出范围 [0, targetRange]
+    const processChannel = (value, channelLevels) => {
+      // 转换到透射率 (0-1)
+      const T = Math.max(value / 255, minT);
+      
+      // 转换到密度域
+      const D = -Math.log(T) / log10;
+      
+      // 计算输入范围
+      const range = channelLevels.max - channelLevels.min;
+      if (range <= 0.001) return value; // 避免除零
+      
+      // 归一化到 [0, 1]，然后映射到目标范围 [0, targetRange]
+      const normalized = Math.max(0, Math.min(1, (D - channelLevels.min) / range));
+      const Dnew = normalized * targetRange;
+      
+      // 转回透射率
+      const Tnew = Math.pow(10, -Dnew);
+      
+      // 转回 0-255
+      return Math.max(0, Math.min(255, Tnew * 255));
+    };
+
+    return [
+      processChannel(r, levels.red),
+      processChannel(g, levels.green),
+      processChannel(b, levels.blue)
+    ];
   }
 
   _hasCurves(curves) {

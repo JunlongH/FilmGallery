@@ -218,6 +218,11 @@ export function processImageWebGL(canvas, image, params = {}) {
     uniform vec3 u_baseGains; // Linear mode: r,g,b gains
     uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
 
+    // Density Levels (Log domain auto-levels)
+    uniform int u_densityLevelsEnabled; // 0 = disabled, 1 = enabled
+    uniform vec3 u_densityLevelsMin; // R,G,B minimum density values
+    uniform vec3 u_densityLevelsMax; // R,G,B maximum density values
+
     // Curve LUTs (1D textures height=1)
     uniform sampler2D u_curveRGB;
     uniform sampler2D u_curveR;
@@ -636,6 +641,48 @@ export function processImageWebGL(canvas, image, params = {}) {
         col = clamp(col, 0.0, 1.0);
       }
 
+      // ②.5 Density Levels (Log domain auto-levels)
+      // Maps detected [Dmin, Dmax] to standard output range [0, targetRange]
+      // targetRange = 2.2 balances 8-bit output capability (~2.4) with typical film range
+      if (u_densityLevelsEnabled == 1) {
+        float minT = 0.001;
+        float log10 = log(10.0);
+        float targetRange = 2.2; // Output density range (matches 8-bit dynamic range)
+        
+        // Red channel
+        float Tr = max(col.r, minT);
+        float Dr = -log(Tr) / log10;
+        float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+        if (rangeR > 0.001) {
+          // Map [Dmin, Dmax] -> [0, targetRange]
+          float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
+          float DrNew = normR * targetRange;
+          col.r = pow(10.0, -DrNew);
+        }
+        
+        // Green channel
+        float Tg = max(col.g, minT);
+        float Dg = -log(Tg) / log10;
+        float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+        if (rangeG > 0.001) {
+          float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
+          float DgNew = normG * targetRange;
+          col.g = pow(10.0, -DgNew);
+        }
+        
+        // Blue channel
+        float Tb = max(col.b, minT);
+        float Db = -log(Tb) / log10;
+        float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+        if (rangeB > 0.001) {
+          float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
+          float DbNew = normB * targetRange;
+          col.b = pow(10.0, -DbNew);
+        }
+        
+        col = clamp(col, 0.0, 1.0);
+      }
+
       // ③ Invert if enabled
       if (u_inverted == 1) {
         vec3 c255 = col * 255.0;
@@ -779,6 +826,10 @@ export function processImageWebGL(canvas, image, params = {}) {
   locs.u_baseMode = gl.getUniformLocation(program, 'u_baseMode');
   locs.u_baseGains = gl.getUniformLocation(program, 'u_baseGains');
   locs.u_baseDensity = gl.getUniformLocation(program, 'u_baseDensity');
+  // Density Levels uniforms (Log domain auto-levels)
+  locs.u_densityLevelsEnabled = gl.getUniformLocation(program, 'u_densityLevelsEnabled');
+  locs.u_densityLevelsMin = gl.getUniformLocation(program, 'u_densityLevelsMin');
+  locs.u_densityLevelsMax = gl.getUniformLocation(program, 'u_densityLevelsMax');
   locs.u_curveRGB = gl.getUniformLocation(program, 'u_curveRGB');
   locs.u_curveR = gl.getUniformLocation(program, 'u_curveR');
   locs.u_curveG = gl.getUniformLocation(program, 'u_curveG');
@@ -865,6 +916,22 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.uniform1i(locs.u_baseMode, baseMode);
   gl.uniform3fv(locs.u_baseGains, new Float32Array(baseGains));
   gl.uniform3fv(locs.u_baseDensity, new Float32Array(baseDensity));
+
+  // Density Levels (Log domain auto-levels)
+  const densityLevelsEnabled = params.densityLevelsEnabled && baseMode === 1 ? 1 : 0;
+  const densityLevels = params.densityLevels || { red: { min: 0, max: 3 }, green: { min: 0, max: 3 }, blue: { min: 0, max: 3 } };
+  gl.uniform1i(locs.u_densityLevelsEnabled, densityLevelsEnabled);
+  gl.uniform3fv(locs.u_densityLevelsMin, new Float32Array([
+    densityLevels.red?.min ?? 0,
+    densityLevels.green?.min ?? 0,
+    densityLevels.blue?.min ?? 0
+  ]));
+  gl.uniform3fv(locs.u_densityLevelsMax, new Float32Array([
+    densityLevels.red?.max ?? 3,
+    densityLevels.green?.max ?? 3,
+    densityLevels.blue?.max ?? 3
+  ]));
+  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting density levels:', { densityLevelsEnabled, densityLevels });
 
   // Curves
   const curves = params.curves;

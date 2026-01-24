@@ -349,6 +349,12 @@ function runSchemaMigration() {
         log(`Presets migration note: ${e.message}`);
       }
 
+      // ========================================
+      // Fix: Repair Fixed Lens Camera Data (2026-01-24)
+      // ========================================
+      // Standardize lens text format for PS cameras: "Brand Model Xmm f/Y"
+      await repairFixedLensData(run, all, log);
+
       // Seed default presets if none exist
       await seedDefaultPresets(run, all, log);
 
@@ -608,4 +614,100 @@ async function seedDefaultPresets(run, all, log) {
   }
 
   log(`Seeded ${defaultPresets.length} default presets.`);
+}
+
+// ============================================================================
+// Fixed Lens Camera Data Repair (2026-01-24)
+// ============================================================================
+// Standardizes lens text format for PS (Point & Shoot) cameras to:
+// "Brand Model Xmm f/Y" (e.g., "Konica bigmini 201 35mm f/3.5")
+// ============================================================================
+async function repairFixedLensData(run, all, log) {
+  log('Checking fixed-lens camera data consistency...');
+
+  try {
+    // Find all rolls with fixed-lens cameras
+    const affectedRolls = await all(`
+      SELECT 
+        r.id as roll_id,
+        r.lens as current_lens,
+        c.brand,
+        c.model,
+        c.fixed_lens_focal_length,
+        c.fixed_lens_max_aperture
+      FROM rolls r
+      JOIN equip_cameras c ON r.camera_equip_id = c.id
+      WHERE c.has_fixed_lens = 1
+    `);
+
+    if (affectedRolls.length === 0) {
+      log('No fixed-lens camera rolls found.');
+      return;
+    }
+
+    let repaired = 0;
+    let gearCleaned = 0;
+
+    for (const roll of affectedRolls) {
+      // Build expected lens description: "Brand Model Xmm f/Y"
+      const focal = roll.fixed_lens_focal_length;
+      const aperture = roll.fixed_lens_max_aperture;
+      
+      if (!focal) continue;
+      
+      const lensSpec = aperture ? `${focal}mm f/${aperture}` : `${focal}mm`;
+      const cameraPrefix = [roll.brand, roll.model].filter(Boolean).join(' ').trim();
+      const expectedLens = cameraPrefix ? `${cameraPrefix} ${lensSpec}` : lensSpec;
+
+      // Update rolls.lens if needed
+      if (roll.current_lens !== expectedLens) {
+        await run('UPDATE rolls SET lens = ? WHERE id = ?', [expectedLens, roll.roll_id]);
+        repaired++;
+      }
+
+      // Clean up roll_gear: remove fragmented entries, ensure canonical exists
+      const existingGear = await all(
+        'SELECT id, value FROM roll_gear WHERE roll_id = ? AND type = ?',
+        [roll.roll_id, 'lens']
+      );
+
+      let hasCanonical = false;
+
+      for (const gear of existingGear) {
+        if (gear.value === expectedLens) {
+          hasCanonical = true;
+          continue;
+        }
+
+        // Check if this is a partial lens spec that should be removed
+        const isPartial = (
+          expectedLens.toLowerCase().includes(gear.value.toLowerCase()) ||
+          /^\d+mm\s*(f\/[\d.]+)?$/i.test(gear.value)
+        );
+
+        if (isPartial) {
+          await run('DELETE FROM roll_gear WHERE id = ?', [gear.id]);
+          gearCleaned++;
+        }
+      }
+
+      // Ensure canonical lens exists
+      if (!hasCanonical) {
+        await run(
+          'INSERT OR IGNORE INTO roll_gear (roll_id, type, value) VALUES (?, ?, ?)',
+          [roll.roll_id, 'lens', expectedLens]
+        );
+      }
+    }
+
+    if (repaired > 0 || gearCleaned > 0) {
+      log(`Fixed-lens data repair: ${repaired} rolls updated, ${gearCleaned} gear entries cleaned.`);
+    } else {
+      log('All fixed-lens data is already consistent.');
+    }
+
+  } catch (e) {
+    log(`Fixed-lens data repair note: ${e.message}`);
+    // Non-fatal - don't throw, just log
+  }
 }

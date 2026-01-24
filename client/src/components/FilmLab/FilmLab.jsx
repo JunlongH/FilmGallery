@@ -94,6 +94,14 @@ export default function FilmLab({
   const [baseDensityG, setBaseDensityG] = useState(0.0);
   const [baseDensityB, setBaseDensityB] = useState(0.0);
 
+  // Density Levels (Log domain auto-levels, independent of post-processing AutoLevels)
+  const [densityLevelsEnabled, setDensityLevelsEnabled] = useState(false);
+  const [densityLevels, setDensityLevels] = useState({
+    red: { min: 0.0, max: 3.0 },
+    green: { min: 0.0, max: 3.0 },
+    blue: { min: 0.0, max: 3.0 }
+  });
+
   // Rotation
   const [rotation, setRotation] = useState(0);
   const [orientation, setOrientation] = useState(0); // 0, 90, 180, 270
@@ -191,6 +199,9 @@ export default function FilmLab({
     return {
       inverted: effectiveInvertedValue, inversionMode, gains, 
       baseMode, baseGains, baseDensity,
+      // Density Levels (Log domain auto-levels)
+      densityLevelsEnabled,
+      densityLevels,
       exposure, contrast, highlights, shadows, whites, blacks,
       curves, lut1, lut2,
       // HSL and Split Toning params for WebGL preview (serialized for cache comparison)
@@ -209,7 +220,9 @@ export default function FilmLab({
       sourceType
     };
   }, [inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
-      temp, tint, red, green, blue, baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, curves, lut1, lut2,
+      temp, tint, red, green, blue, baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, 
+      densityLevelsEnabled, densityLevels,
+      curves, lut1, lut2,
       hslParams, splitToning, filmCurveEnabled, filmCurveProfile,
       rotation, orientation, isCropping, committedCrop, image, sourceType]);
 
@@ -238,6 +251,9 @@ export default function FilmLab({
     baseDensityR,
     baseDensityG,
     baseDensityB,
+    // Density Levels (Log domain auto-levels)
+    densityLevelsEnabled,
+    densityLevels,
     rotation,
     orientation,
     cropRect: committedCrop,
@@ -246,8 +262,9 @@ export default function FilmLab({
     splitToning
   }), [inverted, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, 
       highlights, shadows, whites, blacks, temp, tint, red, green, blue, 
-      baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, rotation, 
-      orientation, committedCrop, curves, hslParams, splitToning]);
+      baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, 
+      densityLevelsEnabled, densityLevels,
+      rotation, orientation, committedCrop, curves, hslParams, splitToning]);
 
   // Pre-calculate geometry for canvas sizing and crop overlay sync
   const geometry = React.useMemo(() => {
@@ -1031,8 +1048,13 @@ export default function FilmLab({
               // webglParams.inverted 已经根据 sourceType 计算过了
                 processImageWebGL(webglCanvas, image, {
                   inverted: webglParams.inverted, inversionMode, gains,
-                  // 片基校正增益 (Pre-Inversion)
+                  // 片基校正 (Pre-Inversion) - 支持线性和对数模式
+                  baseMode: webglParams.baseMode,
                   baseGains: webglParams.baseGains,
+                  baseDensity: webglParams.baseDensity,
+                  // 密度色阶 (Log domain auto-levels)
+                  densityLevelsEnabled: webglParams.densityLevelsEnabled,
+                  densityLevels: webglParams.densityLevels,
                   exposure, contrast, highlights, shadows, whites, blacks,
                   filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
                   rotate: totalRotation,
@@ -1145,8 +1167,12 @@ export default function FilmLab({
           lut2Intensity: lut2?.intensity ?? 1.0,
           inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
           hslParams, splitToning,
-          // 片基校正增益 (Pre-Inversion)
-          baseRed, baseGreen, baseBlue
+          // 片基校正 (Pre-Inversion)
+          baseRed, baseGreen, baseBlue,
+          // 对数域片基校正参数
+          baseMode, baseDensityR, baseDensityG, baseDensityB,
+          // 密度色阶 (Density Levels)
+          densityLevelsEnabled, densityLevels
         });
         core.prepareLUTs();
 
@@ -1434,7 +1460,13 @@ export default function FilmLab({
       lut1Intensity: lut1?.intensity ?? 1.0,
       lut2Intensity: lut2?.intensity ?? 1.0,
       inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
-      hslParams, splitToning
+      hslParams, splitToning,
+      // 片基校正 (Pre-Inversion)
+      baseRed, baseGreen, baseBlue,
+      // 对数域片基校正参数
+      baseMode, baseDensityR, baseDensityG, baseDensityB,
+      // 密度色阶 (Density Levels)
+      densityLevelsEnabled, densityLevels
     });
     core.prepareLUTs();
 
@@ -1533,6 +1565,8 @@ export default function FilmLab({
       baseRed, baseGreen, baseBlue,
       // 对数域片基校正参数
       baseMode, baseDensityR, baseDensityG, baseDensityB,
+      // 密度色阶 (Density Levels)
+      densityLevelsEnabled, densityLevels,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1581,6 +1615,8 @@ export default function FilmLab({
         baseRed, baseGreen, baseBlue,
         // 对数域片基校正参数
         baseMode, baseDensityR, baseDensityG, baseDensityB,
+        // 密度色阶 (Density Levels)
+        densityLevelsEnabled, densityLevels,
         rotation, orientation, cropRect: committedCrop, curves,
         hslParams, splitToning,
         lut1: serializeLut(lut1),
@@ -1658,6 +1694,8 @@ export default function FilmLab({
         baseRed, baseGreen, baseBlue,
         // 对数域片基校正参数
         baseMode, baseDensityR, baseDensityG, baseDensityB,
+        // 密度色阶 (Density Levels)
+        densityLevelsEnabled, densityLevels,
         rotation, orientation,
         filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
         cropRect: committedCrop,
@@ -1800,8 +1838,13 @@ export default function FilmLab({
           inverted: effectiveInvertedValue,
           inversionMode,
           gains,
-          // 片基校正增益 (Pre-Inversion)
+          // 片基校正 (Pre-Inversion) - 支持线性和对数模式
+          baseMode,
           baseGains: [baseRed, baseGreen, baseBlue],
+          baseDensity: [baseDensityR, baseDensityG, baseDensityB],
+          // 密度色阶 (Log domain auto-levels)
+          densityLevelsEnabled,
+          densityLevels,
           exposure,
           contrast,
           highlights,
@@ -1914,6 +1957,8 @@ export default function FilmLab({
       baseRed, baseGreen, baseBlue,
       // 对数域片基校正参数
       baseMode, baseDensityR, baseDensityG, baseDensityB,
+      // 密度色阶 (Density Levels)
+      densityLevelsEnabled, densityLevels,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -2027,6 +2072,129 @@ export default function FilmLab({
       // 不再重置 Temp/Tint，片基校正与场景白平衡独立
       // 用户可以在片基校正后自由调整色温色调
     }
+  };
+
+  /**
+   * 计算密度域直方图并自动检测色阶范围
+   * 在 Base Correction 之后、Inversion 之前的密度域进行
+   */
+  const handleDensityAutoLevels = () => {
+    if (!image) return;
+    pushToHistory();
+
+    // Create temp canvas to read raw pixels
+    const canvas = document.createElement('canvas');
+    const size = 512; // Higher resolution for better accuracy
+    const scale = Math.min(1, size / image.width);
+    canvas.width = Math.round(image.width * scale);
+    canvas.height = Math.round(image.height * scale);
+    
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+
+    // Compute density histogram (0.00 - 3.00, precision 0.01 = 300 bins)
+    const histR = new Array(300).fill(0);
+    const histG = new Array(300).fill(0);
+    const histB = new Array(300).fill(0);
+    const minT = 0.001;
+    const log10 = Math.log(10);
+
+    for (let i = 0; i < data.length; i += 4) {
+      // Normalize to 0-1
+      let r = data[i] / 255;
+      let g = data[i + 1] / 255;
+      let b = data[i + 2] / 255;
+
+      // Apply base correction if in log mode (to match pipeline)
+      if (baseMode === 'log' && (baseDensityR !== 0 || baseDensityG !== 0 || baseDensityB !== 0)) {
+        // Convert to density
+        let Dr = -Math.log(Math.max(r, minT)) / log10;
+        let Dg = -Math.log(Math.max(g, minT)) / log10;
+        let Db = -Math.log(Math.max(b, minT)) / log10;
+        // Subtract base density
+        Dr -= baseDensityR;
+        Dg -= baseDensityG;
+        Db -= baseDensityB;
+        // Convert back to transmittance for density calculation
+        r = Math.pow(10, -Dr);
+        g = Math.pow(10, -Dg);
+        b = Math.pow(10, -Db);
+      }
+
+      // Convert to density domain
+      const Dr = -Math.log(Math.max(r, minT)) / log10;
+      const Dg = -Math.log(Math.max(g, minT)) / log10;
+      const Db = -Math.log(Math.max(b, minT)) / log10;
+
+      // Quantize to histogram bins (0.00 - 3.00)
+      const binR = Math.max(0, Math.min(299, Math.round(Dr * 100)));
+      const binG = Math.max(0, Math.min(299, Math.round(Dg * 100)));
+      const binB = Math.max(0, Math.min(299, Math.round(Db * 100)));
+
+      histR[binR]++;
+      histG[binG]++;
+      histB[binB]++;
+    }
+
+    // Find density levels (0.5% threshold)
+    const findDensityRange = (hist) => {
+      const total = hist.reduce((a, b) => a + b, 0);
+      const threshold = 0.005; // 0.5%
+
+      let cumulative = 0;
+      let min = 0;
+      for (let i = 0; i < 300; i++) {
+        cumulative += hist[i];
+        if (cumulative / total >= threshold) {
+          min = i / 100; // Convert bin to density value
+          break;
+        }
+      }
+
+      cumulative = 0;
+      let max = 3.0;
+      for (let i = 299; i >= 0; i--) {
+        cumulative += hist[i];
+        if (cumulative / total >= threshold) {
+          max = i / 100;
+          break;
+        }
+      }
+
+      // Ensure valid range
+      if (max <= min) {
+        max = min + 0.1;
+      }
+
+      return { min: Math.round(min * 100) / 100, max: Math.round(max * 100) / 100 };
+    };
+
+    const rLevels = findDensityRange(histR);
+    const gLevels = findDensityRange(histG);
+    const bLevels = findDensityRange(histB);
+
+    setDensityLevels({
+      red: rLevels,
+      green: gLevels,
+      blue: bLevels
+    });
+    setDensityLevelsEnabled(true);
+  };
+
+  /**
+   * 重置密度色阶到默认值
+   */
+  const handleResetDensityLevels = () => {
+    pushToHistory();
+    setDensityLevels({
+      red: { min: 0.0, max: 3.0 },
+      green: { min: 0.0, max: 3.0 },
+      blue: { min: 0.0, max: 3.0 }
+    });
+    setDensityLevelsEnabled(false);
   };
 
   const handleCropDone = () => {
@@ -2218,6 +2386,11 @@ export default function FilmLab({
         baseMode={baseMode} setBaseMode={setBaseMode}
         isPickingBase={isPickingBase} setIsPickingBase={setIsPickingBase}
         handleAutoBase={handleAutoBase}
+        // Density Levels (Log domain auto-levels)
+        densityLevelsEnabled={densityLevelsEnabled} setDensityLevelsEnabled={setDensityLevelsEnabled}
+        densityLevels={densityLevels} setDensityLevels={setDensityLevels}
+        handleDensityAutoLevels={handleDensityAutoLevels}
+        handleResetDensityLevels={handleResetDensityLevels}
         isPickingWB={isPickingWB} setIsPickingWB={setIsPickingWB}
         handleAutoColor={handleAutoColor}
         handleUndo={handleUndo} handleRedo={handleRedo} handleReset={handleReset}
