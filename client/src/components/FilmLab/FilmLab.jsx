@@ -83,10 +83,16 @@ export default function FilmLab({
   const [green, setGreen] = useState(1.0);
   const [blue, setBlue] = useState(1.0);
 
-  // Film Base Correction Gains (Pre-Inversion, independent of scene WB)
+  // Film Base Correction (Pre-Inversion, independent of scene WB)
+  // Linear mode (gains) - legacy, compatible with old presets
   const [baseRed, setBaseRed] = useState(1.0);
   const [baseGreen, setBaseGreen] = useState(1.0);
   const [baseBlue, setBaseBlue] = useState(1.0);
+  // Mode and log domain parameters
+  const [baseMode, setBaseMode] = useState('log'); // 'linear' | 'log' - default to log for better accuracy
+  const [baseDensityR, setBaseDensityR] = useState(0.0);
+  const [baseDensityG, setBaseDensityG] = useState(0.0);
+  const [baseDensityB, setBaseDensityB] = useState(0.0);
 
   // Rotation
   const [rotation, setRotation] = useState(0);
@@ -179,10 +185,13 @@ export default function FilmLab({
     const scale = image && image.width ? Math.min(1, PREVIEW_MAX_WIDTH_CLIENT / image.width) : 1;
     // 使用统一的 getEffectiveInverted 函数计算有效反转状态
     const effectiveInvertedValue = getEffectiveInverted(sourceType, inverted);
-    // 片基校正增益 (Pre-Inversion)
+    // 片基校正 (Pre-Inversion) - 支持线性和对数两种模式
     const baseGains = [baseRed, baseGreen, baseBlue];
+    const baseDensity = [baseDensityR, baseDensityG, baseDensityB];
     return {
-      inverted: effectiveInvertedValue, inversionMode, gains, baseGains, exposure, contrast, highlights, shadows, whites, blacks,
+      inverted: effectiveInvertedValue, inversionMode, gains, 
+      baseMode, baseGains, baseDensity,
+      exposure, contrast, highlights, shadows, whites, blacks,
       curves, lut1, lut2,
       // HSL and Split Toning params for WebGL preview (serialized for cache comparison)
       hslParams, splitToning,
@@ -200,7 +209,7 @@ export default function FilmLab({
       sourceType
     };
   }, [inverted, inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
-      temp, tint, red, green, blue, baseRed, baseGreen, baseBlue, curves, lut1, lut2,
+      temp, tint, red, green, blue, baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, curves, lut1, lut2,
       hslParams, splitToning, filmCurveEnabled, filmCurveProfile,
       rotation, orientation, isCropping, committedCrop, image, sourceType]);
 
@@ -221,10 +230,14 @@ export default function FilmLab({
     red,
     green,
     blue,
-    // 片基校正增益 (Pre-Inversion)
+    // 片基校正 (Pre-Inversion) - 支持线性和对数两种模式
+    baseMode,
     baseRed,
     baseGreen,
     baseBlue,
+    baseDensityR,
+    baseDensityG,
+    baseDensityB,
     rotation,
     orientation,
     cropRect: committedCrop,
@@ -233,7 +246,7 @@ export default function FilmLab({
     splitToning
   }), [inverted, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, 
       highlights, shadows, whites, blacks, temp, tint, red, green, blue, 
-      baseRed, baseGreen, baseBlue, rotation, 
+      baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, rotation, 
       orientation, committedCrop, curves, hslParams, splitToning]);
 
   // Pre-calculate geometry for canvas sizing and crop overlay sync
@@ -371,10 +384,14 @@ export default function FilmLab({
     setRed(params.red);
     setGreen(params.green);
     setBlue(params.blue);
-    // 片基校正增益 (Pre-Inversion) - 兼容旧预设默认 1.0
+    // 片基校正 (Pre-Inversion) - 兼容旧预设
+    setBaseMode(params.baseMode ?? 'log');
     setBaseRed(params.baseRed ?? 1.0);
     setBaseGreen(params.baseGreen ?? 1.0);
     setBaseBlue(params.baseBlue ?? 1.0);
+    setBaseDensityR(params.baseDensityR ?? 0.0);
+    setBaseDensityG(params.baseDensityG ?? 0.0);
+    setBaseDensityB(params.baseDensityB ?? 0.0);
     setCurves(JSON.parse(JSON.stringify(params.curves)));
     
     // New Params
@@ -508,10 +525,14 @@ export default function FilmLab({
     setRed(1.0);
     setGreen(1.0);
     setBlue(1.0);
-    // 重置片基校正增益
+    // 重置片基校正
+    setBaseMode('log');
     setBaseRed(1.0);
     setBaseGreen(1.0);
     setBaseBlue(1.0);
+    setBaseDensityR(0.0);
+    setBaseDensityG(0.0);
+    setBaseDensityB(0.0);
     setRotation(0);
     setOrientation(0);
     setCropRect({ x: 0, y: 0, w: 1, h: 1 });
@@ -817,17 +838,38 @@ export default function FilmLab({
     b /= count;
 
     if (isPickingBase) {
-      // Film Base Picker: 采样原始颜色，设置base gains让它变成白色
+      // Film Base Picker: 采样原始颜色，设置base校正让它变成白色
       // 使用独立的 baseRed/Green/Blue 而非标准白平衡
       const safeR = Math.max(1, r);
       const safeG = Math.max(1, g);
       const safeB = Math.max(1, b);
       
       pushToHistory();
-      // 更新片基校正增益（独立于场景白平衡）
-      setBaseRed(255 / safeR);
-      setBaseGreen(255 / safeG);
-      setBaseBlue(255 / safeB);
+      
+      // 根据当前模式设置相应的校正值
+      if (baseMode === 'log') {
+        // 对数域模式：计算并存储密度值
+        const minT = 0.001;
+        const densityR = -Math.log10(Math.max(safeR / 255, minT));
+        const densityG = -Math.log10(Math.max(safeG / 255, minT));
+        const densityB = -Math.log10(Math.max(safeB / 255, minT));
+        
+        setBaseDensityR(densityR);
+        setBaseDensityG(densityG);
+        setBaseDensityB(densityB);
+        // 同时更新线性增益以保持兼容性
+        setBaseRed(255 / safeR);
+        setBaseGreen(255 / safeG);
+        setBaseBlue(255 / safeB);
+      } else {
+        // 线性模式：使用增益
+        setBaseRed(255 / safeR);
+        setBaseGreen(255 / safeG);
+        setBaseBlue(255 / safeB);
+        setBaseDensityR(0.0);
+        setBaseDensityG(0.0);
+        setBaseDensityB(0.0);
+      }
       // 不再修改标准 WB 的 red/green/blue 和 temp/tint
       
       setIsPickingBase(false);
@@ -1489,6 +1531,8 @@ export default function FilmLab({
       inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
       // 片基校正增益 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
+      // 对数域片基校正参数
+      baseMode, baseDensityR, baseDensityG, baseDensityB,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1535,6 +1579,8 @@ export default function FilmLab({
         exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
         // 片基校正增益 (Pre-Inversion)
         baseRed, baseGreen, baseBlue,
+        // 对数域片基校正参数
+        baseMode, baseDensityR, baseDensityG, baseDensityB,
         rotation, orientation, cropRect: committedCrop, curves,
         hslParams, splitToning,
         lut1: serializeLut(lut1),
@@ -1610,6 +1656,8 @@ export default function FilmLab({
         temp, tint, red, green, blue,
         // 片基校正增益 (Pre-Inversion)
         baseRed, baseGreen, baseBlue,
+        // 对数域片基校正参数
+        baseMode, baseDensityR, baseDensityG, baseDensityB,
         rotation, orientation,
         filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
         cropRect: committedCrop,
@@ -1647,6 +1695,8 @@ export default function FilmLab({
       exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
       // 片基校正增益 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
+      // 对数域片基校正参数
+      baseMode, baseDensityR, baseDensityG, baseDensityB,
       rotation, orientation, cropRect: committedCrop, curves, sourceType 
     };
     // TIFF16 or BOTH use server render-positive endpoint for high bit depth / parity
@@ -1862,6 +1912,8 @@ export default function FilmLab({
       inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
       // 片基校正增益 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
+      // 对数域片基校正参数
+      baseMode, baseDensityR, baseDensityG, baseDensityB,
       hslParams, splitToning
     });
     core.prepareLUTs();
@@ -1938,17 +1990,39 @@ export default function FilmLab({
       const gAvg = gSum / count;
       const bAvg = bSum / count;
 
-      // Apply Base Correction (Gain = 255 / BaseColor)
-      // This maps the base color to White (255,255,255)
+      // Apply Base Correction
       // 使用独立的 baseRed/Green/Blue 而非标准白平衡，避免被后续 Temp/Tint 调整覆盖
       const safeR = Math.max(1, rAvg);
       const safeG = Math.max(1, gAvg);
       const safeB = Math.max(1, bAvg);
       
-      // 更新片基校正增益（独立于场景白平衡）
-      setBaseRed(255 / safeR);
-      setBaseGreen(255 / safeG);
-      setBaseBlue(255 / safeB);
+      // 根据当前模式设置相应的校正值
+      if (baseMode === 'log') {
+        // 对数域模式：计算并存储密度值
+        // D = -log10(T), T = value/255
+        const minT = 0.001; // 避免 log(0)
+        const densityR = -Math.log10(Math.max(safeR / 255, minT));
+        const densityG = -Math.log10(Math.max(safeG / 255, minT));
+        const densityB = -Math.log10(Math.max(safeB / 255, minT));
+        
+        setBaseDensityR(densityR);
+        setBaseDensityG(densityG);
+        setBaseDensityB(densityB);
+        // 同时更新线性增益以保持兼容性
+        setBaseRed(255 / safeR);
+        setBaseGreen(255 / safeG);
+        setBaseBlue(255 / safeB);
+      } else {
+        // 线性模式：使用增益 (Gain = 255 / BaseColor)
+        // This maps the base color to White (255,255,255)
+        setBaseRed(255 / safeR);
+        setBaseGreen(255 / safeG);
+        setBaseBlue(255 / safeB);
+        // 清零密度值
+        setBaseDensityR(0.0);
+        setBaseDensityG(0.0);
+        setBaseDensityB(0.0);
+      }
       
       // 不再重置 Temp/Tint，片基校正与场景白平衡独立
       // 用户可以在片基校正后自由调整色温色调
@@ -2141,6 +2215,7 @@ export default function FilmLab({
         filmCurveEnabled={filmCurveEnabled} setFilmCurveEnabled={setFilmCurveEnabled}
         filmCurveProfile={filmCurveProfile} setFilmCurveProfile={setFilmCurveProfile}
         filmCurveProfiles={filmCurveProfiles} setFilmCurveProfiles={setFilmCurveProfiles}
+        baseMode={baseMode} setBaseMode={setBaseMode}
         isPickingBase={isPickingBase} setIsPickingBase={setIsPickingBase}
         handleAutoBase={handleAutoBase}
         isPickingWB={isPickingWB} setIsPickingWB={setIsPickingWB}

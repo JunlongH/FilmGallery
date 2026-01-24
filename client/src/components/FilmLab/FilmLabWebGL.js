@@ -213,8 +213,10 @@ export function processImageWebGL(canvas, image, params = {}) {
     uniform float u_filmCurveDMin;
     uniform float u_filmCurveDMax;
 
-    // Film Base Correction Gains (Pre-Inversion)
-    uniform vec3 u_baseGains;
+    // Film Base Correction (Pre-Inversion)
+    uniform int u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
+    uniform vec3 u_baseGains; // Linear mode: r,g,b gains
+    uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
 
     // Curve LUTs (1D textures height=1)
     uniform sampler2D u_curveRGB;
@@ -602,10 +604,37 @@ export function processImageWebGL(canvas, image, params = {}) {
       }
 
       // ② Base Correction - neutralize film base color
-      // Apply gains to map orange/brown base to white
-      // 始终应用，让用户在负片状态下就能看到效果
-      col = col * u_baseGains;
-      col = clamp(col, 0.0, 1.0);
+      // Supports two modes: linear (gains) or log (density subtraction)
+      if (u_baseMode == 1) {
+        // Log mode: density domain subtraction (more accurate)
+        // D = -log10(T), then subtract base density, then convert back
+        float minT = 0.001;
+        float log10 = log(10.0);
+        
+        // Red channel
+        float Tr = max(col.r, minT);
+        float Dr = -log(Tr) / log10;
+        float Dr_corrected = Dr - u_baseDensity.r;
+        col.r = pow(10.0, -Dr_corrected);
+        
+        // Green channel
+        float Tg = max(col.g, minT);
+        float Dg = -log(Tg) / log10;
+        float Dg_corrected = Dg - u_baseDensity.g;
+        col.g = pow(10.0, -Dg_corrected);
+        
+        // Blue channel
+        float Tb = max(col.b, minT);
+        float Db = -log(Tb) / log10;
+        float Db_corrected = Db - u_baseDensity.b;
+        col.b = pow(10.0, -Db_corrected);
+        
+        col = clamp(col, 0.0, 1.0);
+      } else {
+        // Linear mode: simple gain multiplication (legacy, compatible with old presets)
+        col = col * u_baseGains;
+        col = clamp(col, 0.0, 1.0);
+      }
 
       // ③ Invert if enabled
       if (u_inverted == 1) {
@@ -746,8 +775,10 @@ export function processImageWebGL(canvas, image, params = {}) {
   locs.u_filmCurveGamma = gl.getUniformLocation(program, 'u_filmCurveGamma');
   locs.u_filmCurveDMin = gl.getUniformLocation(program, 'u_filmCurveDMin');
   locs.u_filmCurveDMax = gl.getUniformLocation(program, 'u_filmCurveDMax');
-  // Base Correction uniform (Pre-Inversion)
+  // Base Correction uniforms (Pre-Inversion)
+  locs.u_baseMode = gl.getUniformLocation(program, 'u_baseMode');
   locs.u_baseGains = gl.getUniformLocation(program, 'u_baseGains');
+  locs.u_baseDensity = gl.getUniformLocation(program, 'u_baseDensity');
   locs.u_curveRGB = gl.getUniformLocation(program, 'u_curveRGB');
   locs.u_curveR = gl.getUniformLocation(program, 'u_curveR');
   locs.u_curveG = gl.getUniformLocation(program, 'u_curveG');
@@ -825,10 +856,15 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.uniform1f(locs.u_filmCurveDMin, params.filmCurveDMin ?? 0.1);
   gl.uniform1f(locs.u_filmCurveDMax, params.filmCurveDMax ?? 3.0);
 
-  // Base Correction Gains (Pre-Inversion)
+  // Base Correction (Pre-Inversion)
+  // Support both linear (gains) and log (density) modes
+  const baseMode = params.baseMode === 'log' ? 1 : 0;
   const baseGains = params.baseGains || [1.0, 1.0, 1.0];
-  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting u_baseGains:', baseGains);
+  const baseDensity = params.baseDensity || [0.0, 0.0, 0.0];
+  if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting base correction:', { baseMode, baseGains, baseDensity });
+  gl.uniform1i(locs.u_baseMode, baseMode);
   gl.uniform3fv(locs.u_baseGains, new Float32Array(baseGains));
+  gl.uniform3fv(locs.u_baseDensity, new Float32Array(baseDensity));
 
   // Curves
   const curves = params.curves;

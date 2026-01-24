@@ -27,7 +27,7 @@ const { DEFAULT_CURVES, DEFAULT_WB_PARAMS } = require('../filmLabConstants');
 const { buildToneLUT } = require('../filmLabToneLUT');
 const { buildCurveLUT } = require('../filmLabCurves');
 const { computeWBGains } = require('../filmLabWhiteBalance');
-const { applyInversion } = require('../filmLabInversion');
+const { applyInversion, applyLogBaseCorrectionRGB, applyLinearBaseCorrectionRGB } = require('../filmLabInversion');
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../filmLabCurve');
 const { applyHSL, DEFAULT_HSL_PARAMS, isDefaultHSL } = require('../filmLabHSL');
 const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone } = require('../filmLabSplitTone');
@@ -99,10 +99,16 @@ class RenderCore {
       filmCurveDMin: input.filmCurveDMin ?? DEFAULT_FILM_CURVE.dMin,
       filmCurveDMax: input.filmCurveDMax ?? DEFAULT_FILM_CURVE.dMax,
 
-      // 片基校正增益 (Pre-Inversion, 独立于场景白平衡)
+      // 片基校正 (Pre-Inversion, 独立于场景白平衡)
+      // 线性模式参数
       baseRed: input.baseRed ?? 1.0,
       baseGreen: input.baseGreen ?? 1.0,
       baseBlue: input.baseBlue ?? 1.0,
+      // 对数域模式参数
+      baseMode: input.baseMode ?? 'linear',  // 'linear' | 'log'
+      baseDensityR: input.baseDensityR ?? 0.0,
+      baseDensityG: input.baseDensityG ?? 0.0,
+      baseDensityB: input.baseDensityB ?? 0.0,
 
       // 白平衡
       red: input.red ?? DEFAULT_WB_PARAMS.red,
@@ -234,14 +240,17 @@ class RenderCore {
 
     // ② 片基校正 (Base Correction)
     // 将负片片基颜色中和为白色
-    // 始终应用，让用户在负片状态下就能看到效果
-    if (p.baseRed !== 1.0 || p.baseGreen !== 1.0 || p.baseBlue !== 1.0) {
-      r *= p.baseRed;
-      g *= p.baseGreen;
-      b *= p.baseBlue;
-      r = this._clamp255(r);
-      g = this._clamp255(g);
-      b = this._clamp255(b);
+    // 支持两种模式：线性域乘法 (linear) 或 对数域减法 (log)
+    if (p.baseMode === 'log') {
+      // 对数域减法：在密度域进行校正，更精确
+      if (p.baseDensityR !== 0 || p.baseDensityG !== 0 || p.baseDensityB !== 0) {
+        [r, g, b] = applyLogBaseCorrectionRGB(r, g, b, p.baseDensityR, p.baseDensityG, p.baseDensityB);
+      }
+    } else {
+      // 线性域乘法：传统方式，兼容旧预设
+      if (p.baseRed !== 1.0 || p.baseGreen !== 1.0 || p.baseBlue !== 1.0) {
+        [r, g, b] = applyLinearBaseCorrectionRGB(r, g, b, p.baseRed, p.baseGreen, p.baseBlue);
+      }
     }
 
     // ③ 反转 (Inversion)
@@ -331,8 +340,10 @@ class RenderCore {
       u_filmCurveDMin: p.filmCurveDMin,
       u_filmCurveDMax: p.filmCurveDMax,
 
-      // 片基校正增益 (Pre-Inversion)
-      u_baseGains: [p.baseRed, p.baseGreen, p.baseBlue],
+      // 片基校正 (Pre-Inversion)
+      u_baseMode: p.baseMode === 'log' ? 1.0 : 0.0,
+      u_baseGains: [p.baseRed, p.baseGreen, p.baseBlue],  // 线性模式
+      u_baseDensity: [p.baseDensityR, p.baseDensityG, p.baseDensityB],  // 对数模式
 
       // 白平衡
       u_wbGains: wbGains,

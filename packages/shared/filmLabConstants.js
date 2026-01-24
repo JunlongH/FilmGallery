@@ -49,6 +49,23 @@ const DEFAULT_BASE_GAINS = {
   baseBlue: 1.0,
 };
 
+/** 默认片基校正模式和密度值 (对数域校正) */
+const DEFAULT_BASE_CORRECTION = {
+  baseMode: 'linear',     // 'linear' | 'log' - 片基校正模式
+  baseDensityR: 0.0,      // 红色通道片基密度 (对数域)
+  baseDensityG: 0.0,      // 绿色通道片基密度 (对数域)
+  baseDensityB: 0.0,      // 蓝色通道片基密度 (对数域)
+};
+
+/**
+ * 反转模式显示名称映射
+ * 用于 UI 显示，保持代码中使用 'linear'/'log' 值不变
+ */
+const INVERSION_MODE_LABELS = {
+  linear: 'Linear',       // 标准线性反转
+  log: 'Soft',           // 对数压缩反转 (原 Log)，保留更多阴影细节
+};
+
 /** 默认白平衡增益限制 */
 const WB_GAIN_LIMITS = {
   min: 0.05,
@@ -163,6 +180,8 @@ module.exports = {
   DEFAULT_TONE_PARAMS,
   DEFAULT_WB_PARAMS,
   DEFAULT_BASE_GAINS,
+  DEFAULT_BASE_CORRECTION,
+  INVERSION_MODE_LABELS,
   DEFAULT_INVERSION_PARAMS,
   DEFAULT_CURVES,
   DEFAULT_CROP_RECT,

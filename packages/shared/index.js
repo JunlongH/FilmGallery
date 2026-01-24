@@ -104,6 +104,25 @@ module.exports = {
   buildInversionLUT: inversion.buildInversionLUT,
   
   // ============================================================================
+  // 片基校正 (对数域/线性域)
+  // ============================================================================
+  
+  /** 计算片基密度 (从采样 RGB) */
+  calculateBaseDensity: inversion.calculateBaseDensity,
+  
+  /** 应用对数域片基校正 (单通道) */
+  applyLogBaseCorrection: inversion.applyLogBaseCorrection,
+  
+  /** 应用对数域片基校正 (RGB) */
+  applyLogBaseCorrectionRGB: inversion.applyLogBaseCorrectionRGB,
+  
+  /** 应用线性域片基校正 (单通道) */
+  applyLinearBaseCorrection: inversion.applyLinearBaseCorrection,
+  
+  /** 应用线性域片基校正 (RGB) */
+  applyLinearBaseCorrectionRGB: inversion.applyLinearBaseCorrectionRGB,
+  
+  // ============================================================================
   // 胶片曲线 (Film Curve - H&D 密度模型)
   // ============================================================================
   
@@ -138,6 +157,8 @@ module.exports = {
   DEFAULT_TONE_PARAMS: constants.DEFAULT_TONE_PARAMS,
   DEFAULT_WB_PARAMS: constants.DEFAULT_WB_PARAMS,
   DEFAULT_BASE_GAINS: constants.DEFAULT_BASE_GAINS,
+  DEFAULT_BASE_CORRECTION: constants.DEFAULT_BASE_CORRECTION,
+  INVERSION_MODE_LABELS: constants.INVERSION_MODE_LABELS,
   DEFAULT_INVERSION_PARAMS: constants.DEFAULT_INVERSION_PARAMS,
   DEFAULT_CURVES: constants.DEFAULT_CURVES,
   DEFAULT_CROP_RECT: constants.DEFAULT_CROP_RECT,

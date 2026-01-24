@@ -118,8 +118,10 @@ const FS_GL2 = `#version 300 es
   uniform float u_filmCurveDMin;
   uniform float u_filmCurveDMax;
 
-  // Film Base Correction Gains (Pre-Inversion)
-  uniform vec3 u_baseGains;
+  // Film Base Correction (Pre-Inversion)
+  uniform float u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
+  uniform vec3 u_baseGains; // Linear mode: r,g,b gains
+  uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
 
   // HSL parameters (8 channels: red, orange, yellow, green, cyan, blue, purple, magenta)
   uniform vec3 u_hslRed;
@@ -332,9 +334,30 @@ const FS_GL2 = `#version 300 es
     }
     
     // Base Correction - neutralize film base color
-    // 始终应用，让用户在负片状态下就能看到效果
-    c = c * u_baseGains;
-    c = clamp(c, 0.0, 1.0);
+    // Supports two modes: linear (gains) or log (density subtraction)
+    if (u_baseMode > 0.5) {
+      // Log mode: density domain subtraction (more accurate)
+      float minT = 0.001;
+      float log10 = log(10.0);
+      
+      float Tr = max(c.r, minT);
+      float Dr = -log(Tr) / log10;
+      c.r = pow(10.0, -(Dr - u_baseDensity.r));
+      
+      float Tg = max(c.g, minT);
+      float Dg = -log(Tg) / log10;
+      c.g = pow(10.0, -(Dg - u_baseDensity.g));
+      
+      float Tb = max(c.b, minT);
+      float Db = -log(Tb) / log10;
+      c.b = pow(10.0, -(Db - u_baseDensity.b));
+      
+      c = clamp(c, 0.0, 1.0);
+    } else {
+      // Linear mode: simple gain multiplication
+      c = c * u_baseGains;
+      c = clamp(c, 0.0, 1.0);
+    }
     
     // Inversion
     if (u_inverted > 0.5) {
@@ -439,8 +462,10 @@ const FS_GL1 = `
   uniform float u_filmCurveDMin;
   uniform float u_filmCurveDMax;
 
-  // Film Base Correction Gains (Pre-Inversion)
-  uniform vec3 u_baseGains;
+  // Film Base Correction (Pre-Inversion)
+  uniform float u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
+  uniform vec3 u_baseGains; // Linear mode: r,g,b gains
+  uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
 
   // HSL parameters (8 channels)
   uniform vec3 u_hslRed;
@@ -606,9 +631,30 @@ const FS_GL1 = `
     }
     
     // Base Correction - neutralize film base color
-    // 始终应用，让用户在负片状态下就能看到效果
-    c = c * u_baseGains;
-    c = clamp(c, 0.0, 1.0);
+    // Supports two modes: linear (gains) or log (density subtraction)
+    if (u_baseMode > 0.5) {
+      // Log mode: density domain subtraction (more accurate)
+      float minT = 0.001;
+      float log10 = log(10.0);
+      
+      float Tr = max(c.r, minT);
+      float Dr = -log(Tr) / log10;
+      c.r = pow(10.0, -(Dr - u_baseDensity.r));
+      
+      float Tg = max(c.g, minT);
+      float Dg = -log(Tg) / log10;
+      c.g = pow(10.0, -(Dg - u_baseDensity.g));
+      
+      float Tb = max(c.b, minT);
+      float Db = -log(Tb) / log10;
+      c.b = pow(10.0, -(Db - u_baseDensity.b));
+      
+      c = clamp(c, 0.0, 1.0);
+    } else {
+      // Linear mode: simple gain multiplication
+      c = c * u_baseGains;
+      c = clamp(c, 0.0, 1.0);
+    }
     
     if (u_inverted > 0.5) {
       if (u_logMode > 0.5) {
@@ -868,10 +914,18 @@ function runJob(job) {
       const u_filmCurveDMax = gl.getUniformLocation(prog, 'u_filmCurveDMax');
       gl.uniform1f(u_filmCurveDMax, (params?.filmCurveDMax ?? 3.0));
 
-      // Base Correction Gains (Pre-Inversion)
+      // Base Correction (Pre-Inversion)
+      // Support both linear (gains) and log (density) modes
+      const baseMode = params?.baseMode === 'log' ? 1.0 : 0.0;
       const baseGains = [params?.baseRed ?? 1.0, params?.baseGreen ?? 1.0, params?.baseBlue ?? 1.0];
+      const baseDensity = [params?.baseDensityR ?? 0.0, params?.baseDensityG ?? 0.0, params?.baseDensityB ?? 0.0];
+      
+      const u_baseMode = gl.getUniformLocation(prog, 'u_baseMode');
+      gl.uniform1f(u_baseMode, baseMode);
       const u_baseGains = gl.getUniformLocation(prog, 'u_baseGains');
       gl.uniform3fv(u_baseGains, new Float32Array(baseGains));
+      const u_baseDensity = gl.getUniformLocation(prog, 'u_baseDensity');
+      gl.uniform3fv(u_baseDensity, new Float32Array(baseDensity));
 
       // HSL Uniforms
       const hslParams = params?.hslParams || {};

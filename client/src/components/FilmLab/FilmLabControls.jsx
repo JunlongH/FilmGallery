@@ -259,6 +259,7 @@ export default function FilmLabControls({
   filmCurveEnabled, setFilmCurveEnabled,
   filmCurveProfile, setFilmCurveProfile,
   filmCurveProfiles, setFilmCurveProfiles,
+  baseMode, setBaseMode,
   isPickingBase, setIsPickingBase,
   handleAutoBase,
   isPickingWB, setIsPickingWB,
@@ -455,14 +456,16 @@ export default function FilmLabControls({
                   fontSize: 10, padding: '2px 6px', border: 'none', borderRadius: 2, cursor: 'pointer',
                   background: inversionMode === 'linear' ? '#444' : 'transparent', color: inversionMode === 'linear' ? '#fff' : '#666'
                 }}
-              >LIN</button>
+                title="Standard linear inversion"
+              >Linear</button>
               <button 
                 onClick={() => { pushToHistory(); setInversionMode('log'); }}
                 style={{ 
                   fontSize: 10, padding: '2px 6px', border: 'none', borderRadius: 2, cursor: 'pointer',
                   background: inversionMode === 'log' ? '#444' : 'transparent', color: inversionMode === 'log' ? '#fff' : '#666'
                 }}
-              >LOG</button>
+                title="Soft logarithmic inversion - preserves more shadow detail"
+              >Soft</button>
             </div>
           )}
         </div>
@@ -495,7 +498,44 @@ export default function FilmLabControls({
         
         {/* Base Correction Tools */}
         <div style={{ marginBottom: 8, borderTop: '1px solid #333', paddingTop: 8 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', marginBottom: 4 }}>FILM BASE</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}>FILM BASE</span>
+            {/* Base Mode Selector */}
+            <div style={{ display: 'flex', gap: 2 }}>
+              <button
+                onClick={() => setBaseMode && setBaseMode('linear')}
+                title="Linear: Traditional multiplicative gain correction"
+                style={{
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  background: baseMode === 'linear' ? '#1565c0' : '#333',
+                  border: '1px solid',
+                  borderColor: baseMode === 'linear' ? '#2196f3' : '#444',
+                  borderRadius: 3,
+                  color: baseMode === 'linear' ? '#fff' : '#999',
+                  cursor: 'pointer',
+                }}
+              >
+                Linear
+              </button>
+              <button
+                onClick={() => setBaseMode && setBaseMode('log')}
+                title="Log: Physically accurate density-domain correction (Beer-Lambert law)"
+                style={{
+                  padding: '2px 6px',
+                  fontSize: 10,
+                  background: baseMode === 'log' ? '#1565c0' : '#333',
+                  border: '1px solid',
+                  borderColor: baseMode === 'log' ? '#2196f3' : '#444',
+                  borderRadius: 3,
+                  color: baseMode === 'log' ? '#fff' : '#999',
+                  cursor: 'pointer',
+                }}
+              >
+                Log
+              </button>
+            </div>
+          </div>
           <div style={{ display: 'flex', gap: 4 }}>
             <button 
               className="iv-btn"

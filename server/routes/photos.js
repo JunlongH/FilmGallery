@@ -625,6 +625,11 @@ router.post('/:id/export-positive', async (req, res) => {
   const baseRed = Number.isFinite(p.baseRed) ? p.baseRed : 1.0;
   const baseGreen = Number.isFinite(p.baseGreen) ? p.baseGreen : 1.0;
   const baseBlue = Number.isFinite(p.baseBlue) ? p.baseBlue : 1.0;
+  // 片基校正模式和密度值 (对数域校正)
+  const baseMode = p.baseMode === 'log' ? 'log' : 'linear';
+  const baseDensityR = Number.isFinite(p.baseDensityR) ? p.baseDensityR : 0.0;
+  const baseDensityG = Number.isFinite(p.baseDensityG) ? p.baseDensityG : 0.0;
+  const baseDensityB = Number.isFinite(p.baseDensityB) ? p.baseDensityB : 0.0;
   const rotation = Number.isFinite(p.rotation) ? p.rotation : 0; // arbitrary degrees
   const orientation = Number.isFinite(p.orientation) ? p.orientation : 0; // multiples of 90 from UI
   
@@ -714,6 +719,7 @@ router.post('/:id/export-positive', async (req, res) => {
       red: redGain, green: greenGain, blue: blueGain,
       // 片基校正增益 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
+      baseMode, baseDensityR, baseDensityG, baseDensityB,
       temp, tint,
       lut1: lut1Data,
       lut2: lut2Data,
@@ -866,6 +872,11 @@ router.post('/:id/render-positive', async (req, res) => {
   const baseRed = Number.isFinite(p.baseRed) ? p.baseRed : 1.0;
   const baseGreen = Number.isFinite(p.baseGreen) ? p.baseGreen : 1.0;
   const baseBlue = Number.isFinite(p.baseBlue) ? p.baseBlue : 1.0;
+  // 片基校正模式和密度值 (对数域校正)
+  const baseMode = p.baseMode === 'log' ? 'log' : 'linear';
+  const baseDensityR = Number.isFinite(p.baseDensityR) ? p.baseDensityR : 0.0;
+  const baseDensityG = Number.isFinite(p.baseDensityG) ? p.baseDensityG : 0.0;
+  const baseDensityB = Number.isFinite(p.baseDensityB) ? p.baseDensityB : 0.0;
 
   try {
     const row = await getAsync('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [id]);
@@ -903,6 +914,7 @@ router.post('/:id/render-positive', async (req, res) => {
       red: redGain, green: greenGain, blue: blueGain,
       // 片基校正增益 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
+      baseMode, baseDensityR, baseDensityG, baseDensityB,
       temp, tint,
       inverted, inversionMode,
       filmCurveEnabled, filmCurveProfile,
