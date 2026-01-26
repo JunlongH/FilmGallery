@@ -639,30 +639,6 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     }
   }, [newCountry, countries, citiesByCountry]);
 
-  // Handle lens selection from dropdown - auto-fill focal_length for prime lenses
-  // Store lens.name (database original) instead of displayName to avoid creating duplicate lenses
-  const handleLensSelect = (lensDisplayName) => {
-    if (!lensDisplayName) {
-      setSelectedLens('');
-      return;
-    }
-    
-    // Find the lens object in native or adapted lenses
-    const lens = [...nativeLenses, ...adaptedLenses].find(l => l.displayName === lensDisplayName);
-    if (lens) {
-      // Store the original database name, not displayName
-      setSelectedLens(lens.name || lensDisplayName);
-      // Check if prime lens (focal_length_min === focal_length_max)
-      const isPrime = lens.focal_length_min && (!lens.focal_length_max || lens.focal_length_min === lens.focal_length_max);
-      if (isPrime) {
-        setNewFocalLength(String(lens.focal_length_min));
-      }
-    } else {
-      // Custom/fallback lens - use as-is
-      setSelectedLens(lensDisplayName);
-    }
-  };
-
   const handleAdd = () => {
     if (!newDate || !newCount || Number(newCount) <= 0) return;
     // For fixed lens cameras, always use the fixed lens text

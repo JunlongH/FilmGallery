@@ -1,18 +1,10 @@
 /**
- * Equipment Management API Routes
+ * Equipment Management API Routes (Refactored)
+ * 
+ * Thin controller layer - business logic delegated to equipment-service.js
  * 
  * Handles CRUD operations for:
- * - Cameras (equip_cameras)
- * - Lenses (equip_lenses)
- * - Flashes (equip_flashes)
- * - Scanners (equip_scanners)
- * - Film Backs (equip_film_backs)
- * - Film Formats (ref_film_formats)
- * 
- * Also provides:
- * - Mount compatibility filtering
- * - Equipment suggestions
- * - Image upload for equipment
+ * - Cameras, Lenses, Flashes, Scanners, Film Backs, Film Formats
  */
 
 const express = require('express');
@@ -22,6 +14,9 @@ const path = require('path');
 const fs = require('fs');
 const { uploadsDir } = require('../config/paths');
 const { CAMERA_TYPES, LENS_MOUNTS, SCANNER_TYPES, FILM_BACK_SUB_FORMATS, FILM_BACK_MOUNTS, FILM_FORMATS } = require('../utils/equipment-migration');
+
+// Service layer
+const equipmentService = require('../services/equipment-service');
 
 // Ensure equipment images directory exists
 const equipImagesDir = path.join(uploadsDir, 'equipment');
@@ -38,10 +33,12 @@ const storage = multer.diskStorage({
     cb(null, name);
   }
 });
-const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
+const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } });
 
-// Import centralized db-helpers (removed duplicate definitions)
-const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
+// Error wrapper for async routes
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
 
 // ========================================
 // CONSTANTS
@@ -56,1008 +53,134 @@ router.get('/constants', (req, res) => {
     focusTypes: ['manual', 'auto', 'hybrid'],
     conditions: ['mint', 'excellent', 'good', 'fair', 'poor'],
     statuses: ['owned', 'sold', 'wishlist', 'borrowed'],
-    // New specification constants (2026-01-12)
     meterTypes: ['none', 'match-needle', 'center-weighted', 'matrix', 'spot', 'evaluative'],
     shutterTypes: ['focal-plane', 'leaf', 'electronic', 'hybrid'],
     magnificationRatios: ['1:1', '1:2', '1:3', '1:4', '1:5', '1:10'],
-    // Scanner-specific constants
     sensorTypes: ['CCD', 'CMOS', 'PMT'],
     bitDepths: [8, 12, 14, 16, 24, 48],
-    // Film back constants (2026-01-17)
     filmBackSubFormats: FILM_BACK_SUB_FORMATS,
     filmBackMounts: FILM_BACK_MOUNTS
   });
 });
 
 // ========================================
-// FILM FORMATS
+// GENERIC CRUD FACTORY
 // ========================================
 
-router.get('/formats', async (req, res) => {
-  try {
-    const formats = await allAsync(`SELECT * FROM ref_film_formats ORDER BY name`);
-    res.json(formats);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching formats:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/formats', async (req, res) => {
-  try {
-    const { name, description, frame_size } = req.body;
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-
-    const result = await runAsync(
-      `INSERT INTO ref_film_formats (name, description, frame_size) VALUES (?, ?, ?)`,
-      [name, description || null, frame_size || null]
-    );
+/**
+ * Create standard CRUD routes for an equipment type
+ */
+function createCrudRoutes(type, extraRoutes = {}) {
+  const typePath = type;
+  
+  // LIST
+  router.get(`/${typePath}`, asyncHandler(async (req, res) => {
+    const { includeDeleted, ...filters } = req.query;
     
-    const format = await getAsync(`SELECT * FROM ref_film_formats WHERE id = ?`, [result.lastID]);
-    res.status(201).json(format);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error creating format:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========================================
-// CAMERAS
-// ========================================
-
-router.get('/cameras', async (req, res) => {
-  try {
-    const { mount, type, format_id, status, includeDeleted } = req.query;
+    // Convert string 'true'/'false' to boolean
+    const parsedFilters = {};
+    for (const [key, value] of Object.entries(filters)) {
+      parsedFilters[key] = value;
+    }
+    parsedFilters.includeDeleted = includeDeleted === 'true';
     
-    let sql = `
-      SELECT c.*, f.name as format_name
-      FROM equip_cameras c
-      LEFT JOIN ref_film_formats f ON c.format_id = f.id
-      WHERE 1=1
-    `;
-    const params = [];
-
-    if (!includeDeleted) {
-      sql += ` AND c.deleted_at IS NULL`;
-    }
-    if (mount) {
-      sql += ` AND c.mount = ?`;
-      params.push(mount);
-    }
-    if (type) {
-      sql += ` AND c.type = ?`;
-      params.push(type);
-    }
-    if (format_id) {
-      sql += ` AND c.format_id = ?`;
-      params.push(format_id);
-    }
-    if (status) {
-      sql += ` AND c.status = ?`;
-      params.push(status);
-    }
-
-    sql += ` ORDER BY c.brand, c.name`;
-
-    const cameras = await allAsync(sql, params);
-    res.json(cameras);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching cameras:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/cameras/:id', async (req, res) => {
-  try {
-    const camera = await getAsync(`
-      SELECT c.*, f.name as format_name
-      FROM equip_cameras c
-      LEFT JOIN ref_film_formats f ON c.format_id = f.id
-      WHERE c.id = ?
-    `, [req.params.id]);
+    let items = await equipmentService.listEquipment(type, parsedFilters);
     
-    if (!camera) return res.status(404).json({ error: 'Camera not found' });
-    res.json(camera);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching camera:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/cameras', async (req, res) => {
-  try {
-    const {
-      name, brand, model, type, format_id, sub_format, mount,
-      has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture, fixed_lens_min_aperture,
-      has_built_in_flash, flash_gn,
-      production_year_start, production_year_end,
-      meter_type, shutter_type, shutter_speed_min, shutter_speed_max, weight_g, battery_type,
-      serial_number, purchase_date, purchase_price, condition, notes, status
-    } = req.body;
-
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-
-    const result = await runAsync(`
-      INSERT INTO equip_cameras (
-        name, brand, model, type, format_id, sub_format, mount,
-        has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture, fixed_lens_min_aperture,
-        has_built_in_flash, flash_gn,
-        production_year_start, production_year_end,
-        meter_type, shutter_type, shutter_speed_min, shutter_speed_max, weight_g, battery_type,
-        serial_number, purchase_date, purchase_price, condition, notes, status,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `, [
-      name, brand || null, model || null, type || null, format_id || null, sub_format || null, mount || null,
-      has_fixed_lens ? 1 : 0, fixed_lens_focal_length || null, fixed_lens_max_aperture || null, fixed_lens_min_aperture || null,
-      has_built_in_flash ? 1 : 0, flash_gn || null,
-      production_year_start || null, production_year_end || null,
-      meter_type || null, shutter_type || null, shutter_speed_min || null, shutter_speed_max || null, weight_g || null, battery_type || null,
-      serial_number || null, purchase_date || null, purchase_price || null, condition || null, notes || null, status || 'owned'
-    ]);
-
-    const camera = await getAsync(`SELECT * FROM equip_cameras WHERE id = ?`, [result.lastID]);
-    res.status(201).json(camera);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error creating camera:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/cameras/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const fields = [
-      'name', 'brand', 'model', 'type', 'format_id', 'sub_format', 'mount',
-      'has_fixed_lens', 'fixed_lens_focal_length', 'fixed_lens_max_aperture', 'fixed_lens_min_aperture',
-      'has_built_in_flash', 'flash_gn',
-      'production_year_start', 'production_year_end',
-      'meter_type', 'shutter_type', 'shutter_speed_min', 'shutter_speed_max', 'weight_g', 'battery_type',
-      'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
-    ];
-
-    const updates = [];
-    const params = [];
+    // Apply extra filtering if provided
+    if (extraRoutes.listFilter) {
+      items = await extraRoutes.listFilter(req, items);
+    }
     
-    for (const field of fields) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = ?`);
-        let value = req.body[field];
-        // Handle boolean fields
-        if (field === 'has_fixed_lens' || field === 'has_built_in_flash') {
-          value = value ? 1 : 0;
-        }
-        params.push(value);
+    res.json(items);
+  }));
+
+  // GET BY ID
+  router.get(`/${typePath}/:id`, asyncHandler(async (req, res) => {
+    const item = await equipmentService.getEquipmentById(type, req.params.id);
+    if (!item) {
+      return res.status(404).json({ error: `${type} not found` });
+    }
+    res.json(item);
+  }));
+
+  // CREATE
+  router.post(`/${typePath}`, asyncHandler(async (req, res) => {
+    const item = await equipmentService.createEquipment(type, req.body);
+    res.status(201).json(item);
+  }));
+
+  // UPDATE
+  router.put(`/${typePath}/:id`, asyncHandler(async (req, res) => {
+    const item = await equipmentService.updateEquipment(type, req.params.id, req.body);
+    res.json(item);
+  }));
+
+  // DELETE
+  router.delete(`/${typePath}/:id`, asyncHandler(async (req, res) => {
+    const hard = req.query.hard === 'true' || req.query.permanent === 'true';
+    const result = await equipmentService.deleteEquipment(type, req.params.id, hard);
+    res.json(result);
+  }));
+
+  // IMAGE UPLOAD (if supported)
+  if (type !== 'formats') {
+    router.post(`/${typePath}/:id/image`, upload.single('image'), asyncHandler(async (req, res) => {
+      if (!req.file) {
+        return res.status(400).json({ error: 'No file uploaded' });
       }
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(id);
-
-    await runAsync(`UPDATE equip_cameras SET ${updates.join(', ')} WHERE id = ?`, params);
-    
-    const camera = await getAsync(`SELECT * FROM equip_cameras WHERE id = ?`, [id]);
-    res.json(camera);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error updating camera:', err);
-    res.status(500).json({ error: err.message });
+      const relativePath = `equipment/${req.file.filename}`;
+      const result = await equipmentService.updateEquipmentImage(type, req.params.id, relativePath);
+      res.json(result);
+    }));
   }
-});
-
-router.delete('/cameras/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { hard } = req.query;
-
-    if (hard === 'true') {
-      await runAsync(`DELETE FROM equip_cameras WHERE id = ?`, [id]);
-    } else {
-      await runAsync(`UPDATE equip_cameras SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
-    }
-    
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error deleting camera:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Camera image upload
-router.post('/cameras/:id/image', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    
-    const relativePath = `equipment/${req.file.filename}`;
-    await runAsync(`UPDATE equip_cameras SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
-      [relativePath, req.params.id]);
-    
-    res.json({ image_path: relativePath });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error uploading camera image:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+}
 
 // ========================================
-// LENSES
+// REGISTER ROUTES FOR EACH EQUIPMENT TYPE
 // ========================================
 
-router.get('/lenses', async (req, res) => {
-  try {
-    const { mount, status, includeDeleted, camera_id } = req.query;
-    
-    // Exclude lenses that are actually fixed-lens camera entries (PS cameras)
-    // These are identified by having names matching fixed-lens camera patterns
-    let sql = `
-      SELECT l.* FROM equip_lenses l
-      WHERE 1=1
-        AND l.id NOT IN (
-          SELECT l2.id FROM equip_lenses l2
-          JOIN equip_cameras c ON (
-            l2.name LIKE c.brand || ' ' || c.model || '%'
-            OR l2.name LIKE c.name || '%'
-            OR (l2.brand = c.brand AND l2.model LIKE c.model || '%')
-          )
-          WHERE c.has_fixed_lens = 1
-        )
-    `;
-    const params = [];
+// Film Formats (simple CRUD)
+createCrudRoutes('formats');
 
-    if (!includeDeleted) {
-      sql += ` AND l.deleted_at IS NULL`;
+// Cameras
+createCrudRoutes('cameras');
+
+// Lenses (with camera compatibility filtering)
+createCrudRoutes('lenses', {
+  listFilter: async (req, items) => {
+    if (req.query.camera_id) {
+      return equipmentService.getLensesByCamera(req.query.camera_id, items);
     }
-    if (mount) {
-      sql += ` AND l.mount = ?`;
-      params.push(mount);
-    }
-    if (status) {
-      sql += ` AND l.status = ?`;
-      params.push(status);
-    }
-
-    sql += ` ORDER BY l.brand, l.focal_length_min, l.name`;
-
-    let lenses = await allAsync(sql, params);
-
-    // If camera_id provided, filter by compatible mount
-    if (camera_id) {
-      const camera = await getAsync(`SELECT mount, has_fixed_lens FROM equip_cameras WHERE id = ?`, [camera_id]);
-      if (camera) {
-        // If camera has fixed lens, return empty (or could return camera's built-in lens info)
-        if (camera.has_fixed_lens) {
-          return res.json([]);
-        }
-        // Filter lenses by mount compatibility
-        if (camera.mount) {
-          lenses = lenses.filter(l => l.mount === camera.mount || l.mount === 'Universal');
-        }
-      }
-    }
-
-    res.json(lenses);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching lenses:', err);
-    res.status(500).json({ error: err.message });
+    return items;
   }
 });
 
-router.get('/lenses/:id', async (req, res) => {
-  try {
-    const lens = await getAsync(`SELECT * FROM equip_lenses WHERE id = ?`, [req.params.id]);
-    if (!lens) return res.status(404).json({ error: 'Lens not found' });
-    res.json(lens);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching lens:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+// Flashes
+createCrudRoutes('flashes');
 
-router.post('/lenses', async (req, res) => {
-  try {
-    const {
-      name, brand, model,
-      focal_length_min, focal_length_max, max_aperture, min_aperture, max_aperture_tele,
-      mount, focus_type, min_focus_distance, filter_size, weight_g,
-      elements, groups, blade_count,
-      is_macro, magnification_ratio, image_stabilization,
-      production_year_start, production_year_end,
-      serial_number, purchase_date, purchase_price, condition, notes, status
-    } = req.body;
+// Scanners
+createCrudRoutes('scanners');
 
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-
-    const result = await runAsync(`
-      INSERT INTO equip_lenses (
-        name, brand, model,
-        focal_length_min, focal_length_max, max_aperture, min_aperture, max_aperture_tele,
-        mount, focus_type, min_focus_distance, filter_size, weight_g,
-        elements, groups, blade_count,
-        is_macro, magnification_ratio, image_stabilization,
-        production_year_start, production_year_end,
-        serial_number, purchase_date, purchase_price, condition, notes, status,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `, [
-      name, brand || null, model || null,
-      focal_length_min || null, focal_length_max || null, max_aperture || null, min_aperture || null, max_aperture_tele || null,
-      mount || null, focus_type || 'manual', min_focus_distance || null, filter_size || null, weight_g || null,
-      elements || null, groups || null, blade_count || null,
-      is_macro ? 1 : 0, magnification_ratio || null, image_stabilization ? 1 : 0,
-      production_year_start || null, production_year_end || null,
-      serial_number || null, purchase_date || null, purchase_price || null, condition || null, notes || null, status || 'owned'
-    ]);
-
-    const lens = await getAsync(`SELECT * FROM equip_lenses WHERE id = ?`, [result.lastID]);
-    res.status(201).json(lens);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error creating lens:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/lenses/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const fields = [
-      'name', 'brand', 'model',
-      'focal_length_min', 'focal_length_max', 'max_aperture', 'min_aperture', 'max_aperture_tele',
-      'mount', 'focus_type', 'min_focus_distance', 'filter_size', 'weight_g',
-      'elements', 'groups', 'blade_count',
-      'is_macro', 'magnification_ratio', 'image_stabilization',
-      'production_year_start', 'production_year_end',
-      'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
-    ];
-
-    const updates = [];
-    const params = [];
-    
-    for (const field of fields) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = ?`);
-        let value = req.body[field];
-        // Handle boolean fields
-        if (field === 'is_macro' || field === 'image_stabilization') {
-          value = value ? 1 : 0;
-        }
-        params.push(value);
-      }
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(id);
-
-    await runAsync(`UPDATE equip_lenses SET ${updates.join(', ')} WHERE id = ?`, params);
-    
-    const lens = await getAsync(`SELECT * FROM equip_lenses WHERE id = ?`, [id]);
-    res.json(lens);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error updating lens:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.delete('/lenses/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { hard } = req.query;
-
-    if (hard === 'true') {
-      await runAsync(`DELETE FROM equip_lenses WHERE id = ?`, [id]);
-    } else {
-      await runAsync(`UPDATE equip_lenses SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
-    }
-    
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error deleting lens:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Lens image upload
-router.post('/lenses/:id/image', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    
-    const relativePath = `equipment/${req.file.filename}`;
-    await runAsync(`UPDATE equip_lenses SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
-      [relativePath, req.params.id]);
-    
-    res.json({ image_path: relativePath });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error uploading lens image:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+// Film Backs
+createCrudRoutes('film-backs');
 
 // ========================================
-// FLASHES
+// SPECIALIZED ENDPOINTS
 // ========================================
 
-router.get('/flashes', async (req, res) => {
-  try {
-    const { status, includeDeleted } = req.query;
-    
-    let sql = `SELECT * FROM equip_flashes WHERE 1=1`;
-    const params = [];
+// Equipment suggestions (for dropdowns)
+router.get('/suggestions', asyncHandler(async (req, res) => {
+  const suggestions = await equipmentService.getEquipmentSuggestions();
+  res.json(suggestions);
+}));
 
-    if (!includeDeleted) {
-      sql += ` AND deleted_at IS NULL`;
-    }
-    if (status) {
-      sql += ` AND status = ?`;
-      params.push(status);
-    }
-
-    sql += ` ORDER BY brand, name`;
-
-    const flashes = await allAsync(sql, params);
-    res.json(flashes);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching flashes:', err);
-    res.status(500).json({ error: err.message });
+// Compatible lenses for a camera
+router.get('/compatible-lenses/:cameraId', asyncHandler(async (req, res) => {
+  const result = await equipmentService.getCompatibleLenses(req.params.cameraId);
+  if (!result) {
+    return res.status(404).json({ error: 'Camera not found' });
   }
-});
-
-router.get('/flashes/:id', async (req, res) => {
-  try {
-    const flash = await getAsync(`SELECT * FROM equip_flashes WHERE id = ?`, [req.params.id]);
-    if (!flash) return res.status(404).json({ error: 'Flash not found' });
-    res.json(flash);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching flash:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/flashes', async (req, res) => {
-  try {
-    const {
-      name, brand, model, guide_number,
-      ttl_compatible, has_auto_mode, swivel_head, bounce_head,
-      power_source, recycle_time,
-      serial_number, purchase_date, purchase_price, condition, notes, status
-    } = req.body;
-
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-
-    const result = await runAsync(`
-      INSERT INTO equip_flashes (
-        name, brand, model, guide_number,
-        ttl_compatible, has_auto_mode, swivel_head, bounce_head,
-        power_source, recycle_time,
-        serial_number, purchase_date, purchase_price, condition, notes, status,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `, [
-      name, brand || null, model || null, guide_number || null,
-      ttl_compatible ? 1 : 0, has_auto_mode ? 1 : 0, swivel_head ? 1 : 0, bounce_head ? 1 : 0,
-      power_source || null, recycle_time || null,
-      serial_number || null, purchase_date || null, purchase_price || null, condition || null, notes || null, status || 'owned'
-    ]);
-
-    const flash = await getAsync(`SELECT * FROM equip_flashes WHERE id = ?`, [result.lastID]);
-    res.status(201).json(flash);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error creating flash:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/flashes/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const fields = [
-      'name', 'brand', 'model', 'guide_number',
-      'ttl_compatible', 'has_auto_mode', 'swivel_head', 'bounce_head',
-      'power_source', 'recycle_time',
-      'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
-    ];
-
-    const updates = [];
-    const params = [];
-    
-    for (const field of fields) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = ?`);
-        let value = req.body[field];
-        // Handle boolean fields
-        if (['ttl_compatible', 'has_auto_mode', 'swivel_head', 'bounce_head'].includes(field)) {
-          value = value ? 1 : 0;
-        }
-        params.push(value);
-      }
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(id);
-
-    await runAsync(`UPDATE equip_flashes SET ${updates.join(', ')} WHERE id = ?`, params);
-    
-    const flash = await getAsync(`SELECT * FROM equip_flashes WHERE id = ?`, [id]);
-    res.json(flash);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error updating flash:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.delete('/flashes/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { hard } = req.query;
-
-    if (hard === 'true') {
-      await runAsync(`DELETE FROM equip_flashes WHERE id = ?`, [id]);
-    } else {
-      await runAsync(`UPDATE equip_flashes SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
-    }
-    
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error deleting flash:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Flash image upload
-router.post('/flashes/:id/image', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    
-    const relativePath = `equipment/${req.file.filename}`;
-    await runAsync(`UPDATE equip_flashes SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
-      [relativePath, req.params.id]);
-    
-    res.json({ image_path: relativePath });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error uploading flash image:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========================================
-// SCANNERS
-// ========================================
-
-router.get('/scanners', async (req, res) => {
-  try {
-    const { type, status, includeDeleted } = req.query;
-    
-    let sql = `SELECT * FROM equip_scanners WHERE 1=1`;
-    const params = [];
-
-    if (!includeDeleted) {
-      sql += ` AND deleted_at IS NULL`;
-    }
-    if (type) {
-      sql += ` AND type = ?`;
-      params.push(type);
-    }
-    if (status) {
-      sql += ` AND status = ?`;
-      params.push(status);
-    }
-
-    sql += ` ORDER BY brand, name`;
-
-    const scanners = await allAsync(sql, params);
-    res.json(scanners);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching scanners:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/scanners/:id', async (req, res) => {
-  try {
-    const scanner = await getAsync(`SELECT * FROM equip_scanners WHERE id = ?`, [req.params.id]);
-    if (!scanner) return res.status(404).json({ error: 'Scanner not found' });
-    res.json(scanner);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching scanner:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/scanners', async (req, res) => {
-  try {
-    const {
-      name, brand, model, type, max_resolution, sensor_type, supported_formats,
-      has_infrared_cleaning, bit_depth, default_software,
-      camera_equip_id, lens_equip_id,
-      serial_number, purchase_date, purchase_price, condition, notes, status
-    } = req.body;
-
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-
-    const result = await runAsync(`
-      INSERT INTO equip_scanners (
-        name, brand, model, type, max_resolution, sensor_type, supported_formats,
-        has_infrared_cleaning, bit_depth, default_software,
-        camera_equip_id, lens_equip_id,
-        serial_number, purchase_date, purchase_price, condition, notes, status,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `, [
-      name, brand || null, model || null, type || null, max_resolution || null, 
-      sensor_type || null, supported_formats || null,
-      has_infrared_cleaning ? 1 : 0, bit_depth || null, default_software || null,
-      camera_equip_id || null, lens_equip_id || null,
-      serial_number || null, purchase_date || null, purchase_price || null, 
-      condition || null, notes || null, status || 'owned'
-    ]);
-
-    const scanner = await getAsync(`SELECT * FROM equip_scanners WHERE id = ?`, [result.lastID]);
-    res.status(201).json(scanner);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error creating scanner:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/scanners/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const fields = [
-      'name', 'brand', 'model', 'type', 'max_resolution', 'sensor_type', 'supported_formats',
-      'has_infrared_cleaning', 'bit_depth', 'default_software',
-      'camera_equip_id', 'lens_equip_id',
-      'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
-    ];
-
-    const updates = [];
-    const params = [];
-    
-    for (const field of fields) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = ?`);
-        let value = req.body[field];
-        // Handle boolean fields
-        if (field === 'has_infrared_cleaning') {
-          value = value ? 1 : 0;
-        }
-        params.push(value);
-      }
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(id);
-
-    await runAsync(`UPDATE equip_scanners SET ${updates.join(', ')} WHERE id = ?`, params);
-
-    const scanner = await getAsync(`SELECT * FROM equip_scanners WHERE id = ?`, [id]);
-    res.json(scanner);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error updating scanner:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.delete('/scanners/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { permanent } = req.query;
-
-    if (permanent === 'true') {
-      await runAsync(`DELETE FROM equip_scanners WHERE id = ?`, [id]);
-    } else {
-      await runAsync(`UPDATE equip_scanners SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
-    }
-    
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error deleting scanner:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Scanner image upload
-router.post('/scanners/:id/image', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    
-    const relativePath = `equipment/${req.file.filename}`;
-    await runAsync(`UPDATE equip_scanners SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
-      [relativePath, req.params.id]);
-    
-    res.json({ image_path: relativePath });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error uploading scanner image:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========================================
-// FILM BACKS
-// ========================================
-
-router.get('/film-backs', async (req, res) => {
-  try {
-    const { format, mount_type, status, includeDeleted } = req.query;
-    
-    let sql = `SELECT * FROM equip_film_backs WHERE 1=1`;
-    const params = [];
-
-    if (!includeDeleted) {
-      sql += ` AND deleted_at IS NULL`;
-    }
-    if (format) {
-      sql += ` AND format = ?`;
-      params.push(format);
-    }
-    if (mount_type) {
-      sql += ` AND mount_type = ?`;
-      params.push(mount_type);
-    }
-    if (status) {
-      sql += ` AND status = ?`;
-      params.push(status);
-    }
-
-    sql += ` ORDER BY brand, name`;
-
-    const filmBacks = await allAsync(sql, params);
-    res.json(filmBacks);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching film backs:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.get('/film-backs/:id', async (req, res) => {
-  try {
-    const filmBack = await getAsync(`SELECT * FROM equip_film_backs WHERE id = ?`, [req.params.id]);
-    if (!filmBack) return res.status(404).json({ error: 'Film back not found' });
-    res.json(filmBack);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching film back:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.post('/film-backs', async (req, res) => {
-  try {
-    const {
-      name, brand, model,
-      format, sub_format, frame_width_mm, frame_height_mm, frames_per_roll,
-      compatible_cameras, mount_type,
-      magazine_type, is_motorized, has_dark_slide,
-      serial_number, purchase_date, purchase_price, condition, notes, status
-    } = req.body;
-
-    if (!name) return res.status(400).json({ error: 'Name is required' });
-
-    const result = await runAsync(`
-      INSERT INTO equip_film_backs (
-        name, brand, model,
-        format, sub_format, frame_width_mm, frame_height_mm, frames_per_roll,
-        compatible_cameras, mount_type,
-        magazine_type, is_motorized, has_dark_slide,
-        serial_number, purchase_date, purchase_price, condition, notes, status,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `, [
-      name, brand || null, model || null,
-      format || '120', sub_format || null, frame_width_mm || null, frame_height_mm || null, frames_per_roll || null,
-      compatible_cameras || null, mount_type || null,
-      magazine_type || null, is_motorized ? 1 : 0, has_dark_slide !== false ? 1 : 0,
-      serial_number || null, purchase_date || null, purchase_price || null,
-      condition || null, notes || null, status || 'owned'
-    ]);
-
-    const filmBack = await getAsync(`SELECT * FROM equip_film_backs WHERE id = ?`, [result.lastID]);
-    res.status(201).json(filmBack);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error creating film back:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.put('/film-backs/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const fields = [
-      'name', 'brand', 'model',
-      'format', 'sub_format', 'frame_width_mm', 'frame_height_mm', 'frames_per_roll',
-      'compatible_cameras', 'mount_type',
-      'magazine_type', 'is_motorized', 'has_dark_slide',
-      'serial_number', 'purchase_date', 'purchase_price', 'condition', 'notes', 'image_path', 'status'
-    ];
-
-    const updates = [];
-    const params = [];
-    
-    for (const field of fields) {
-      if (req.body[field] !== undefined) {
-        updates.push(`${field} = ?`);
-        let value = req.body[field];
-        // Handle boolean fields
-        if (field === 'is_motorized' || field === 'has_dark_slide') {
-          value = value ? 1 : 0;
-        }
-        params.push(value);
-      }
-    }
-
-    if (updates.length === 0) {
-      return res.status(400).json({ error: 'No fields to update' });
-    }
-
-    updates.push('updated_at = CURRENT_TIMESTAMP');
-    params.push(id);
-
-    await runAsync(`UPDATE equip_film_backs SET ${updates.join(', ')} WHERE id = ?`, params);
-
-    const filmBack = await getAsync(`SELECT * FROM equip_film_backs WHERE id = ?`, [id]);
-    res.json(filmBack);
-  } catch (err) {
-    console.error('[EQUIPMENT] Error updating film back:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-router.delete('/film-backs/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { permanent } = req.query;
-
-    if (permanent === 'true') {
-      await runAsync(`DELETE FROM equip_film_backs WHERE id = ?`, [id]);
-    } else {
-      await runAsync(`UPDATE equip_film_backs SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, [id]);
-    }
-    
-    res.json({ ok: true });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error deleting film back:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Film back image upload
-router.post('/film-backs/:id/image', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    
-    const relativePath = `equipment/${req.file.filename}`;
-    await runAsync(`UPDATE equip_film_backs SET image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, 
-      [relativePath, req.params.id]);
-    
-    res.json({ image_path: relativePath });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error uploading film back image:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========================================
-// UNIFIED SUGGESTIONS (for backwards compatibility)
-// ========================================
-
-router.get('/suggestions', async (req, res) => {
-  try {
-    const cameras = await allAsync(`
-      SELECT id, name, brand, model, mount, type, has_fixed_lens, 
-             fixed_lens_focal_length, fixed_lens_max_aperture, image_path
-      FROM equip_cameras 
-      WHERE deleted_at IS NULL 
-      ORDER BY brand, name
-    `);
-    
-    const lenses = await allAsync(`
-      SELECT id, name, brand, model, mount, focal_length_min, focal_length_max, 
-             max_aperture, focus_type, image_path
-      FROM equip_lenses 
-      WHERE deleted_at IS NULL 
-      ORDER BY brand, focal_length_min, name
-    `);
-    
-    const flashes = await allAsync(`
-      SELECT id, name, brand, model, guide_number, image_path
-      FROM equip_flashes 
-      WHERE deleted_at IS NULL 
-      ORDER BY brand, name
-    `);
-
-    const formats = await allAsync(`SELECT * FROM ref_film_formats ORDER BY name`);
-
-    res.json({ cameras, lenses, flashes, formats });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching suggestions:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ========================================
-// MOUNT COMPATIBILITY CHECK
-// ========================================
-
-router.get('/compatible-lenses/:cameraId', async (req, res) => {
-  try {
-    const camera = await getAsync(`
-      SELECT id, brand, model, mount, has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture 
-      FROM equip_cameras WHERE id = ?
-    `, [req.params.cameraId]);
-
-    if (!camera) {
-      return res.status(404).json({ error: 'Camera not found' });
-    }
-    
-    const cameraName = `${camera.brand || ''} ${camera.model || ''}`.trim();
-
-    // If camera has fixed lens, return that info
-    if (camera.has_fixed_lens) {
-      return res.json({
-        fixed_lens: true,
-        camera_name: cameraName,
-        focal_length: camera.fixed_lens_focal_length,
-        max_aperture: camera.fixed_lens_max_aperture,
-        lenses: [],
-        adapted_lenses: []
-      });
-    }
-
-    // Get native lenses (matching mount or Universal)
-    let nativeLenses = [];
-    let adaptedLenses = [];
-    
-    if (camera.mount) {
-      // Native lenses: exact mount match or Universal
-      nativeLenses = await allAsync(`
-        SELECT id, name, brand, model, mount, focal_length_min, focal_length_max, 
-               max_aperture, focus_type, image_path
-        FROM equip_lenses 
-        WHERE deleted_at IS NULL AND (mount = ? OR mount = 'Universal')
-        ORDER BY brand, focal_length_min, name
-      `, [camera.mount]);
-      
-      // Adapted lenses: different mount (can be adapted to camera)
-      adaptedLenses = await allAsync(`
-        SELECT id, name, brand, model, mount, focal_length_min, focal_length_max, 
-               max_aperture, focus_type, image_path
-        FROM equip_lenses 
-        WHERE deleted_at IS NULL AND mount != ? AND mount != 'Universal'
-        ORDER BY mount, brand, focal_length_min, name
-      `, [camera.mount]);
-    } else {
-      // No mount specified, return all lenses as native
-      nativeLenses = await allAsync(`
-        SELECT id, name, brand, model, mount, focal_length_min, focal_length_max, 
-               max_aperture, focus_type, image_path
-        FROM equip_lenses 
-        WHERE deleted_at IS NULL
-        ORDER BY brand, focal_length_min, name
-      `);
-    }
-
-    res.json({
-      fixed_lens: false,
-      camera_name: cameraName,
-      camera_mount: camera.mount,
-      lenses: nativeLenses,
-      adapted_lenses: adaptedLenses
-    });
-  } catch (err) {
-    console.error('[EQUIPMENT] Error fetching compatible lenses:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  res.json(result);
+}));
 
 module.exports = router;

@@ -2,332 +2,330 @@
 
 ## 2.1 核心表结构
 
-### 2.1.1 films (胶片类型表)
+### 2.1.1 films（胶片类型表）
+
 存储胶片的基本信息（如柯达 Portra 400、富士 Pro 400H）。
 
 ```sql
 CREATE TABLE films (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,              -- 胶片名称
-  iso INTEGER,                     -- 感光度
-  format TEXT,                     -- 格式 (135/120/etc)
-  type TEXT,                       -- 类型 (彩色/黑白)
-  category TEXT,                   -- 分类
-  description TEXT,                -- 描述
-  thumbPath TEXT,                  -- 缩略图路径
+  iso INTEGER,                     -- 感光度 (100, 400, 800 等)
+  format TEXT,                     -- 格式 (135/120/sheet 等)
+  type TEXT,                       -- 类型 (color_negative/bw_negative/slide 等)
+  stock TEXT,                      -- 库存数量
+  purchased_date TEXT,             -- 购买日期
+  batch_number TEXT,               -- 批号
+  notes TEXT,                      -- 备注
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-### 2.1.2 film_items (胶片库存表)
-存储每一卷实际购买的胶片，追踪全生命周期。
+### 2.1.2 rolls（胶卷管理表）
 
-```sql
-CREATE TABLE film_items (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  film_id INTEGER NOT NULL,        -- 关联 films.id
-  roll_id INTEGER,                 -- 拍摄后关联 rolls.id
-  status TEXT NOT NULL,            -- 状态：in_stock/loaded/shot/sent_to_lab/developed/archived
-  purchase_date TEXT,              -- 购买日期
-  purchase_channel TEXT,           -- 购买渠道
-  purchase_cost REAL,              -- 购买成本
-  develop_cost REAL,               -- 冲洗成本
-  develop_lab TEXT,                -- 冲洗店
-  develop_process TEXT,            -- 冲洗工艺
-  develop_channel TEXT,            -- 冲洗渠道
-  develop_note TEXT,               -- 冲洗备注
-  loaded_camera TEXT,              -- 装填相机
-  loaded_date TEXT,                -- 装填日期
-  finished_date TEXT,              -- 拍完日期
-  shot_logs TEXT,                  -- 拍摄日志 (JSON)
-  negative_archived INTEGER DEFAULT 0,  -- 底片是否归档
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  deleted_at DATETIME,             -- 软删除标记
-  FOREIGN KEY(film_id) REFERENCES films(id),
-  FOREIGN KEY(roll_id) REFERENCES rolls(id)
-);
-```
-
-### 2.1.3 rolls (胶卷表)
-拍摄完成并冲洗的胶卷。
+每一卷实际使用的胶卷，追踪从装填到冲洗的整个生命周期。
 
 ```sql
 CREATE TABLE rolls (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  film_item_id INTEGER,            -- 关联 film_items.id
-  title TEXT,                      -- 标题
-  start_date DATE,                 -- 开始日期
-  end_date DATE,                   -- 结束日期
-  camera TEXT,                     -- 相机
-  lens TEXT,                       -- 镜头
-  photographer TEXT,               -- 摄影师
-  filmId INTEGER,                  -- 关联 films.id
-  film_type TEXT,                  -- 胶片类型
-  iso INTEGER,                     -- ISO
-  exposures INTEGER,               -- 张数
-  cover_photo TEXT,                -- 封面照片
-  folderName TEXT,                 -- 文件夹名
+  name TEXT NOT NULL,              -- 胶卷名称 (如 "2026-01-26 Portra")
+  film_id INTEGER NOT NULL,        -- 关联 films.id
+  status TEXT NOT NULL,            -- 状态 (draft/loaded/shot/developed/archived)
+  loaded_date TEXT,                -- 装填日期
+  shot_date TEXT,                  -- 拍完日期
+  developed_date TEXT,             -- 冲洗日期
+  lab_name TEXT,                   -- 冲洗店名
+  equipment_id INTEGER,            -- 关联相机 equipment.id
   notes TEXT,                      -- 备注
-  display_seq INTEGER DEFAULT 0,  -- 显示序号
-  preset_json TEXT,                -- 编辑预设 (JSON)
-  develop_date DATE,               -- 冲洗日期
-  develop_lab TEXT,                -- 冲洗店
-  develop_process TEXT,            -- 冲洗工艺
-  develop_cost REAL,               -- 冲洗费用
-  develop_note TEXT,               -- 冲洗备注
-  purchase_cost REAL,              -- 购买费用
-  purchase_channel TEXT,           -- 购买渠道
-  batch_number TEXT,               -- 批次号
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY(filmId) REFERENCES films(id)
+  FOREIGN KEY(film_id) REFERENCES films(id),
+  FOREIGN KEY(equipment_id) REFERENCES equipment(id)
 );
 ```
 
-### 2.1.4 photos (照片表)
-存储每张照片的元数据和路径。
+### 2.1.3 photos（照片记录表）
+
+每一张照片的元数据和处理信息。
 
 ```sql
 CREATE TABLE photos (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  roll_id INTEGER,                 -- 关联 rolls.id
-  filename TEXT NOT NULL,          -- 文件名
-  frame_number INTEGER,            -- 帧号
-  
-  -- 图片路径
-  original_rel_path TEXT,          -- 原图相对路径
-  positive_rel_path TEXT,          -- 正片相对路径
-  full_rel_path TEXT,              -- 全尺寸路径
-  negative_rel_path TEXT,          -- 负片路径
-  thumb_rel_path TEXT,             -- 缩略图路径
-  positive_thumb_rel_path TEXT,    -- 正片缩略图
-  negative_thumb_rel_path TEXT,    -- 负片缩略图
-  
-  -- 拍摄参数
-  aperture REAL,                   -- 光圈
-  shutter_speed TEXT,              -- 快门速度
+  roll_id INTEGER NOT NULL,        -- 关联胶卷
+  file_path TEXT NOT NULL,         -- 文件相对路径
+  original_filename TEXT,          -- 原始文件名
+  file_size INTEGER,               -- 文件大小 (字节)
+  mime_type TEXT,                  -- MIME 类型 (image/jpeg 等)
+  shot_date TEXT,                  -- 拍摄日期
+  shot_number INTEGER,             -- 在胶卷中的位置
+  -- EXIF 数据
+  exposure_compensation REAL,      -- 曝光补偿
   iso INTEGER,                     -- ISO
-  focal_length REAL,               -- 焦距
-  
-  -- 元数据
-  caption TEXT,                    -- 标题
-  rating INTEGER DEFAULT 0,        -- 评分 (0-5)
-  notes TEXT,                      -- 备注
-  
-  -- 拍摄信息
-  date_taken DATE,                 -- 拍摄日期
-  time_taken TIME,                 -- 拍摄时间
-  camera TEXT,                     -- 相机
-  lens TEXT,                       -- 镜头
-  photographer TEXT,               -- 摄影师
-  
+  aperture REAL,                   -- 光圈 (f/2.8 等)
+  shutter_speed TEXT,              -- 快门速度 (1/125 等)
+  focal_length REAL,               -- 焦距 (mm)
+  lens_model TEXT,                 -- 镜头型号
+  camera_model TEXT,               -- 相机型号
   -- 地理位置
-  location_id INTEGER,             -- 关联 locations.id
-  detail_location TEXT,            -- 详细地点
   latitude REAL,                   -- 纬度
   longitude REAL,                  -- 经度
-  
-  -- 编辑参数
-  edit_params TEXT,                -- 编辑参数 (JSON)
-  
-  display_seq INTEGER DEFAULT 0,  -- 显示序号
+  location_name TEXT,              -- 位置名称
+  -- 元数据
+  notes TEXT,                      -- 用户备注
+  rating INTEGER,                  -- 评分 (0-5)
+  scan_date TEXT,                  -- 扫描日期
+  scanner_model TEXT,              -- 扫描仪型号
+  -- FilmLab 处理
+  filmlab_data TEXT,               -- FilmLab 处理参数 (JSON)
+  filmlab_preview_path TEXT,       -- FilmLab 预览路径
+  -- 系统
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY(roll_id) REFERENCES rolls(id),
-  FOREIGN KEY(location_id) REFERENCES locations(id)
-  > shot_logs JSON 结构：`[{ date: 'YYYY-MM-DD', count: 12, lens?: '50mm f/1.8', aperture?: 1.8, shutter_speed?: '1/125' | '2s', country?: 'CN', city?: 'Shanghai', detail_location?: 'North Gate' }]`
-  > - 每条对象是一条拍摄记录（可同一日期多条，新增时不覆盖旧记录）
-  > - `count`：该条记录的拍摄张数
-  > - `aperture`：可选，数值光圈（f 值，例如 1.8/2/5.6）；UI 显示为 `f1.8`
-  > - `shutter_speed`：可选，快门速度（字符串，支持分数与长曝光，如 `1/125`、`0.5s`、`2s`），UI 显示为 `s1/125`
-  > - `lens`：可选，镜头型号；镜头下拉从 rolls/photos/film_items.shot_logs 的历史值去重汇总，自定义输入保存后自动进入常用列表
-  > - `country` / `city` / `detail_location`：可选地点信息；在 UI 中新增条目时默认沿用上一条的国家/城市/详细地点以减少输入量，可手动覆盖
-  > - 导出：`GET /api/film-items/:id/shot-logs/export` CSV 列扩展为 `date,count,lens,aperture,shutter_speed,country,city,detail_location,iso`（旧列顺序兼容，缺失字段为空），其中 iso 来自胶片类型的 ISO 值
-  > - 映射到照片：创建胶卷时可选“按 shot log 应用日期+镜头+地点+曝光参数”，顺序遍历文件；若 lens 未提供则落地使用该 roll 的 lens；若提供地点，服务端会创建/复用 locations 记录并写入 photo.location_id 与 detail_location，并同步 roll_locations；若提供 aperture/shutter_speed 则写入照片；ISO 默认采用胶片类型 iso
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  deleted_at DATETIME,             -- 软删除标记
+  FOREIGN KEY(roll_id) REFERENCES rolls(id)
 );
 ```
 
-### 2.1.5 tags (标签表)
-存储所有标签（小写存储，防止重复）。
+### 2.1.4 equipment（设备档案表）
+
+相机、镜头、滤镜等设备信息。
+
+```sql
+CREATE TABLE equipment (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,              -- 设备名称 (如 "Canon EOS 5D Mark IV")
+  type TEXT NOT NULL,              -- 类型 (camera/lens/filter/meter 等)
+  category TEXT,                   -- 分类 (如镜头焦距)
+  manufacturer TEXT,               -- 制造商
+  model TEXT,                      -- 型号
+  serial_number TEXT,              -- 序列号
+  purchase_date TEXT,              -- 购买日期
+  purchase_price REAL,             -- 购买价格
+  notes TEXT,                      -- 备注
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(type) REFERENCES equipment_types(id)
+);
+```
+
+### 2.1.5 photo_equipment（照片-设备关联表）
+
+记录每张照片使用的设备。
+
+```sql
+CREATE TABLE photo_equipment (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  photo_id INTEGER NOT NULL,
+  equipment_id INTEGER NOT NULL,
+  role TEXT NOT NULL,              -- 角色 (camera/lens/filter 等)
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(photo_id) REFERENCES photos(id),
+  FOREIGN KEY(equipment_id) REFERENCES equipment(id),
+  UNIQUE(photo_id, equipment_id, role)
+);
+```
+
+### 2.1.6 tags（标签表）
+
+灵活的分类标签。
 
 ```sql
 CREATE TABLE tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT UNIQUE NOT NULL        -- 标签名（小写）
-);
-```
-
-### 2.1.6 photo_tags (照片-标签关联表)
-多对多关系表。
-
-```sql
-CREATE TABLE photo_tags (
-  photo_id INTEGER,
-  tag_id INTEGER,
-  PRIMARY KEY (photo_id, tag_id),
-  FOREIGN KEY(photo_id) REFERENCES photos(id),
-  FOREIGN KEY(tag_id) REFERENCES tags(id)
-);
-```
-
-### 2.1.7 locations (地理位置表)
-存储城市级别的地理位置。
-
-```sql
-CREATE TABLE locations (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  country_code TEXT,               -- 国家代码 (CN/US/etc)
-  country_name TEXT,               -- 国家名称
-  city_name TEXT,                  -- 城市名称
-  city_lat REAL,                   -- 城市纬度
-  city_lng REAL                    -- 城市经度
-);
-```
-
-### 2.1.8 roll_locations (胶卷-地点关联表)
-记录胶卷拍摄的地点。
-
-```sql
-CREATE TABLE roll_locations (
-  roll_id INTEGER NOT NULL,
-  location_id INTEGER NOT NULL,
-  PRIMARY KEY (roll_id, location_id)
-);
-```
-
-### 2.1.9 roll_gear (胶卷设备表)
-记录胶卷使用的相机、镜头、摄影师（去重）。
-
-```sql
-CREATE TABLE roll_gear (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  roll_id INTEGER NOT NULL,
-  type TEXT NOT NULL,              -- 'camera' | 'lens' | 'photographer'
-  value TEXT NOT NULL,
-  UNIQUE(roll_id, type, value),
-  FOREIGN KEY(roll_id) REFERENCES rolls(id) ON DELETE CASCADE
-);
-```
-
-### 2.1.10 presets (预设表)
-保存编辑参数预设。
-
-```sql
-CREATE TABLE presets (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,              -- 预设名称
-  params TEXT NOT NULL,            -- 参数 (JSON)
+  name TEXT NOT NULL UNIQUE,       -- 标签名称
+  color TEXT,                      -- 显示颜色 (hex 格式)
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-## 2.2 数据关系图
-
-```
-films ──┬─→ film_items ──→ rolls ──→ photos ──→ photo_tags ──→ tags
-        │                    │         │
-        └────────────────────┘         ├─→ locations
-                                       └─→ roll_gear
-                                       
-roll_locations: rolls ←→ locations (多对多)
-```
-
-## 2.3 索引设计
-
-关键索引提升查询性能：
+### 2.1.7 photo_tags（照片-标签关联表）
 
 ```sql
--- 照片查询
-CREATE INDEX idx_photos_roll ON photos(roll_id);
-CREATE INDEX idx_photos_date_taken ON photos(date_taken);
-CREATE INDEX idx_photos_rating ON photos(rating);
-CREATE INDEX idx_photos_roll_date_id ON photos(roll_id, date_taken, id);
-
--- 胶片库存
-CREATE INDEX idx_film_items_status_deleted ON film_items(status, deleted_at);
+CREATE TABLE photo_tags (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  photo_id INTEGER NOT NULL,
+  tag_id INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(photo_id) REFERENCES photos(id),
+  FOREIGN KEY(tag_id) REFERENCES tags(id),
+  UNIQUE(photo_id, tag_id)
+);
 ```
 
-## 2.4 数据库迁移
+### 2.1.8 presets（编辑预设表）
 
-### 2.4.1 迁移系统
-使用基于文件的迁移系统：
+保存的 FilmLab 处理参数。
+
+```sql
+CREATE TABLE presets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,              -- 预设名称 (如 "Portra 风格")
+  category TEXT,                   -- 分类
+  description TEXT,                -- 描述
+  settings_json TEXT NOT NULL,     -- 设置参数 (JSON)
+  thumbnail_path TEXT,             -- 缩略图
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 2.1.9 export_history（导出记录表）
+
+追踪所有导出操作。
+
+```sql
+CREATE TABLE export_history (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  roll_id INTEGER,                 -- 关联胶卷
+  photo_id INTEGER,                -- 或关联照片
+  export_date TEXT NOT NULL,       -- 导出日期
+  export_path TEXT NOT NULL,       -- 导出路径
+  export_format TEXT,              -- 导出格式 (jpg/png/tif 等)
+  file_size INTEGER,               -- 导出文件大小
+  export_settings TEXT,            -- 导出参数 (JSON)
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(roll_id) REFERENCES rolls(id),
+  FOREIGN KEY(photo_id) REFERENCES photos(id)
+);
+```
+
+## 2.2 数据库迁移机制
+
+迁移脚本位于 `server/migrations/`，按时间戳命名（YYYY-MM-DD-description.js）：
+
+**执行流程**：
+1. 应用启动时，`server.js` 调用 `runMigration()`
+2. 扫描 `migrations/` 目录下的所有 JS 文件
+3. 按字母顺序（时间戳）执行未执行的迁移
+4. 记录执行状态在内存（可选持久化）
+
+**迁移脚本模板**：
 
 ```javascript
-// server/utils/migration.js
-async function runMigration() {
-  const migrations = fs.readdirSync('./migrations')
-    .filter(f => f.endsWith('.js'))
-    .sort();
-  
-  for (const file of migrations) {
-    const { up } = require(`./migrations/${file}`);
-    await up();
-  }
+// server/migrations/2026-01-XX-add-example.js
+const db = require('../db');
+
+async function migrate() {
+  return new Promise((resolve, reject) => {
+    db.serialize(() => {
+      db.run(`
+        ALTER TABLE photos 
+        ADD COLUMN example_field TEXT
+      `, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  });
 }
+
+module.exports = migrate;
 ```
 
-### 2.4.2 重要迁移历史
-- **2025-11-db-revamp.js**: 添加 locations, roll_locations, 扩展 rolls/photos 字段
-- **2025-11-30-add-photo-equipment.js**: 添加 camera/lens/photographer 到 photos
-- **2025-11-30-add-roll-gear.js**: 创建 roll_gear 表
-- **2025-11-30-rename-shooter-to-photographer.js**: 统一命名
-- **2025-12-02-add-film-items.js**: 创建 film_items 库存系统
-- **2025-12-02-add-shot-logs.js**: 添加 shot_logs 字段
+**关键迁移记录**：
+- `2025-11-30-db-revamp.js` - 主要数据库重构，整合所有表
+- `2025-12-02-add-film-items.js` - 添加胶片项目跟踪
+- `2025-12-02-add-load-dates.js` - 添加装填日期跟踪
+- `2026-01-16-add-positive-source.js` - 添加正片来源支持
 
-### 2.4.3 Schema 迁移工具
-自动补全缺失的列和表：
+## 2.3 性能优化
+
+### 2.3.1 Prepared Statements
+
+所有查询使用预编译语句防止 SQL 注入和提高性能：
 
 ```javascript
-// server/utils/schema-migration.js
-function runSchemaMigration() {
-  // 1. 确保所有表存在
-  // 2. 确保所有列存在
-  // 3. 创建索引
+// 使用工具函数
+const PreparedStmt = require('./utils/prepared-statements');
+
+const stmt = db.prepare(`
+  SELECT * FROM photos 
+  WHERE roll_id = ? AND rating >= ?
+`);
+
+const rows = stmt.all(rollId, minRating);
+stmt.free();
+```
+
+### 2.3.2 索引设计
+
+```sql
+-- 常用查询索引
+CREATE INDEX idx_photos_roll_id ON photos(roll_id);
+CREATE INDEX idx_photos_shot_date ON photos(shot_date);
+CREATE INDEX idx_rolls_film_id ON rolls(film_id);
+CREATE INDEX idx_photo_tags_photo_id ON photo_tags(photo_id);
+CREATE INDEX idx_photo_equipment_photo_id ON photo_equipment(photo_id);
+```
+
+### 2.3.3 查询优化
+
+**避免 N+1 查询**：
+```javascript
+// ❌ 错误：每张照片都查询一次相机信息
+const photos = getPhotos();
+for (const photo of photos) {
+  photo.camera = getEquipment(photo.equipment_id);
 }
+
+// ✅ 正确：一次查询所有
+const photos = getPhotos();
+const equipmentIds = photos.map(p => p.equipment_id);
+const equipmentMap = getEquipmentByIds(equipmentIds);
+photos.forEach(p => p.camera = equipmentMap[p.equipment_id]);
 ```
 
-## 2.5 数据完整性
+## 2.4 数据完整性
 
-### 2.5.1 外键约束
-```sql
-PRAGMA foreign_keys = ON;  -- 启用外键约束
+### 2.4.1 外键约束
+
+所有关联表都定义了 FOREIGN KEY，启用约束：
+
+```javascript
+// server/db.js
+db.run('PRAGMA foreign_keys = ON');
 ```
 
-### 2.5.2 级联删除
-- `roll_gear`: 删除 roll 时自动删除关联设备
-- `photo_tags`: 删除 photo/tag 时自动删除关联
+### 2.4.2 软删除
 
-### 2.5.3 软删除
-`film_items` 使用 `deleted_at` 软删除，保留历史记录。
+某些表支持软删除（`deleted_at` 字段），查询时默认排除：
 
-## 2.6 常用查询模式
-
-### 2.6.1 获取胶卷及其照片
-```sql
-SELECT r.*, 
-       COUNT(p.id) as photo_count,
-       GROUP_CONCAT(t.name) as tags
-FROM rolls r
-LEFT JOIN photos p ON p.roll_id = r.id
-LEFT JOIN photo_tags pt ON pt.photo_id = p.id
-LEFT JOIN tags t ON t.id = pt.tag_id
-WHERE r.id = ?
-GROUP BY r.id;
+```javascript
+// 查询活跃照片
+db.all(`
+  SELECT * FROM photos 
+  WHERE deleted_at IS NULL
+`, callback);
 ```
 
-### 2.6.2 按标签搜索照片
-```sql
-SELECT DISTINCT p.*
-FROM photos p
-JOIN photo_tags pt ON pt.photo_id = p.id
-JOIN tags t ON t.id = pt.tag_id
-WHERE t.name = ?;
+### 2.4.3 时间戳管理
+
+每个表都有 `created_at` 和可选的 `updated_at`：
+
+```javascript
+// 自动更新时间戳（触发器或应用层）
+db.run(`
+  UPDATE photos 
+  SET updated_at = CURRENT_TIMESTAMP
+  WHERE id = ?
+`, [photoId]);
 ```
 
-### 2.6.3 统计数据
-```sql
-SELECT 
-  COUNT(DISTINCT r.id) as total_rolls,
-  COUNT(p.id) as total_photos,
-  SUM(r.purchase_cost + r.develop_cost) as total_cost
-FROM rolls r
-LEFT JOIN photos p ON p.roll_id = r.id;
-```
+## 2.5 数据备份和同步
+
+### 2.5.1 本地备份
+
+定期备份 `film.db` 到：
+- `data/backups/film-YYYY-MM-DD-HHmmss.db`
+- 保留最近 7 天的备份
+
+### 2.5.2 OneDrive 同步
+
+支持将数据库和文件自动同步到 OneDrive：
+- 增量同步（仅同步变化）
+- 冲突解决机制
+- 详见：[onedrive-sync-optimization.md](../onedrive-sync-optimization.md)
+
+---
+
+**相关文档**：
+- [01-architecture.md](./01-architecture.md) - 系统架构
+- [03-backend-api.md](./03-backend-api.md) - API 接口

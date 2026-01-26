@@ -6,6 +6,10 @@
   "main": "electron-main.js",
   "author": "Your Name",
   "license": "MIT",
+  "workspaces": [
+    "packages/shared",
+    "packages/@filmgallery/*"
+  ],
   "scripts": {
     "postinstall": "cd client && npm install && cd ../server && npm install",
     "dev:client": "cd client && cross-env PORT=3000 REACT_APP_API_BASE=http://127.0.0.1:3000 npm start",

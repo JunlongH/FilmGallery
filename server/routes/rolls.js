@@ -1,40 +1,43 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db'); // Required for prepared statements in batch insert
-const { recomputeRollSequence } = require('../services/roll-service');
+const rollService = require('../services/roll-service');
+const { recomputeRollSequence } = rollService; // Keep for backward compat
 const { addOrUpdateGear, formatFixedLensDescription, getFixedLensInfo, cleanupFixedLensGear } = require('../services/gear-service');
-const scanExifService = require('../services/scan-exif-service');
 const fs = require('fs');
 const path = require('path');
-const sharp = require('sharp');
-// Disable sharp cache to prevent file locking on Windows
-sharp.cache(false);
-// Limit concurrency to 1 to prevent memory spikes/crashes with large TIFFs
-sharp.concurrency(1);
-// Increase timeout for large TIF files (30 seconds)
-// This is especially important for TIF files in OneDrive which may be slow to read
-const SHARP_TIMEOUT = 30000;
-
-// Helper: Run sharp operation with timeout protection
-const sharpWithTimeout = (sharpOp, timeoutMs = SHARP_TIMEOUT) => {
-  return Promise.race([
-    sharpOp,
-    new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Sharp operation timed out')), timeoutMs)
-    )
-  ]);
-};
 
 const { uploadTmp, uploadDefault } = require('../config/multer');
 const { uploadsDir, tmpUploadDir, localTmpDir, rollsDir } = require('../config/paths');
-const { moveFileSync, moveFileAsync, copyFileAsyncWithRetry } = require('../utils/file-helpers');
 const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
 const { attachTagsToPhotos } = require('../services/tag-service');
 const { linkFilmItemToRoll } = require('../services/film/film-item-service');
 const PreparedStmt = require('../utils/prepared-statements');
 const { generateContactSheet, STYLES } = require('../services/contactSheetGenerator');
 
-// Create roll
+// New service layer imports
+const imageProcessor = require('../services/image-processor');
+const rollFileService = require('../services/roll-file-service');
+const photoUploadService = require('../services/photo-upload-service');
+
+// ============================================================================
+// POST /api/rolls - CREATE ROLL WITH PHOTOS
+// ============================================================================
+// 
+// Handles roll creation with batch photo upload.
+// Refactored to use service layer:
+//   - imageProcessor: Sharp operations, RAW decoding
+//   - rollFileService: File staging, publishing, cleanup
+//   - photoUploadService: Photo processing, metadata resolution
+//
+// Atomic workflow:
+//   1. Parse request, create roll record (in transaction)
+//   2. Process all images in local temp directory
+//   3. If all succeed, publish files to final location
+//   4. Insert photo records, commit transaction
+//   5. On any failure, rollback DB and cleanup files
+// ============================================================================
+
 const cpUpload = uploadTmp.array('files', 200);
 router.post('/', (req, res) => {
   cpUpload(req, res, async (err) => { 
@@ -166,18 +169,6 @@ router.post('/', (req, res) => {
       let rollFolderPath = null;
       const createdPaths = []; // absolute paths created under uploads/rolls
 
-      const rmWithRetry = async (absPath, retries = 3) => {
-        for (let i = 0; i < retries; i++) {
-          try {
-            await fs.promises.rm(absPath, { recursive: true, force: true });
-            return;
-          } catch (e) {
-            if (i === retries - 1) return;
-            await new Promise(r => setTimeout(r, 300 * (i + 1)));
-          }
-        }
-      };
-
       let stmtToFinalize = null;
       try {
         // Collect incoming files from Multer and any tmpFiles provided
@@ -186,14 +177,11 @@ router.post('/', (req, res) => {
         const tmpFilesCount = (tmpFiles && Array.isArray(tmpFiles)) ? tmpFiles.length : 0;
         console.log(`[CREATE ROLL] Received files: req.files=${reqFilesCount}, tmpFiles=${tmpFilesCount}`);
 
-        // Import raw decoder for RAW file support
-        const rawDecoder = require('../services/raw-decoder');
-
         if (req.files && req.files.length) {
           incoming.push(...req.files.map(f => {
              // Robust RAW detection: check both originalname and filename (uploaded name)
              const nameCands = [f.originalname, f.filename].filter(Boolean);
-             const isRaw = nameCands.some(n => rawDecoder.isRawFile(n));
+             const isRaw = nameCands.some(n => imageProcessor.isRawFile(n));
              return { 
                 tmpPath: f.path, 
                 originalName: f.originalname, 
@@ -214,7 +202,7 @@ router.post('/', (req, res) => {
             const fileIsNegative = t.isNegative !== undefined ? t.isNegative : isNegativeGlobal;
             const fileIsOriginal = (t.isOriginal !== undefined ? t.isOriginal : isOriginalGlobal) || t.uploadType === 'original';
             
-            const isRaw = rawDecoder.isRawFile(tmpName) || rawDecoder.isRawFile(t.originalName);
+            const isRaw = imageProcessor.isRawFile(tmpName) || imageProcessor.isRawFile(t.originalName);
             
             incoming.push({ 
               tmpPath, 
@@ -233,27 +221,8 @@ router.post('/', (req, res) => {
         }
 
         // Group files by base name to handle pairs (main + thumb)
-        const groups = new Map();
-        for (const f of incoming) {
-          const originalName = f.originalName || f.tmpName;
-          const parsed = path.parse(originalName);
-          let base = parsed.name;
-          let type = 'main';
-
-          if (base.toLowerCase().endsWith('_thumb') || base.toLowerCase().endsWith('-thumb')) {
-            base = base.replace(/[-_]thumb$/i, '');
-            type = 'thumb';
-          }
-
-          if (!groups.has(base)) groups.set(base, { main: null, thumb: null });
-          groups.get(base)[type] = f;
-        }
-
-        const sortedGroups = Array.from(groups.values()).sort((a, b) => {
-          const nameA = (a.main || a.thumb).originalName;
-          const nameB = (b.main || b.thumb).originalName;
-          return nameA.localeCompare(nameB);
-        });
+        const groups = photoUploadService.groupFilesByBaseName(incoming);
+        const sortedGroups = photoUploadService.sortGroups(groups);
 
         // Begin transaction AFTER validation so we can fully rollback.
         await runAsync('BEGIN');
@@ -295,72 +264,13 @@ router.post('/', (req, res) => {
         rollFolderPath = path.join(rollsDir, folderName);
         await runAsync('UPDATE rolls SET folderName = ? WHERE id = ?', [folderName, rollId]);
 
-        const fullDir = path.join(rollFolderPath, 'full');
-        const thumbDir = path.join(rollFolderPath, 'thumb');
-        const originalsDir = path.join(rollFolderPath, 'originals');
-
         const inserted = [];
         let frameCounter = 0;
 
-        const resolveMeta = (metaMap, keys = []) => {
-          for (const k of keys) {
-            if (!k) continue;
-            const m = metaMap[k];
-            if (!m) continue;
-            if (typeof m === 'string') return { date: m, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null, latitude: null, longitude: null };
-            if (typeof m === 'object') {
-              return {
-                date: m.date || null,
-                lens: m.lens || null,
-                country: m.country || null,
-                city: m.city || null,
-                detail_location: m.detail_location || null,
-                aperture: m.aperture ?? null,
-                shutter_speed: m.shutter_speed || null,
-                latitude: m.latitude ?? null,
-                longitude: m.longitude ?? null
-              };
-            }
-          }
-          return { date: null, lens: null, country: null, city: null, detail_location: null, aperture: null, shutter_speed: null, latitude: null, longitude: null };
-        };
+        // Initialize location cache for this batch
+        const locationCache = new photoUploadService.LocationCache();
 
-        const locationCache = new Map(); // key: country||city -> id
-        const rollLocationIds = new Set();
-
-        const ensureLocationId = async (country, city) => {
-          const normCity = (city || '').trim();
-          const normCountry = (country || '').trim();
-          if (!normCity) return null;
-          const key = `${normCountry.toLowerCase()}||${normCity.toLowerCase()}`;
-          if (locationCache.has(key)) return locationCache.get(key);
-
-          // Try to match existing rows by city + (country_code or country_name) case-insensitive
-          const existing = await getAsync(
-            `SELECT id FROM locations
-             WHERE LOWER(city_name) = LOWER(?)
-               AND (
-                 LOWER(country_name) = LOWER(?) OR country_code = ? OR country_code IS NULL OR country_name IS NULL
-               )
-             LIMIT 1`,
-            [normCity, normCountry, normCountry]
-          );
-          if (existing && existing.id) {
-            locationCache.set(key, existing.id);
-            return existing.id;
-          }
-
-          // Insert new row with the provided country name (country_code unknown here)
-          const insertedId = await runAsync(
-            'INSERT INTO locations (country_name, city_name) VALUES (?, ?)',
-            [normCountry || null, normCity]
-          ).then(res => res.lastID).catch(() => null);
-          if (insertedId) locationCache.set(key, insertedId);
-          return insertedId;
-        };
-
-        // Prepare statement for insertion (includes date_taken/time_taken + camera/lens/photographer + location + scanner info)
-        // NOTE: must be finalized even if we rollback.
+        // Prepare statement for insertion
         let stmt = null;
         stmt = db.prepare(`INSERT INTO photos (
           roll_id, frame_number, filename,
@@ -382,321 +292,83 @@ router.post('/', (req, res) => {
             });
         });
 
-        // ============================================================
-        // ATOMIC WORKFLOW:
-        // 1) Process ALL images in localTmpDir (OS temp)
-        // 2) If (and only if) all succeed, move/copy to final uploads/rolls
-        // 3) Insert DB rows
-        // Any error -> ROLLBACK + cleanup roll folder
-        // ============================================================
+        // Prepare roll defaults for photo processing
+        const rollDefaults = {
+          camera,
+          lens,
+          photographer,
+          filmIso,
+          default_location_id,
+          default_country,
+          default_city
+        };
+        
+        const scannerDefaults = {
+          scanner_equip_id,
+          scan_resolution,
+          scan_software,
+          scan_date
+        };
 
         // Stage operations first (no writes to OneDrive/rolls until all processing succeeded)
-        const stagedOps = []; // { type: 'move'|'copy', src, dest }
-        const stagedTempArtifacts = []; // temp files to delete after successful publish
-        const stagedPhotos = []; // metadata for DB insert
+        const stagedOps = [];
+        const stagedTempArtifacts = [];
+        const stagedPhotos = [];
 
+        // Process each file group using photo upload service
         for (const group of sortedGroups) {
           const f = group.main || group.thumb;
           if (!f) continue;
 
-          // If the group only has a thumb file (no main), treat it as the main.
-          // Only use a separate thumb file when it is actually distinct.
           const thumbFile = group.thumb && group.thumb !== f ? group.thumb : null;
-
           frameCounter += 1;
           const frameNumber = String(frameCounter).padStart(2, '0');
-          const originalExt = path.extname(f.originalName || f.tmpName) || '.jpg';
-          const baseName = `${rollId}_${frameNumber}`;
-          
-          // Generated display files are always JPG
-          let finalName = `${baseName}.jpg`;
-          let negativeRelPath = null;
-          let fullRelPath = null;
-          let thumbRelPath = null;
-          let originalRelPath = null;
-          let positiveRelPath = null;
-          let positiveThumbRelPath = null;
-          let negativeThumbRelPath = null;
-          let isNegativeSource = 0;
 
-          const isNegative = f.isNegative;
-
-          // Prepare final destination paths
-          const originalName = `${baseName}_original${originalExt}`;
-          const finalOriginalPath = path.join(originalsDir, originalName);
-          originalRelPath = path.join('rolls', folderName, 'originals', originalName).replace(/\\/g, '/');
-
-          // Prepare Source for Sharp (Buffer or Path)
-          let processInput = f.tmpPath;
-          let rawMetadata = null;
-          let scannerInfo = null;
-
-          // Extract scanner/source info from EXIF for TIFF/JPEG/BMP files
-          // This captures scanner make/model/software for scanned images
           try {
-            scannerInfo = await scanExifService.extractScannerInfo(f.tmpPath);
-            if (scannerInfo && scannerInfo.isScanner) {
-              console.log(`[CREATE ROLL] Detected scanner file: ${scannerInfo.make} ${scannerInfo.model}`);
-            }
-          } catch (scanErr) {
-            console.warn('[CREATE ROLL] Scanner EXIF extraction failed:', scanErr.message);
-          }
+            const result = await photoUploadService.processFileForRoll({
+              file: f,
+              thumbFile,
+              rollId,
+              folderName,
+              frameNumber,
+              localTmpDir,
+              fileMetadata,
+              rollDefaults,
+              locationCache,
+              scannerDefaults
+            });
 
-          // RAW Handling: If RAW, decode to Buffer (TIFF) first
-          if (f.isRaw) {
-            console.log(`[CREATE ROLL] Detected RAW file: ${f.originalName}`);
-            try {
-              // Decode to TIFF Buffer
-              const tiffBuffer = await rawDecoder.decode(f.tmpPath, { outputFormat: 'tiff' });
-              processInput = tiffBuffer;
-              
-              rawMetadata = await rawDecoder.extractMetadata(f.tmpPath);
-              console.log(`[CREATE ROLL] RAW decoded. Camera: ${rawMetadata?.camera || 'Unknown'}`);
-            } catch (rawErr) {
-              console.error('[CREATE ROLL] RAW decode failed, using original file as fallback:', rawErr.message);
-              // Fallback to originalPath (Sharp can handle some DNGs/formats natively if libraw fails)
-              processInput = f.tmpPath;
-            }
-          }
-
-          // Process into LOCAL temp dir
-          if (isNegative) {
-            const negName = `${baseName}_neg.jpg`;
-            const negThumbName = `${baseName}-thumb.jpg`;
-
-            const finalNegPath = path.join(rollFolderPath, 'negative', negName);
-            const finalNegThumbPath = path.join(rollFolderPath, 'negative', 'thumb', negThumbName);
-            const finalMainThumbPath = path.join(thumbDir, negThumbName);
-
-            const tempNegPath = path.join(localTmpDir, `proc_${baseName}_neg.jpg`);
-            stagedTempArtifacts.push(tempNegPath);
-            
-            try {
-              console.log(`[CREATE ROLL] Processing negative ${frameNumber}: ${path.basename(f.tmpPath)}`);
-              const startTime = Date.now();
-              await sharpWithTimeout(
-                sharp(processInput, { failOn: 'none' }).jpeg({ quality: 95 }).toFile(tempNegPath)
-              );
-              const duration = Date.now() - startTime;
-              console.log(`[CREATE ROLL] Negative ${frameNumber} processed in ${duration}ms`);
-            } catch (sharpErr) {
-              console.error(`[CREATE ROLL] Sharp processing failed for negative ${frameNumber}:`, sharpErr);
-              const err = new Error(`Failed to process negative image ${path.basename(f.tmpPath)}: ${sharpErr.message}`);
-              err.originalError = sharpErr;
-              err.fileInfo = { name: path.basename(f.tmpPath), size: fs.statSync(f.tmpPath).size };
-              throw err;
-            }
-
-            let tempNegThumbPath = null;
-            if (!thumbFile) {
-              tempNegThumbPath = path.join(localTmpDir, `proc_${baseName}_neg_thumb.jpg`);
-              stagedTempArtifacts.push(tempNegThumbPath);
-              try {
-                await sharpWithTimeout(
-                  sharp(tempNegPath)
-                    .resize({ width: 240, height: 240, fit: 'inside' })
-                    .jpeg({ quality: 40 })
-                    .toFile(tempNegThumbPath),
-                  10000 // Thumbnail should be fast, 10s timeout
-                );
-              } catch (thumbErr) {
-                console.error(`[CREATE ROLL] Thumbnail generation failed for negative ${frameNumber}:`, thumbErr);
-                const err = new Error(`Failed to generate thumbnail for ${path.basename(f.tmpPath)}: ${thumbErr.message}`);
-                err.originalError = thumbErr;
-                throw err;
-              }
-            }
-
-            // Stage publish ops (do not touch rollsDir yet)
-            stagedOps.push({ type: 'move', src: f.tmpPath, dest: finalOriginalPath });
-            stagedOps.push({ type: 'move', src: tempNegPath, dest: finalNegPath });
-
-            const thumbSrc = thumbFile ? thumbFile.tmpPath : tempNegThumbPath;
-            stagedOps.push({ type: 'copy', src: thumbSrc, dest: finalMainThumbPath });
-            stagedOps.push({ type: 'move', src: thumbSrc, dest: finalNegThumbPath });
-
-            negativeRelPath = path.join('rolls', folderName, 'negative', negName).replace(/\\/g, '/');
-            thumbRelPath = path.join('rolls', folderName, 'thumb', negThumbName).replace(/\\/g, '/');
-            negativeThumbRelPath = path.join('rolls', folderName, 'negative', 'thumb', negThumbName).replace(/\\/g, '/');
-            isNegativeSource = 1;
-            fullRelPath = null;
-            positiveRelPath = null;
-            positiveThumbRelPath = null;
-          } else {
-            const destPath = path.join(fullDir, finalName);
-            const thumbName = `${baseName}-thumb.jpg`;
-            const thumbPath = path.join(thumbDir, thumbName);
-
-            const tempFullPath = path.join(localTmpDir, `proc_${baseName}_full.jpg`);
-            stagedTempArtifacts.push(tempFullPath);
-            
-            try {
-              console.log(`[CREATE ROLL] Processing positive ${frameNumber}: ${path.basename(f.tmpPath)}`);
-              const startTime = Date.now();
-              await sharpWithTimeout(
-                sharp(processInput, { failOn: 'none' }).jpeg({ quality: 95 }).toFile(tempFullPath)
-              );
-              const duration = Date.now() - startTime;
-              console.log(`[CREATE ROLL] Positive ${frameNumber} processed in ${duration}ms`);
-            } catch (sharpErr) {
-              console.error(`[CREATE ROLL] Sharp processing failed for positive ${frameNumber}:`, sharpErr);
-              const err = new Error(`Failed to process image ${path.basename(f.tmpPath)}: ${sharpErr.message}`);
-              err.originalError = sharpErr;
-              err.fileInfo = { name: path.basename(f.tmpPath), size: fs.statSync(f.tmpPath).size };
-              throw err;
-            }
-
-            let tempThumbPath = null;
-            if (!thumbFile) {
-              tempThumbPath = path.join(localTmpDir, `proc_${baseName}_thumb.jpg`);
-              stagedTempArtifacts.push(tempThumbPath);
-              try {
-                await sharpWithTimeout(
-                  sharp(tempFullPath)
-                    .resize({ width: 240, height: 240, fit: 'inside' })
-                    .jpeg({ quality: 40 })
-                    .toFile(tempThumbPath),
-                  10000 // Thumbnail should be fast, 10s timeout
-                );
-              } catch (thumbErr) {
-                console.error(`[CREATE ROLL] Thumbnail generation failed for positive ${frameNumber}:`, thumbErr);
-                const err = new Error(`Failed to generate thumbnail for ${path.basename(f.tmpPath)}: ${thumbErr.message}`);
-                err.originalError = thumbErr;
-                throw err;
-              }
-            }
-
-            stagedOps.push({ type: 'move', src: f.tmpPath, dest: finalOriginalPath });
-            stagedOps.push({ type: 'move', src: tempFullPath, dest: destPath });
-            stagedOps.push({ type: 'move', src: (thumbFile ? thumbFile.tmpPath : tempThumbPath), dest: thumbPath });
-
-            fullRelPath = path.join('rolls', folderName, 'full', finalName).replace(/\\/g, '/');
-            positiveRelPath = fullRelPath;
-            thumbRelPath = path.join('rolls', folderName, 'thumb', thumbName).replace(/\\/g, '/');
-            positiveThumbRelPath = thumbRelPath;
-          }
-
-          // Stage DB insert params
-          const meta = resolveMeta(fileMetadata, [f.originalName, f.tmpName, finalName]);
-          
-          // Apply RAW metadata (if available) to supplement missing logs
-          if (rawMetadata) {
-             if (!meta.lens && rawMetadata.lens) meta.lens = rawMetadata.lens;
-             if (!meta.aperture && rawMetadata.aperture) meta.aperture = rawMetadata.aperture;
-             if (!meta.shutter_speed && rawMetadata.shutterSpeed) meta.shutter_speed = rawMetadata.shutterSpeed;
-          }
-
-          // Fallback logic for Date: Meta Only (No fallback to roll start_date as requested)
-          const dateTaken = meta.date || null;
-          const takenAt = dateTaken ? `${dateTaken}T12:00:00` : null;
-          
-          const lensForPhoto = meta.lens || lens || null;
-          const cameraForPhoto = rawMetadata?.camera || camera || null;
-          const photographerForPhoto = photographer || null;
-          const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' ? Number(meta.aperture) : null;
-          const shutterForPhoto = meta.shutter_speed || null;
-          const isoForPhoto = filmIso !== null && filmIso !== undefined ? filmIso : null;
-          const focalLengthForPhoto = meta.focal_length !== undefined && meta.focal_length !== null && meta.focal_length !== '' ? Number(meta.focal_length) : null;
-          
-          // Fallback logic for Location: Meta > Roll Default Location
-          const countryForPhoto = meta.country || default_country || null;
-          const cityForPhoto = meta.city || default_city || null;
-          
-          // If meta provides specific country/city, we need to ensure ID for it.
-          // IF meta is missing, but we have default roll location ID, use that directly to avoid lookup.
-          let locationId = null;
-          if (meta.country || meta.city) {
-            locationId = await ensureLocationId(meta.country, meta.city);
-          } else {
-             // Fallback to roll location
-             locationId = default_location_id; 
-          }
-          
-          const detailLoc = meta.detail_location || null;
-          const latitudeForPhoto = meta.latitude !== undefined && meta.latitude !== null && meta.latitude !== '' ? Number(meta.latitude) : null;
-          const longitudeForPhoto = meta.longitude !== undefined && meta.longitude !== null && meta.longitude !== '' ? Number(meta.longitude) : null;
-          if (locationId) rollLocationIds.add(locationId);
-
-          // Prepare scanner info for DB (if detected as scanner source)
-          // Priority: Photo EXIF > Roll default fields
-          const scanDbInfo = scannerInfo ? scanExifService.formatForDatabase(scannerInfo) : {};
-
-          stagedPhotos.push({
-            frameNumber,
-            finalName,
-            fullRelPath,
-            thumbRelPath,
-            negativeRelPath,
-            originalRelPath,
-            positiveRelPath,
-            positiveThumbRelPath,
-            negativeThumbRelPath,
-            isNegativeSource,
-            takenAt,
-            dateTaken,
-            locationId,
-            detailLoc,
-            countryForPhoto,
-            cityForPhoto,
-            cameraForPhoto,
-            lensForPhoto,
-            photographerForPhoto,
-            apertureForPhoto,
-            shutterForPhoto,
-            isoForPhoto,
-            focalLengthForPhoto,
-            latitudeForPhoto,
-            longitudeForPhoto,
-            // Scanner info: EXIF优先，roll字段回退
-            scannerEquipId: scanDbInfo.scanner_equip_id || scanner_equip_id || null,
-            scanResolution: scanDbInfo.scan_resolution || scan_resolution || null,
-            scanSoftware: scanDbInfo.scan_software || scan_software || null,
-            scanDate: scanDbInfo.scan_date || scan_date || null,
-            scanBitDepth: scanDbInfo.scan_bit_depth || null, // 只来自EXIF
-            sourceMake: scanDbInfo.source_make || null, // 只来自EXIF
-            sourceModel: scanDbInfo.source_model || null, // 只来自EXIF
-            sourceSoftware: scanDbInfo.source_software || null, // 只来自EXIF
-          });
-
-        }
-
-
-        // Ensure roll directories exist only after ALL processing succeeded
-        await fs.promises.mkdir(rollFolderPath, { recursive: true });
-        await fs.promises.mkdir(fullDir, { recursive: true });
-        await fs.promises.mkdir(thumbDir, { recursive: true });
-        await fs.promises.mkdir(originalsDir, { recursive: true });
-        await fs.promises.mkdir(path.join(rollFolderPath, 'negative'), { recursive: true });
-        await fs.promises.mkdir(path.join(rollFolderPath, 'negative', 'thumb'), { recursive: true });
-
-        // Publish filesystem changes (moves/copies into uploads/rolls)
-        console.log(`[CREATE ROLL] Publishing ${stagedOps.length} file operations to OneDrive...`);
-        for (let i = 0; i < stagedOps.length; i++) {
-          const op = stagedOps[i];
-          try {
-            const srcSize = fs.existsSync(op.src) ? (fs.statSync(op.src).size / 1024 / 1024).toFixed(2) : 'N/A';
-            console.log(`[CREATE ROLL] [${i+1}/${stagedOps.length}] ${op.type} ${path.basename(op.src)} (${srcSize} MB) -> ${path.basename(op.dest)}`);
-            
-            if (op.type === 'copy') {
-              await copyFileAsyncWithRetry(op.src, op.dest);
-            } else {
-              await moveFileAsync(op.src, op.dest);
-            }
-            createdPaths.push(op.dest);
-          } catch (fileOpErr) {
-            console.error(`[CREATE ROLL] File operation failed [${op.type}] ${path.basename(op.src)} -> ${path.basename(op.dest)}:`, fileOpErr);
-            const err = new Error(`Failed to ${op.type} file ${path.basename(op.src)} to OneDrive folder: ${fileOpErr.message}`);
-            err.originalError = fileOpErr;
-            err.operation = { type: op.type, src: op.src, dest: op.dest };
+            stagedOps.push(...result.stagedOps);
+            stagedTempArtifacts.push(...result.stagedTempArtifacts);
+            stagedPhotos.push(result.photoData);
+          } catch (procErr) {
+            console.error(`[CREATE ROLL] Processing failed for ${f.originalName}:`, procErr);
+            const err = new Error(`Failed to process image ${f.originalName}: ${procErr.message}`);
+            err.originalError = procErr;
+            err.fileInfo = { name: f.originalName };
             throw err;
           }
         }
-        console.log(`[CREATE ROLL] All files published successfully.`);
+
+        // Ensure roll directories exist only after ALL processing succeeded
+        await rollFileService.ensureRollDirectories(rollFolderPath);
+
+        // Publish filesystem changes (moves/copies into uploads/rolls)
+        console.log(`[CREATE ROLL] Publishing ${stagedOps.length} file operations...`);
+        try {
+          const publishedPaths = await rollFileService.publishStagedOperations(stagedOps);
+          createdPaths.push(...publishedPaths);
+        } catch (publishErr) {
+          console.error('[CREATE ROLL] File publish failed:', publishErr);
+          if (publishErr.createdPaths) {
+            createdPaths.push(...publishErr.createdPaths);
+          }
+          throw publishErr;
+        }
 
         // Cleanup staged temp artifacts after publish
-        for (const t of stagedTempArtifacts) {
-          try { if (fs.existsSync(t)) await fs.promises.unlink(t); } catch (_) {}
-        }
+        await rollFileService.cleanupTempArtifacts(stagedTempArtifacts);
+
         // Insert DB records (atomic: any failure -> rollback)
         for (const p of stagedPhotos) {
           await runInsert([
@@ -780,6 +452,7 @@ router.post('/', (req, res) => {
 
         // Attach roll_locations after photo insert completes
         try {
+          const rollLocationIds = locationCache.getRollLocationIds();
           for (const locId of rollLocationIds) {
             await runAsync('INSERT OR IGNORE INTO roll_locations (roll_id, location_id) VALUES (?, ?)', [rollId, locId]);
           }
@@ -814,14 +487,7 @@ router.post('/', (req, res) => {
         try { await runAsync('ROLLBACK'); } catch (_) {}
 
         // Cleanup created roll folder/files (best-effort)
-        if (rollFolderPath) {
-          await rmWithRetry(rollFolderPath);
-        } else {
-          // Fallback: delete any created paths we tracked
-          for (const p of createdPaths) {
-            try { await rmWithRetry(p); } catch (_) {}
-          }
-        }
+        await rollFileService.rollbackCreatedFiles({ rollFolderPath, createdPaths });
 
         return res.status(500).json({ ok: false, error: err.message || 'Create roll failed', details: err.fileInfo || err.operation });
       } finally {
@@ -846,221 +512,20 @@ router.post('/', (req, res) => {
 
 // GET /api/rolls
 router.get('/', async (req, res) => {
-  const { camera, lens, photographer, location_id, year, month, ym, film, camera_equip_id, lens_equip_id, flash_equip_id, film_id } = req.query;
-
-  const toArray = (v) => {
-    if (v === undefined || v === null) return [];
-    if (Array.isArray(v)) return v.filter(Boolean);
-    if (typeof v === 'string' && v.includes(',')) return v.split(',').map(s=>s.trim()).filter(Boolean);
-    return v === '' ? [] : [v];
-  };
-  const cameras = toArray(camera);
-  const lenses = toArray(lens);
-  const photographers = toArray(photographer);
-  const locations = toArray(location_id).map(v => String(v).split('::')[0]); // support "id::label"
-  const years = toArray(year);
-  const months = toArray(month);
-  const yms = toArray(ym);
-  const films = toArray(film);
-  
-  // Dynamic camera/lens resolution: Equipment ID → Fixed Lens (implicit) → Legacy Text
-  let sql = `
-    SELECT DISTINCT rolls.*, 
-           films.name AS film_name_joined,
-           -- Camera resolution: prefer equipment name, fallback to legacy text
-           COALESCE(cam.brand || ' ' || cam.model, rolls.camera) AS display_camera,
-           -- Lens resolution: prefer explicit lens, then fixed lens from camera, then legacy text
-           COALESCE(
-             lens.brand || ' ' || lens.model,
-             CASE WHEN cam.has_fixed_lens = 1 THEN 
-               cam.fixed_lens_focal_length || 'mm f/' || cam.fixed_lens_max_aperture 
-             END,
-             rolls.lens
-           ) AS display_lens,
-           cam.has_fixed_lens AS camera_has_fixed_lens,
-           cam.fixed_lens_focal_length,
-           cam.fixed_lens_max_aperture
-    FROM rolls 
-    LEFT JOIN films ON rolls.filmId = films.id 
-    LEFT JOIN equip_cameras cam ON rolls.camera_equip_id = cam.id
-    LEFT JOIN equip_lenses lens ON rolls.lens_equip_id = lens.id
-  `;
-  
-  const params = [];
-  const conditions = [];
-
-  // Equipment ID filters (exact match)
-  if (camera_equip_id) {
-    conditions.push(`rolls.camera_equip_id = ?`);
-    params.push(Number(camera_equip_id));
-  }
-  if (lens_equip_id) {
-    conditions.push(`rolls.lens_equip_id = ?`);
-    params.push(Number(lens_equip_id));
-  }
-  if (flash_equip_id) {
-    conditions.push(`rolls.flash_equip_id = ?`);
-    params.push(Number(flash_equip_id));
-  }
-  if (film_id) {
-    conditions.push(`rolls.filmId = ?`);
-    params.push(Number(film_id));
-  }
-
-  if (cameras.length) {
-    const cameraConds = cameras.map(() => `(
-      rolls.camera = ? OR 
-      EXISTS (SELECT 1 FROM roll_gear WHERE roll_id = rolls.id AND type='camera' AND value = ?)
-    )`).join(' OR ');
-    conditions.push(`(${cameraConds})`);
-    cameras.forEach(c => { params.push(c, c); });
-  }
-
-  if (lenses.length) {
-    const lensConds = lenses.map(() => `(
-      rolls.lens = ? OR 
-      EXISTS (SELECT 1 FROM roll_gear WHERE roll_id = rolls.id AND type='lens' AND value = ?)
-    )`).join(' OR ');
-    conditions.push(`(${lensConds})`);
-    lenses.forEach(l => { params.push(l, l); });
-  }
-
-  if (photographers.length) {
-    const pgConds = photographers.map(() => `(
-      rolls.photographer = ? OR 
-      EXISTS (SELECT 1 FROM roll_gear WHERE roll_id = rolls.id AND type='photographer' AND value = ?) OR
-      EXISTS (SELECT 1 FROM photos WHERE roll_id = rolls.id AND photographer = ?)
-    )`).join(' OR ');
-    conditions.push(`(${pgConds})`);
-    photographers.forEach(p => { params.push(p, p, p); });
-  }
-
-  if (locations.length) {
-    const placeholders = locations.map(()=>'?').join(',');
-    conditions.push(`(
-      EXISTS (SELECT 1 FROM roll_locations WHERE roll_id = rolls.id AND location_id IN (${placeholders}))
-      OR EXISTS (SELECT 1 FROM photos WHERE roll_id = rolls.id AND location_id IN (${placeholders}))
-    )`);
-    params.push(...locations, ...locations);
-  }
-
-  if (years.length || months.length || yms.length) {
-    const parts = [];
-    if (yms.length) {
-      parts.push(`strftime('%Y-%m', rolls.start_date) IN (${yms.map(()=>'?').join(',')})`);
-      params.push(...yms);
-    } else {
-      if (years.length) { parts.push(`strftime('%Y', rolls.start_date) IN (${years.map(()=>'?').join(',')})`); params.push(...years); }
-      if (months.length) { parts.push(`strftime('%m', rolls.start_date) IN (${months.map(()=>'?').join(',')})`); params.push(...months); }
-    }
-    if (parts.length) conditions.push(`(${parts.join(' OR ')})`);
-  }
-
-  if (films.length) {
-    const filmConds = films.map(() => `(
-      rolls.filmId = ? OR films.name = ? OR rolls.film_type = ?
-    )`).join(' OR ');
-    conditions.push(`(${filmConds})`);
-    films.forEach(fv => { params.push(fv, fv, fv); });
-  }
-
-  if (conditions.length > 0) {
-    sql += ' WHERE ' + conditions.join(' AND ');
-  }
-
-  sql += ' ORDER BY rolls.start_date DESC, rolls.id DESC';
-
   try {
-    const rows = await allAsync(sql, params);
+    const rows = await rollService.listRolls(req.query);
     res.json(rows);
   } catch (err) {
+    console.error('[GET] rolls error', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET /api/rolls/:id
 router.get('/:id', async (req, res) => {
-  const id = req.params.id;
   try {
-    const sql = `
-      SELECT rolls.*, 
-             films.name AS film_name_joined, 
-             films.iso AS film_iso_joined,
-             cam.name AS camera_equip_name,
-             cam.brand AS camera_equip_brand,
-             cam.model AS camera_equip_model,
-             cam.mount AS camera_equip_mount,
-             cam.type AS camera_equip_type,
-             cam.has_fixed_lens AS camera_has_fixed_lens,
-             cam.fixed_lens_focal_length AS camera_fixed_lens_focal_length,
-             cam.fixed_lens_max_aperture AS camera_fixed_lens_max_aperture,
-             cam.image_path AS camera_equip_image,
-             lens.name AS lens_equip_name,
-             lens.brand AS lens_equip_brand,
-             lens.model AS lens_equip_model,
-             lens.focal_length_min AS lens_equip_focal_min,
-             lens.focal_length_max AS lens_equip_focal_max,
-             lens.max_aperture AS lens_equip_max_aperture,
-             lens.image_path AS lens_equip_image,
-             flash.name AS flash_equip_name,
-             flash.brand AS flash_equip_brand,
-             flash.model AS flash_equip_model,
-             flash.guide_number AS flash_equip_gn,
-             flash.image_path AS flash_equip_image,
-             scanner.name AS scanner_equip_name,
-             scanner.brand AS scanner_equip_brand,
-             scanner.model AS scanner_equip_model,
-             scanner.type AS scanner_equip_type,
-             scanner.max_resolution AS scanner_equip_max_resolution,
-             scanner.image_path AS scanner_equip_image,
-             -- Dynamic display fields: Equipment → Implicit Fixed Lens → Legacy Text
-             COALESCE(cam.brand || ' ' || cam.model, rolls.camera) AS display_camera,
-             COALESCE(
-               lens.brand || ' ' || lens.model,
-               CASE WHEN cam.has_fixed_lens = 1 THEN 
-                 cam.fixed_lens_focal_length || 'mm f/' || cam.fixed_lens_max_aperture 
-               END,
-               rolls.lens
-             ) AS display_lens
-      FROM rolls
-      LEFT JOIN films ON rolls.filmId = films.id
-      LEFT JOIN equip_cameras cam ON rolls.camera_equip_id = cam.id
-      LEFT JOIN equip_lenses lens ON rolls.lens_equip_id = lens.id
-      LEFT JOIN equip_flashes flash ON rolls.flash_equip_id = flash.id
-      LEFT JOIN equip_scanners scanner ON rolls.scanner_equip_id = scanner.id
-      WHERE rolls.id = ?
-    `;
-    const row = await getAsync(sql, [id]);
-    
+    const row = await rollService.getRollByIdWithDetails(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    
-    // Check if locations table exists before querying
-    const tableExists = await getAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'", []);
-    
-    if (tableExists) {
-      const locationsQuery = `
-        SELECT l.id AS location_id, l.country_code, l.country_name, l.city_name, l.city_lat, l.city_lng
-        FROM roll_locations rl JOIN locations l ON rl.location_id = l.id
-        WHERE rl.roll_id = ? ORDER BY l.country_name, l.city_name`;
-      try {
-        row.locations = await allAsync(locationsQuery, [id]) || [];
-      } catch (e) {
-        console.warn('Error fetching locations:', e.message);
-        row.locations = [];
-      }
-    } else {
-      row.locations = [];
-    }
-    
-    // attach gear arrays
-    const gearRows = await allAsync('SELECT type, value FROM roll_gear WHERE roll_id = ?', [id]);
-    const gear = { cameras: [], lenses: [], photographers: [] };
-    (gearRows || []).forEach(g => {
-      if (g.type === 'camera') gear.cameras.push(g.value);
-      else if (g.type === 'lens') gear.lenses.push(g.value);
-      else if (g.type === 'photographer') gear.photographers.push(g.value);
-    });
-    row.gear = gear;
     res.json(row);
   } catch (err) {
     console.error('[GET] roll error', err.message);
@@ -1070,16 +535,8 @@ router.get('/:id', async (req, res) => {
 
 // GET /api/rolls/:id/locations
 router.get('/:id/locations', async (req, res) => {
-  const id = req.params.id;
-  const sql = `
-    SELECT l.id AS location_id, l.country_code, l.country_name, l.city_name, l.city_lat, l.city_lng
-    FROM roll_locations rl
-    JOIN locations l ON rl.location_id = l.id
-    WHERE rl.roll_id = ?
-    ORDER BY l.country_name, l.city_name
-  `;
   try {
-    const rows = await allAsync(sql, [id]);
+    const rows = await rollService.getRollLocations(req.params.id);
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1090,28 +547,21 @@ router.get('/:id/locations', async (req, res) => {
 router.get('/:id/preset', async (req, res) => {
   const id = req.params.id;
   try {
-    const row = await getAsync('SELECT preset_json FROM rolls WHERE id = ?', [id]);
-    if (!row) return res.status(404).json({ error: 'Not found' });
-    let parsed = null;
-    try { parsed = row.preset_json ? JSON.parse(row.preset_json) : null; } catch { parsed = null; }
-    res.json({ rollId: id, preset: parsed });
+    const preset = await rollService.getRollPreset(id);
+    res.json({ rollId: id, preset });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // POST /api/rolls/:id/preset - set/overwrite preset_json
-// Body: { name: string, params: { inverted, inversionMode, exposure, ... curves } }
 router.post('/:id/preset', async (req, res) => {
   const id = req.params.id;
   const body = req.body || {};
   if (!body || !body.params) return res.status(400).json({ error: 'params required' });
-  const payload = { name: body.name || 'Unnamed', params: body.params };
-  let json;
-  try { json = JSON.stringify(payload); } catch(e) { return res.status(400).json({ error: 'Invalid params JSON' }); }
   try {
-    const result = await runAsync('UPDATE rolls SET preset_json = ? WHERE id = ?', [json, id]);
-    res.json({ ok: true, updated: result?.changes || 0 });
+    const result = await rollService.setRollPreset(id, body.name, body.params);
+    res.json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1121,8 +571,8 @@ router.post('/:id/preset', async (req, res) => {
 router.delete('/:id/preset', async (req, res) => {
   const id = req.params.id;
   try {
-    const result = await runAsync('UPDATE rolls SET preset_json = NULL WHERE id = ?', [id]);
-    res.json({ ok: true, cleared: result?.changes || 0 });
+    const result = await rollService.clearRollPreset(id);
+    res.json({ ok: true, ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1131,63 +581,65 @@ router.delete('/:id/preset', async (req, res) => {
 // PUT /api/rolls/:id
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  let { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, locations, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id, scan_resolution, scan_software, scan_lab, scan_date, scan_cost, scan_notes, format, film_back_equip_id } = req.body;
+  let { locations, camera_equip_id, lens_equip_id, camera, lens, photographer, ...restFields } = req.body;
+  
+  // Validate date range
+  const { start_date, end_date } = restFields;
   if (start_date !== undefined && end_date !== undefined) {
     const sd = new Date(start_date);
     const ed = new Date(end_date);
-    if (isNaN(sd.getTime()) || isNaN(ed.getTime())) return res.status(400).json({ error: 'Invalid start_date or end_date' });
-    if (sd > ed) return res.status(400).json({ error: 'start_date cannot be later than end_date' });
+    if (isNaN(sd.getTime()) || isNaN(ed.getTime())) {
+      return res.status(400).json({ error: 'Invalid start_date or end_date' });
+    }
+    if (sd > ed) {
+      return res.status(400).json({ error: 'start_date cannot be later than end_date' });
+    }
   }
   
-  // ==============================
-  // FIXED LENS CAMERA HANDLING
-  // ==============================
-  // If the camera being set has a fixed lens, enforce implicit lens:
-  // - Set lens_equip_id to NULL
-  // - Set legacy lens text to full description: "Brand Model Xmm f/Y"
+  // Handle fixed lens camera: nullify lens_equip_id and set legacy lens text
   if (camera_equip_id !== undefined && camera_equip_id !== null) {
     try {
-      const camRow = await getAsync(`
-        SELECT brand, model, has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture 
-        FROM equip_cameras WHERE id = ?
-      `, [camera_equip_id]);
-      if (camRow && camRow.has_fixed_lens === 1) {
-        // Fixed lens camera: nullify explicit lens, set full description for backward compat
+      const camRow = await getAsync(
+        `SELECT brand, model, has_fixed_lens, fixed_lens_focal_length, fixed_lens_max_aperture 
+         FROM equip_cameras WHERE id = ?`,
+        [camera_equip_id]
+      );
+      if (camRow?.has_fixed_lens === 1) {
         lens_equip_id = null;
         lens = formatFixedLensDescription(camRow);
-        console.log(`[UPDATE ROLL ${id}] Fixed lens camera detected. Setting implicit lens: ${lens}`);
+        console.log(`[UPDATE ROLL ${id}] Fixed lens camera → implicit lens: ${lens}`);
       }
-    } catch (camErr) {
-      console.warn('[UPDATE ROLL] Failed to check camera fixed lens status', camErr.message);
+    } catch (e) {
+      console.warn('[UPDATE ROLL] Fixed lens check failed:', e.message);
     }
   }
   
-  // Build dynamic UPDATE query to only update provided fields
-  const updates = [];
-  const values = [];
-  const fieldMap = { title, start_date, end_date, camera, lens, photographer, film_type, filmId, notes, develop_lab, develop_process, develop_date, purchase_cost, develop_cost, purchase_channel, batch_number, develop_note, camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id, scan_resolution, scan_software, scan_lab, scan_date, scan_cost, scan_notes, format, film_back_equip_id };
+  // Merge equipment and text fields
+  const updateData = {
+    ...restFields,
+    camera_equip_id,
+    lens_equip_id,
+    camera,
+    lens,
+    photographer
+  };
   
-  for (const [key, val] of Object.entries(fieldMap)) {
-    if (val !== undefined) {
-      updates.push(`${key}=?`);
-      values.push(val);
-    }
-  }
-  
-  if (updates.length === 0 && !Array.isArray(locations)) {
+  // Check if there's anything to update
+  const hasFieldUpdates = Object.values(updateData).some(v => v !== undefined);
+  if (!hasFieldUpdates && !Array.isArray(locations)) {
     return res.json({ ok: true, message: 'No fields to update' });
   }
   
   try {
-    if (updates.length > 0) {
-      const sql = `UPDATE rolls SET ${updates.join(', ')} WHERE id=?`;
-      values.push(id);
-      await runAsync(sql, values);
+    // Update roll fields
+    if (hasFieldUpdates) {
+      await rollService.updateRoll(id, updateData);
       
       // Update gear with intelligent deduplication
-      if (camera !== undefined) await addOrUpdateGear(id, 'camera', camera).catch(e => console.error('Update camera failed', e));
+      if (camera !== undefined) {
+        await addOrUpdateGear(id, 'camera', camera).catch(e => console.error('Update camera failed', e));
+      }
       if (lens !== undefined) {
-        // For fixed lens cameras, clean up fragmented data and ensure canonical format
         const fixedInfo = await getFixedLensInfo(camera_equip_id);
         if (fixedInfo.isFixedLens && fixedInfo.lensDescription) {
           await cleanupFixedLensGear(id, fixedInfo.lensDescription).catch(e => console.error('Cleanup fixed lens gear failed', e));
@@ -1195,14 +647,19 @@ router.put('/:id', async (req, res) => {
           await addOrUpdateGear(id, 'lens', lens).catch(e => console.error('Update lens failed', e));
         }
       }
-      if (photographer !== undefined) await addOrUpdateGear(id, 'photographer', photographer).catch(e => console.error('Update photographer failed', e));
-    }
-    if (Array.isArray(locations)) {
-      for (const locId of locations) {
-        await runAsync('INSERT OR IGNORE INTO roll_locations (roll_id, location_id) VALUES (?, ?)', [id, locId]);
+      if (photographer !== undefined) {
+        await addOrUpdateGear(id, 'photographer', photographer).catch(e => console.error('Update photographer failed', e));
       }
     }
-    try { await recomputeRollSequence(); } catch(e){ console.error('recompute sequence failed', e); }
+    
+    // Add locations
+    if (Array.isArray(locations)) {
+      await rollService.addRollLocations(id, locations);
+    }
+    
+    // Recompute display sequence
+    await recomputeRollSequence().catch(e => console.error('recompute sequence failed', e));
+    
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1214,90 +671,15 @@ router.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
   console.log(`[DELETE] Request to delete roll id: ${id}`);
 
-  const toUploadAbs = (relPath) => {
-    if (!relPath) return null;
-    const trimmed = relPath.replace(/^\/+/, '').replace(/^uploads\//, '');
-    return path.join(uploadsDir, trimmed);
-  };
-
-  const deleteFilesSafe = (paths = []) => {
-    const unique = Array.from(new Set(paths.filter(Boolean)));
-    for (const p of unique) {
-      try {
-        const abs = path.resolve(p);
-        if (!abs.startsWith(path.resolve(uploadsDir))) continue; // safety guard
-        if (fs.existsSync(abs)) fs.rmSync(abs, { recursive: true, force: true });
-      } catch (err) {
-        console.warn('[DELETE] Failed to remove path', p, err.message);
-      }
-    }
-  };
-
-  const deduceFolderName = (row, photos) => {
-    if (row && row.folderName) return row.folderName;
-    for (const p of photos || []) {
-      const rel = p.full_rel_path || p.positive_rel_path || p.negative_rel_path || p.thumb_rel_path;
-      if (!rel) continue;
-      const parts = rel.replace(/^\/+/, '').split('/');
-      const idx = parts.indexOf('rolls');
-      if (idx >= 0 && parts[idx + 1]) return parts[idx + 1];
-      if (parts[0]) return parts[0];
-    }
-    return String(id);
-  };
-
-  const deleteRollRecords = async (rollId) => {
-    await runAsync('BEGIN');
-    try {
-      await runAsync('DELETE FROM photo_tags WHERE photo_id IN (SELECT id FROM photos WHERE roll_id = ?)', [rollId]);
-      await runAsync('DELETE FROM roll_locations WHERE roll_id = ?', [rollId]);
-      await runAsync('DELETE FROM roll_gear WHERE roll_id = ?', [rollId]);
-      await runAsync('UPDATE film_items SET roll_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE roll_id = ?', [rollId]);
-      await runAsync('DELETE FROM photos WHERE roll_id = ?', [rollId]);
-      const result = await runAsync('DELETE FROM rolls WHERE id = ?', [rollId]);
-      await runAsync('COMMIT');
-      return result?.changes || 0;
-    } catch (err) {
-      try { await runAsync('ROLLBACK'); } catch (_) {}
-      throw err;
-    }
-  };
-
   try {
-    const row = await getAsync('SELECT id, cover_photo, coverPath, folderName FROM rolls WHERE id = ?', [id]);
-    const photos = await allAsync(`
-      SELECT id, full_rel_path, positive_rel_path, negative_rel_path, thumb_rel_path, positive_thumb_rel_path, negative_thumb_rel_path
-      FROM photos WHERE roll_id = ?
-    `, [id]);
+    // Delete from database (returns roll and photo data for file cleanup)
+    const { deleted, roll, photos } = await rollService.deleteRollFromDb(id);
+    
+    // Recompute display sequence
+    await recomputeRollSequence().catch(e => console.error('recompute sequence failed', e));
 
-    const folderName = deduceFolderName(row, photos);
-    const folderPath = path.join(rollsDir, folderName);
-
-    // Collect paths to clean up after DB delete succeeds
-    const photoPaths = [];
-    for (const p of photos || []) {
-      photoPaths.push(toUploadAbs(p.full_rel_path));
-      photoPaths.push(toUploadAbs(p.positive_rel_path));
-      photoPaths.push(toUploadAbs(p.negative_rel_path));
-      photoPaths.push(toUploadAbs(p.thumb_rel_path));
-      photoPaths.push(toUploadAbs(p.positive_thumb_rel_path));
-      photoPaths.push(toUploadAbs(p.negative_thumb_rel_path));
-    }
-
-    const cover = row && (row.cover_photo || row.coverPath);
-    if (cover) {
-      const coverAbs = toUploadAbs(cover);
-      // Only delete cover separately if it is outside the roll folder we remove later
-      if (coverAbs && (!folderPath || !path.resolve(coverAbs).startsWith(path.resolve(folderPath)))) {
-        photoPaths.push(coverAbs);
-      }
-    }
-
-    const deleted = await deleteRollRecords(id);
-    try { await recomputeRollSequence(); } catch(err){ console.error('recompute sequence failed', err); }
-
-    // Remove roll folder and leftover files (best-effort; DB already committed)
-    deleteFilesSafe([folderPath, ...photoPaths]);
+    // Remove roll folder and files (best-effort, DB already committed)
+    rollFileService.deleteRollFiles({ roll, photos, rollId: id });
 
     res.json({ deleted });
   } catch (err) {
@@ -1306,264 +688,75 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
-// Photos endpoints (now rely on full_rel_path in uploads/rolls)
-router.get('/:rollId/photos', async (req, res) => {
-  const rollId = req.params.rollId;
-  try {
-    const rows = await PreparedStmt.allAsync('photos.listByRoll', [rollId]);
+// ============================================================================
+// PHOTO ENDPOINTS
+// ============================================================================
 
-    const normalized = (rows || []).map(r => {
-      const fullPath = r.positive_rel_path || r.full_rel_path || null;
-      const thumbPath = r.positive_thumb_rel_path || r.thumb_rel_path || null;
-      return Object.assign({}, r, {
-        full_rel_path: fullPath,
-        thumb_rel_path: thumbPath,
-      });
-    });
-    const withTags = await attachTagsToPhotos(normalized);
-    res.json(withTags);
+const photoService = require('../services/photo-service');
+
+// GET /api/rolls/:rollId/photos - List photos in a roll
+router.get('/:rollId/photos', async (req, res) => {
+  try {
+    const photos = await photoService.listByRoll(req.params.rollId);
+    res.json(photos);
   } catch (err) {
     console.error('[GET] roll photos error', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
+// ============================================================================
+// POST /api/rolls/:rollId/photos - UPLOAD SINGLE PHOTO
+// ============================================================================
+//
+// Handles single photo upload to an existing roll.
+// Uses photoUploadService for processing (shared with POST / route).
+// ============================================================================
+
 router.post('/:rollId/photos', uploadDefault.single('image'), async (req, res) => {
   const rollId = req.params.rollId;
-  const { 
-    caption, taken_at, rating, isNegative, 
-    uploadType, // 'positive' | 'negative' | 'original'
-    camera: photoCamera, lens: photoLens, photographer: photoPhotographer 
-  } = req.body;
-  if (!req.file) return res.status(400).json({ error: 'image file required' });
   
-  // Import raw decoder for RAW file support
-  const rawDecoder = require('../services/raw-decoder');
-  
-  // Use original extension for the original file
-  const originalExt = path.extname(req.file.originalname || req.file.filename) || '.jpg';
-  const isRawFile = rawDecoder.isRawFile(req.file.originalname || req.file.filename);
-  
-  const rollFolder = path.join(rollsDir, String(rollId));
-  fs.mkdirSync(rollFolder, { recursive: true });
-  
+  if (!req.file) {
+    return res.status(400).json({ error: 'image file required' });
+  }
+
   try {
-    const cntRow = await PreparedStmt.getAsync('rolls.countPhotos', [rollId]);
-
-    const nextIndex = (cntRow && cntRow.cnt ? cntRow.cnt : 0) + 1;
-    const frameNumber = String(nextIndex).padStart(2, '0');
-    const baseName = `${rollId}_${frameNumber}`;
-    
-    // Display files are always JPG
-    const finalName = `${baseName}.jpg`;
-    
-    const fullDir = path.join(rollFolder, 'full');
-    const thumbDir = path.join(rollFolder, 'thumb');
-    const originalsDir = path.join(rollFolder, 'originals');
-    
-    if (!fs.existsSync(fullDir)) fs.mkdirSync(fullDir, { recursive: true });
-    if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
-    if (!fs.existsSync(originalsDir)) fs.mkdirSync(originalsDir, { recursive: true });
-
-    let negativeRelPath = null;
-    let fullRelPath = null;
-    let thumbRelPath = null;
-    let originalRelPath = null;
-    let positiveRelPath = null;
-    let positiveThumbRelPath = null;
-    let negativeThumbRelPath = null;
-    let isNegativeSource = 0;
-    let rawMetadata = null;
-
-    // Determine effective upload type
-    const effectiveUploadType = uploadType || (isNegative === 'true' || isNegative === true ? 'negative' : 'positive');
-    const isNeg = effectiveUploadType === 'negative';
-    const isOriginal = effectiveUploadType === 'original';
-
-    // Save original file first
-    const originalName = `${baseName}_original${originalExt}`;
-    const originalPath = path.join(originalsDir, originalName);
-    moveFileSync(req.file.path, originalPath);
-    // Note: We don't currently have an original_rel_path column in DB, but file is safe.
-    
-    // Prepare Source for Sharp (Buffer or Path)
-    let processInput = originalPath;
-    
-    // RAW Handling: If RAW, decode to Buffer (TIFF) first
-    if (isRawFile) {
-      console.log(`[UPLOAD] Detected RAW file: ${req.file.originalname}`);
-      try {
-        // Decode to TIFF Buffer
-        const tiffBuffer = await rawDecoder.decode(originalPath, { outputFormat: 'tiff' });
-        processInput = tiffBuffer;
-        
-        rawMetadata = await rawDecoder.extractMetadata(originalPath);
-        console.log(`[UPLOAD] RAW decoded. Camera: ${rawMetadata?.camera || 'Unknown'}`);
-      } catch (rawErr) {
-        console.error('[UPLOAD] RAW decode failed, using original file as fallback:', rawErr.message);
-        // Fallback to originalPath (Sharp can handle some DNGs/formats natively if libraw fails)
-        processInput = originalPath;
+    const result = await photoUploadService.uploadSinglePhoto({
+      rollId,
+      file: req.file,
+      options: {
+        uploadType: req.body.uploadType,
+        isNegative: req.body.isNegative,
+        caption: req.body.caption,
+        taken_at: req.body.taken_at,
+        rating: req.body.rating,
+        camera: req.body.camera,
+        lens: req.body.lens,
+        photographer: req.body.photographer
       }
-    }
+    });
 
-    // Branch Logic
-    if (isOriginal || isNeg) {
-      // "Original" or "Negative" Mode -> Result is a "Negative" entry
-      // For "Original" uploads (RAW/TIFF), we generate a high-quality JPEG preview and store it as the "Negative" path
-      // This allows the user to see the image (even if inverted) and process/invert it later using the Negative Editor
-      
-      const negName = `${baseName}_neg.jpg`;
-      const negDir = path.join(rollFolder, 'negative');
-      const negThumbDir = path.join(rollFolder, 'negative', 'thumb');
-      if (!fs.existsSync(negDir)) fs.mkdirSync(negDir, { recursive: true });
-      if (!fs.existsSync(negThumbDir)) fs.mkdirSync(negThumbDir, { recursive: true });
-      
-      const negPath = path.join(negDir, negName);
-      
-      // Generate Negative Preview (High Quality JPG)
-      await sharp(processInput)
-        .rotate() // Auto-rotate based on EXIF
-        .jpeg({ quality: 95 })
-        .toFile(negPath);
-        
-      negativeRelPath = path.join('rolls', String(rollId), 'negative', negName).replace(/\\/g, '/');
-      isNegativeSource = 1;
-      
-      // Generate Negative Thumbnail
-      const negThumbName = `${baseName}-thumb.jpg`;
-      const negThumbPath = path.join(negThumbDir, negThumbName);
-      
-      await sharp(negPath)
-        .resize({ width: 240, height: 240, fit: 'inside' })
-        .jpeg({ quality: 60 })
-        .toFile(negThumbPath)
-        .catch(thErr => console.error('Negative Thumbnail generation failed', thErr.message));
-
-      // Copy negative thumb to main thumb dir (for main gallery view)
-      const mainThumbName = `${baseName}-thumb.jpg`;
-      const mainThumbPath = path.join(thumbDir, mainThumbName);
-      if (fs.existsSync(negThumbPath)) {
-        fs.copyFileSync(negThumbPath, mainThumbPath);
-        thumbRelPath = path.join('rolls', String(rollId), 'thumb', mainThumbName).replace(/\\/g, '/');
-        negativeThumbRelPath = path.join('rolls', String(rollId), 'negative', 'thumb', negThumbName).replace(/\\/g, '/');
-      }
-      
-      // Originals/Negatives don't have a "positive" path initially
-      fullRelPath = null;
-      positiveRelPath = null;
-      
-      console.log(`[UPLOAD] Processed as Negative/Original. Preview: ${negativeRelPath}`);
-
-    } else {
-      // Positive Mode (Default)
-      const destPath = path.join(fullDir, finalName);
-      
-      // Generate positive JPG
-      await sharp(processInput)
-        .rotate()
-        .jpeg({ quality: 95 })
-        .toFile(destPath);
-        
-      fullRelPath = path.join('rolls', String(rollId), 'full', finalName).replace(/\\/g, '/');
-      positiveRelPath = fullRelPath;
-
-      // Generate thumbnail
-      const thumbName = `${baseName}-thumb.jpg`;
-      const thumbPath = path.join(thumbDir, thumbName);
-      
-      try {
-        await sharp(destPath)
-          .resize({ width: 240, height: 240, fit: 'inside' })
-          .jpeg({ quality: 60 })
-          .toFile(thumbPath);
-        thumbRelPath = path.join('rolls', String(rollId), 'thumb', thumbName).replace(/\\/g, '/');
-        positiveThumbRelPath = thumbRelPath;
-      } catch (thErr) {
-        console.error('Thumbnail generation failed', thErr.message);
-      }
-      
-      console.log(`[UPLOAD] Processed as Positive. Path: ${fullRelPath}`);
-    }
-
-    // Fetch roll defaults for metadata if not provided explicitly
-    // 注意：对于 RAW 文件，相机信息不写入 camera（camera 是胶片相机）
-    // RAW 文件的数码相机信息写入 source_make/source_model
-    const rollMeta = await getAsync('SELECT camera, lens, photographer FROM rolls WHERE id = ?', [rollId]) || { camera: null, lens: null, photographer: null };
-    
-    // 对于 RAW 文件，不要用 RAW 元数据覆盖相机/镜头（那是数码相机，不是胶片相机）
-    const finalCamera = photoCamera || rollMeta.camera || null;
-    const finalLens = photoLens || rollMeta.lens || null;
-    const finalPhotographer = photoPhotographer || rollMeta.photographer || null;
-
-    // 对于 RAW 文件，将相机信息写入 source_make/source_model（数码来源设备）
-    const sourceMake = isRawFile ? (rawMetadata?.make || null) : null;
-    const sourceModel = isRawFile ? (rawMetadata?.camera || null) : null;
-    const sourceSoftware = isRawFile ? (rawMetadata?.software || null) : null;
-
-    const sql = `INSERT INTO photos (roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path, caption, taken_at, rating, camera, lens, photographer, source_make, source_model, source_software) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
-    const result = await runAsync(sql, [rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath, caption, taken_at, rating, finalCamera, finalLens, finalPhotographer, sourceMake, sourceModel, sourceSoftware]);
-    res.status(201).json({ ok: true, id: result?.lastID, filename: finalName, fullRelPath, thumbRelPath, negativeRelPath, camera: finalCamera, lens: finalLens, photographer: finalPhotographer, sourceMake, sourceModel });
-
+    res.status(201).json(result);
   } catch (err) {
-      console.error('Upload photo error', err);
-      return res.status(500).json({ error: err.message });
+    console.error('Upload photo error', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
 // set roll cover
 router.post('/:id/cover', async (req, res) => {
-  const rollId = req.params.id;
   const { photoId, filename } = req.body;
-  if (!photoId && !filename) return res.status(400).json({ error: 'photoId or filename required' });
-
-  const setCover = async (file) => {
-    // Normalize the incoming file value into both coverPath and cover_photo.
-    let coverPath = null;
-    let coverPhoto = null;
-    if (!file) {
-      coverPath = null;
-      coverPhoto = null;
-    } else if (typeof file === 'string') {
-      // If already an absolute uploads path, use it directly
-      if (file.startsWith('/uploads') || file.startsWith('http://') || file.startsWith('https://')) {
-        coverPath = file;
-        // If it starts with '/uploads/', also set legacy cover_photo as the path without leading '/uploads/' prefix
-        if (file.startsWith('/uploads/')) coverPhoto = file.replace(/^\/uploads\//, '');
-        else coverPhoto = file;
-      } else if (file.startsWith('/')) {
-        // leading slash but not /uploads — keep as-is for coverPath, and store cover_photo without leading '/'
-        coverPath = file;
-        coverPhoto = file.replace(/^\//, '');
-      } else {
-        // likely a legacy relative path like 'rolls/...', produce '/uploads/<file>' as coverPath
-        coverPhoto = file;
-        coverPath = `/uploads/${file}`.replace(/\\/g, '/');
-      }
-    }
-
-    const sql = `UPDATE rolls SET coverPath = ?, cover_photo = ? WHERE id = ?`;
-    await runAsync(sql, [coverPath, coverPhoto, rollId]);
-    const row = await getAsync('SELECT * FROM rolls WHERE id = ?', [rollId]);
-    res.json(row);
-  };
+  if (!photoId && !filename) {
+    return res.status(400).json({ error: 'photoId or filename required' });
+  }
 
   try {
-    if (photoId) {
-      const row = await getAsync('SELECT filename, full_rel_path, positive_rel_path, negative_rel_path FROM photos WHERE id = ? AND roll_id = ?', [photoId, rollId]);
-      if (!row) return res.status(404).json({ error: 'photo not found' });
-      
-      const photoPath = row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
-      
-      if (photoPath) {
-        const coverPath = `/uploads/${photoPath}`.replace(/\\/g, '/');
-        await setCover(coverPath);
-      } else {
-        await setCover(row.filename);
-      }
-    } else {
-      await setCover(filename);
-    }
+    const row = await rollService.setRollCover(req.params.id, { photoId, filename });
+    res.json(row);
   } catch (err) {
+    if (err.message === 'Photo not found') {
+      return res.status(404).json({ error: err.message });
+    }
     res.status(500).json({ error: err.message });
   }
 });

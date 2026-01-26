@@ -1,451 +1,466 @@
 # 4. 前端开发
 
-## 4.1 桌面端 (React)
+## 4.1 桌面端架构
 
-### 4.1.1 项目结构
+### 4.1.1 技术栈
+
+| 库 | 版本 | 用途 |
+|----|-----|------|
+| React | 18.2.0 | UI 框架 |
+| React Router | 7.9.6 | 路由管理 |
+| React Query | 5.90.10 | 数据获取和缓存 |
+| Recharts | 3.5.1 | 图表组件 |
+| Leaflet | 1.9.4 | 地图库 |
+| Framer Motion | 12.23.24 | 动画库 |
+| React Window | 1.8.10 | 虚拟化列表 |
+| Craco | 7.1.0 | Create React App 配置 |
+
+### 4.1.2 项目结构
+
 ```
 client/src/
-├── components/          # React 组件
-│   ├── RollLibrary.jsx   # 胶卷库主界面
-│   ├── RollDetail.jsx    # 胶卷详情
-│   ├── PhotoGrid.jsx     # 照片网格
-│   ├── Statistics.jsx    # 统计页面
-│   ├── FilmInventory.jsx # 库存管理
-│   ├── TagEditModal.jsx  # 标签编辑弹窗
-│   └── ...
-├── data/               # 静态数据
-│   └── cities.json      # 城市数据
-├── styles/             # CSS 样式
-│   └── global.css
-├── api.js              # API 客户端
-├── App.js              # 主应用组件
-└── index.js            # 入口文件
+├── api/                    # API 客户端
+│   ├── api.js             # 统一 API 调用
+│   └── config.js          # API 配置
+├── pages/                 # 页面级组件
+│   ├── HomePage.jsx       # 首页
+│   ├── RollLibrary.jsx    # 胶卷库
+│   ├── FilmLibrary.jsx    # 胶片库
+│   └── MapPage.jsx        # 地图视图
+├── components/            # 可复用组件
+│   ├── PhotoGrid.jsx      # 虚拟化照片网格
+│   ├── RollDetail.jsx     # 胶卷详情
+│   ├── FilmLab/           # FilmLab 处理组件
+│   ├── RawImport/         # RAW 导入
+│   ├── ImportPositive/    # 正片导入
+│   ├── BatchExport/       # 批量导出
+│   └── common/            # 通用组件
+├── hooks/                 # 自定义 hooks
+│   ├── usePhotos.js       # 照片 hooks
+│   ├── useRolls.js        # 胶卷 hooks
+│   └── useFilmLab.js      # FilmLab hooks
+├── services/              # 业务逻辑
+│   ├── photoService.js    # 照片相关逻辑
+│   └── rollService.js     # 胶卷相关逻辑
+├── styles/                # 全局样式
+│   └── index.css
+└── App.js                 # 主应用
 ```
 
-### 4.1.2 核心组件
+### 4.1.3 页面导航
 
-#### RollLibrary.jsx
-胶卷库主界面，显示胶卷网格和筛选功能。
-
-**功能：**
-- 胶卷网格展示（封面、标题、日期、设备）
-- 排序（日期/序号）
-- 搜索和筛选
-- 创建新胶卷
-
-**关键代码：**
-```jsx
-const { data: rolls, isLoading } = useQuery({
-  queryKey: ['rolls'],
-  queryFn: async () => {
-    const res = await fetch(`${baseUrl}/api/rolls`);
-    return res.json();
-  }
-});
-```
-
-#### RollDetail.jsx
-胶卷详情页，展示照片、元数据、地图。
-
-**功能：**
-- 照片瀑布流/网格展示
-- 照片快速评分
-- 批量编辑标签
-- 地理位置展示
-- 设备信息
-
-**React Query 使用：**
-```jsx
-const { data: rollData, refetch } = useQuery({
-  queryKey: ['roll', id],
-  queryFn: () => fetch(`${baseUrl}/api/rolls/${id}`).then(r => r.json())
-});
-
-const updatePhotoMutation = useMutation({
-  mutationFn: (data) => updatePhoto(data.photoId, data),
-  onSuccess: () => {
-    queryClient.invalidateQueries(['roll', id]);
-  }
-});
-```
-
-#### PhotoGrid.jsx
-虚拟滚动照片网格，优化大量照片性能。
-
-**使用 react-window：**
-```jsx
-import { FixedSizeGrid } from 'react-window';
-
-<FixedSizeGrid
-  columnCount={columnCount}
-  columnWidth={220}
-  height={window.innerHeight - 200}
-  rowCount={rowCount}
-  rowHeight={220}
-  width={window.innerWidth - 40}
->
-  {Cell}
-</FixedSizeGrid>
-```
-
-#### Statistics.jsx
-统计仪表板，包含图表和数据可视化。
-
-**使用 Recharts：**
-```jsx
-import { BarChart, LineChart, PieChart } from 'recharts';
-
-const formatStat = (num) => {
-  if (!num && num !== 0) return '-';
-  return Number.isInteger(num) ? num.toString() : num.toFixed(2);
-};
-
-<LineChart data={rollsByMonth}>
-  <XAxis dataKey="month" />
-  <YAxis />
-  <Line type="monotone" dataKey="count" stroke="#8884d8" />
-</LineChart>
-```
-
-#### TagEditModal.jsx
-标签编辑弹窗，支持添加/删除标签。
-
-**标签规范化（小写存储）：**
-```jsx
-const handleSave = async () => {
-  const normalizedTags = tags.map(t => t.toLowerCase());
-  await onSave(normalizedTags);
-};
-```
-
-### 4.1.3 API 客户端 (api.js)
-
-封装所有 API 调用：
+主要页面通过 React Router 定义：
 
 ```javascript
-const baseUrl = process.env.REACT_APP_API_BASE || 'http://localhost:4000';
+// 路由结构
+/                 -> HomePage (首页)
+/rolls            -> RollLibrary (胶卷库)
+/films            -> FilmLibrary (胶片库)
+/map              -> MapPage (地图)
+/roll/:id         -> RollDetail (胶卷详情)
+/photo/:id        -> PhotoDetailsSidebar (照片详情)
+/settings         -> Settings (设置)
+```
 
-export async function getRolls() {
-  const res = await fetch(`${baseUrl}/api/rolls`);
-  if (!res.ok) throw new Error('Failed to fetch rolls');
-  return res.json();
-}
+## 4.2 核心组件
 
-export async function updatePhoto(id, data) {
-  const res = await fetch(`${baseUrl}/api/photos/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.error || 'Update failed');
-  }
-  return res.json();
+### 4.2.1 PhotoGrid 组件
+
+虚拟化照片网格，支持大量照片高效显示。
+
+```javascript
+// client/src/components/PhotoGrid.jsx
+import { VariableSizeList } from 'react-window';
+
+export function PhotoGrid({ photos, onPhotoClick }) {
+  // 虚拟化列表渲染
+  // 动态高度计算
+  // 懒加载缩略图
 }
 ```
 
-### 4.1.4 React Query 配置
+**功能**：
+- 虚拟化滚动（VirtualScroll）
+- 响应式网格布局
+- 缩略图懒加载
+- 悬停预览
 
-在 `App.js` 中配置：
+### 4.2.2 RollDetail 组件
 
-```jsx
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+胶卷详情页面，显示胶卷信息和其中的所有照片。
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000,  // 5 分钟
-      cacheTime: 10 * 60 * 1000, // 10 分钟
-      refetchOnWindowFocus: false
-    }
-  }
-});
-
-function App() {
+```javascript
+// client/src/components/RollDetail.jsx
+export function RollDetail({ rollId }) {
+  const { data: roll } = useQuery({
+    queryKey: ['rolls', rollId],
+    queryFn: () => api.getRoll(rollId)
+  });
+  
+  const { data: photos } = useQuery({
+    queryKey: ['rolls', rollId, 'photos'],
+    queryFn: () => api.getRollPhotos(rollId)
+  });
+  
   return (
-    <QueryClientProvider client={queryClient}>
-      {/* 应用内容 */}
-    </QueryClientProvider>
+    // 胶卷信息卡片 + 照片网格
   );
 }
 ```
 
-### 4.1.5 懒加载优化
+### 4.2.3 FilmLab 组件
 
-使用 `react-lazy-load-image-component`：
+FilmLab 处理 UI，实时预览处理效果。
 
-```jsx
-import { LazyLoadImage } from 'react-lazy-load-image-component';
-
-<LazyLoadImage
-  src={`${baseUrl}${photo.thumb_rel_path}`}
-  alt={photo.caption}
-  effect="blur"
-  placeholderSrc="/placeholder.jpg"
-/>
-```
-
-## 4.2 移动端 (React Native)
-
-### 4.2.1 项目结构
-```
-mobile/src/
-├── api/                # API 客户端
-│   └── client.js
-├── components/         # 可复用组件
-│   ├── PhotoCard.js
-│   ├── RollCard.js
-│   └── TagEditModal.js
-├── context/            # Context Providers
-│   └── ApiContext.js
-├── hooks/              # 自定义 Hooks
-│   └── usePhotos.js
-├── screens/            # 页面组件
-│   ├── HomeScreen.js
-│   ├── RollDetailScreen.js
-│   ├── FilmsScreen.js
-│   ├── InventoryScreen.js
-│   ├── StatsScreen.js
-│   └── SettingsScreen.js
-├── utils/              # 工具函数
-│   └── fileSystem.js
-├── setupAxios.js       # Axios 配置（自动切换 IP）
-└── theme.js            # 主题配置
-```
-
-### 4.2.2 核心屏幕
-
-#### HomeScreen.js
-首页，显示概览统计和最近胶卷。
-
-**使用 React Native Paper：**
-```jsx
-import { Card, List, FAB } from 'react-native-paper';
-
-<Card>
-  <Card.Title title="最近胶卷" />
-  <Card.Content>
-    <FlatList
-      data={recentRolls}
-      renderItem={({ item }) => <RollCard roll={item} />}
-    />
-  </Card.Content>
-</Card>
-```
-
-#### RollDetailScreen.js
-胶卷详情，照片列表和操作。
-
-**使用 FlatList 优化：**
-```jsx
-<FlatList
-  data={photos}
-  keyExtractor={item => item.id.toString()}
-  renderItem={({ item }) => <PhotoCard photo={item} />}
-  numColumns={2}
-  initialNumToRender={10}
-  maxToRenderPerBatch={10}
-  windowSize={5}
-/>
-```
-
-#### SettingsScreen.js
-设置页面，包含主备 IP 配置。
-
-**IP 切换功能：**
-```jsx
-const [apiUrl, setApiUrl] = useState('');
-const [backupUrl, setBackupUrl] = useState('');
-
-const handleSwapUrls = async () => {
-  await AsyncStorage.setItem('api_base_url', backupUrl);
-  await AsyncStorage.setItem('api_backup_url', apiUrl);
-  setApiUrl(backupUrl);
-  setBackupUrl(apiUrl);
-};
-
-const testConnection = async (url) => {
-  try {
-    const res = await axios.get(`${url}/api/health`, { timeout: 3000 });
-    Alert.alert('成功', `连接 ${url} 成功`);
-  } catch (err) {
-    Alert.alert('失败', err.message);
-  }
-};
-```
-
-### 4.2.3 Axios 自动切换 (setupAxios.js)
-
-**核心逻辑：**
 ```javascript
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+// client/src/components/FilmLab/FilmLabEditor.jsx
+export function FilmLabEditor({ photoId, onSave }) {
+  const [settings, setSettings] = useState({
+    inversion: true,
+    white_balance: { temp: 5500 },
+    hsl: [],
+    split_tone: {},
+    exposure: 0
+  });
+  
+  // 实时预览
+  useEffect(() => {
+    api.previewFilmlab(photoId, settings);
+  }, [settings]);
+  
+  return (
+    // 滑块控制器 + 预览区
+  );
+}
+```
 
-let primaryUrl = '';
-let secondaryUrl = '';
-let currentUrl = 'primary';
+**特性**：
+- 负片反演
+- 白平衡调整
+- HSL 色彩校正
+- 分色调
+- 曲线调整
+- 预设保存/加载
 
-export const setupAxios = async () => {
-  primaryUrl = await AsyncStorage.getItem('api_base_url');
-  secondaryUrl = await AsyncStorage.getItem('api_backup_url');
-  axios.defaults.baseURL = primaryUrl;
-  axios.defaults.timeout = 5000;
-};
+### 4.2.4 PhotoDetailsSidebar 组件
 
-// 响应拦截器：自动切换 IP
-axios.interceptors.response.use(
-  response => response,
-  async error => {
-    const isNetworkError = 
-      error.code === 'ECONNABORTED' ||
-      error.message.includes('Network Error') ||
-      error.message.includes('timeout');
+照片元数据编辑侧边栏。
 
-    if (isNetworkError && secondaryUrl && currentUrl === 'primary') {
-      console.log('[Axios] 切换到备用 URL:', secondaryUrl);
-      currentUrl = 'secondary';
-      axios.defaults.baseURL = secondaryUrl;
-      
-      // 重试原请求
-      return axios.request(error.config);
+```javascript
+// client/src/components/PhotoDetailsSidebar.jsx
+export function PhotoDetailsSidebar({ photoId, onUpdate }) {
+  const { data: photo } = useQuery({
+    queryKey: ['photos', photoId],
+    queryFn: () => api.getPhoto(photoId)
+  });
+  
+  const handleUpdate = async (metadata) => {
+    await api.updatePhoto(photoId, metadata);
+    queryClient.invalidateQueries(['photos', photoId]);
+  };
+  
+  return (
+    // 元数据编辑表单：EXIF、标签、设备等
+  );
+}
+```
+
+**编辑字段**：
+- EXIF 信息 (ISO, 光圈, 快门等)
+- 地理位置
+- 标签
+- 使用的设备
+- 自定义备注
+- 评分
+
+### 4.2.5 BatchExport 组件
+
+批量导出对话框。
+
+```javascript
+// client/src/components/BatchExport/
+export function BatchExportModal({ photoIds, onClose }) {
+  const [settings, setSettings] = useState({
+    format: 'jpg',
+    width: 3000,
+    height: 2000,
+    quality: 95,
+    applyFilmlab: false
+  });
+  
+  const exportPhotos = async () => {
+    const taskId = await api.batchExport(photoIds, settings);
+    // 显示进度
+  };
+}
+```
+
+## 4.3 数据管理
+
+### 4.3.1 React Query 使用
+
+使用 TanStack React Query 管理服务器状态：
+
+```javascript
+// 基础查询
+const { data, isLoading, error } = useQuery({
+  queryKey: ['photos', rollId],
+  queryFn: () => api.getPhotos({ roll_id: rollId }),
+  staleTime: 5 * 60 * 1000, // 5 分钟
+  cacheTime: 10 * 60 * 1000  // 10 分钟
+});
+
+// 分页查询
+const { data, fetchNextPage, hasNextPage } = useInfiniteQuery({
+  queryKey: ['photos', rollId],
+  queryFn: ({ pageParam = 1 }) => 
+    api.getPhotos({ roll_id: rollId, page: pageParam }),
+  getNextPageParam: (lastPage, pages) => pages.length + 1
+});
+
+// 变更操作
+const { mutate } = useMutation(
+  (newPhoto) => api.createPhoto(newPhoto),
+  {
+    onSuccess: () => {
+      queryClient.invalidateQueries(['photos']);
     }
-    
-    return Promise.reject(error);
   }
 );
 ```
 
-### 4.2.4 Context API
+### 4.3.2 自定义 Hooks
 
-**ApiContext.js：**
-```jsx
-import React, { createContext, useState, useEffect } from 'react';
-import { setupAxios } from '../setupAxios';
+常用逻辑封装为 hooks：
 
-export const ApiContext = createContext();
+```javascript
+// client/src/hooks/usePhotos.js
+export function usePhotos(rollId) {
+  return useQuery({
+    queryKey: ['photos', rollId],
+    queryFn: () => api.getPhotos({ roll_id: rollId })
+  });
+}
 
-export const ApiProvider = ({ children }) => {
-  const [baseUrl, setBaseUrl] = useState('');
-  const [backupUrl, setBackupUrl] = useState('');
-
-  useEffect(() => {
-    setupAxios();
-    loadUrls();
-  }, []);
-
-  const loadUrls = async () => {
-    const primary = await AsyncStorage.getItem('api_base_url');
-    const backup = await AsyncStorage.getItem('api_backup_url');
-    setBaseUrl(primary);
-    setBackupUrl(backup);
-  };
-
-  return (
-    <ApiContext.Provider value={{ baseUrl, backupUrl, setBaseUrl, setBackupUrl }}>
-      {children}
-    </ApiContext.Provider>
+// client/src/hooks/useFilmLab.js
+export function useFilmLab(photoId) {
+  const [settings, setSettings] = useState({});
+  
+  const preview = useMutation((newSettings) =>
+    api.previewFilmlab(photoId, newSettings)
   );
+  
+  const save = useMutation((newSettings) =>
+    api.processFilmlab(photoId, newSettings)
+  );
+  
+  return { settings, setSettings, preview, save };
+}
+```
+
+### 4.3.3 API 客户端
+
+统一的 API 调用接口：
+
+```javascript
+// client/src/api/api.js
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:4000';
+
+export const api = {
+  // 照片
+  getPhotos: (params) => fetch(`${API_BASE}/api/photos?${new URLSearchParams(params)}`).then(r => r.json()),
+  getPhoto: (id) => fetch(`${API_BASE}/api/photos/${id}`).then(r => r.json()),
+  createPhoto: (data) => fetch(`${API_BASE}/api/photos`, { method: 'POST', body: JSON.stringify(data) }).then(r => r.json()),
+  updatePhoto: (id, data) => fetch(`${API_BASE}/api/photos/${id}`, { method: 'PUT', body: JSON.stringify(data) }).then(r => r.json()),
+  
+  // 胶卷
+  getRolls: () => fetch(`${API_BASE}/api/rolls`).then(r => r.json()),
+  getRoll: (id) => fetch(`${API_BASE}/api/rolls/${id}`).then(r => r.json()),
+  getRollPhotos: (id) => fetch(`${API_BASE}/api/rolls/${id}/photos`).then(r => r.json()),
+  
+  // FilmLab
+  previewFilmlab: (photoId, settings) => 
+    fetch(`${API_BASE}/api/filmlab/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ photo_id: photoId, settings })
+    }).then(r => r.json()),
+  processFilmlab: (photoId, settings) =>
+    fetch(`${API_BASE}/api/filmlab/process`, {
+      method: 'POST',
+      body: JSON.stringify({ photo_id: photoId, settings })
+    }).then(r => r.json())
 };
 ```
 
-### 4.2.5 文件系统工具 (fileSystem.js)
+## 4.4 样式和主题
 
-适配 Expo SDK 54 新 API：
+### 4.4.1 CSS 组织
 
-```javascript
-import * as FileSystem from 'expo-file-system';
-import * as MediaLibrary from 'expo-media-library';
+```
+styles/
+├── index.css          # 全局样式
+├── variables.css      # CSS 变量（颜色、间距等）
+├── components/        # 组件样式（可选）
+└── pages/            # 页面样式（可选）
+```
 
-export async function downloadImageAsync(url, options = {}) {
-  const { fileName = 'photo.jpg', saveToLibrary = false } = options;
-  
-  try {
-    // 使用新 API
-    const fileUri = `${FileSystem.documentDirectory}${fileName}`;
-    const file = await FileSystem.File.createAsync(fileUri);
-    await file.downloadFileAsync(url);
-    
-    if (saveToLibrary) {
-      await ensureMediaPermissionsAsync();
-      await MediaLibrary.saveToLibraryAsync(fileUri);
-    }
-    
-    return fileUri;
-  } catch (err) {
-    // 回退到旧 API
-    const legacy = require('expo-file-system/legacy');
-    return legacy.downloadAsync(url, fileName);
+### 4.4.2 响应式设计
+
+使用 CSS 媒体查询支持不同屏幕：
+
+```css
+/* 桌面端优先 */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+/* 平板 */
+@media (max-width: 1200px) {
+  .photo-grid {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  }
+}
+
+/* 手机 */
+@media (max-width: 768px) {
+  .photo-grid {
+    grid-template-columns: repeat(2, 1fr);
   }
 }
 ```
 
-### 4.2.6 导航配置
+## 4.5 移动端 (React Native)
 
-使用 React Navigation：
+### 4.5.1 项目结构
 
-```jsx
-import { NavigationContainer } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+```
+mobile/src/
+├── screens/            # 页面
+│   ├── HomeScreen.tsx
+│   ├── RollsScreen.tsx
+│   ├── PhotosScreen.tsx
+│   └── CameraScreen.tsx
+├── components/         # 组件
+├── services/          # 业务逻辑
+├── hooks/             # 自定义 hooks
+└── navigation/        # 导航配置
+```
 
-const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
+### 4.5.2 关键库
 
-function TabNavigator() {
+| 库 | 版本 | 用途 |
+|----|-----|------|
+| React Native | 0.81.5 | 移动端框架 |
+| Expo | 54.0.25 | 开发工具链 |
+| React Navigation | 6.x | 导航 |
+| React Native Paper | 5.11.1 | UI 组件库 |
+| Async Storage | 2.2.0 | 本地存储 |
+| Vision Camera | 4.7.3 | 相机访问 |
+| Geolocation | 3.4.0 | GPS |
+
+### 4.5.3 开发流程
+
+```bash
+# 启动 Expo 开发服务器
+npm start
+
+# 在 Android 设备/模拟器上运行
+npm run android
+
+# 生成 APK（本地构建）
+cd android && ./gradlew assembleRelease
+
+# 使用 EAS 构建（云构建）
+npm run build:apk
+npm run build:aab
+```
+
+## 4.6 开发最佳实践
+
+### 4.6.1 组件编写
+
+```javascript
+// ✅ 好的实践
+export function MyComponent({ data, onUpdate }) {
+  const { data: results } = useQuery({
+    queryKey: ['items', data.id],
+    queryFn: () => api.getItems(data.id)
+  });
+  
+  if (!results) return <Loading />;
+  
+  return <div>{/* 内容 */}</div>;
+}
+
+// ❌ 避免
+function MyComponent({ data, onUpdate }) {
+  const [items, setItems] = useState([]);
+  
+  useEffect(() => {
+    // 手动管理数据获取，容易出 bug
+    fetch(`/api/items/${data.id}`)
+      .then(r => r.json())
+      .then(setItems);
+  }, [data.id]);
+  
+  return <div>{/* 内容 */}</div>;
+}
+```
+
+### 4.6.2 性能优化
+
+```javascript
+// 使用 React.memo 避免不必要重渲染
+export const PhotoCard = React.memo(({ photo, onClick }) => (
+  <div onClick={() => onClick(photo.id)}>
+    {/* 内容 */}
+  </div>
+));
+
+// 虚拟化长列表
+import { VariableSizeList } from 'react-window';
+
+export function PhotoList({ photos }) {
   return (
-    <Tab.Navigator>
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Films" component={FilmsScreen} />
-      <Tab.Screen name="Stats" component={StatsScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
-    </Tab.Navigator>
+    <VariableSizeList
+      height={600}
+      itemCount={photos.length}
+      itemSize={(i) => getItemSize(photos[i])}
+      width="100%"
+    >
+      {({ index, style }) => (
+        <div style={style}>
+          <PhotoCard photo={photos[index]} />
+        </div>
+      )}
+    </VariableSizeList>
   );
 }
+```
 
-function App() {
-  return (
-    <NavigationContainer>
-      <Stack.Navigator>
-        <Stack.Screen name="Main" component={TabNavigator} />
-        <Stack.Screen name="RollDetail" component={RollDetailScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
+### 4.6.3 错误处理
+
+```javascript
+// 统一错误处理
+export function useRobustQuery(queryKey, queryFn, options = {}) {
+  return useQuery({
+    queryKey,
+    queryFn,
+    retry: 2,
+    retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 30000),
+    onError: (error) => {
+      console.error(`Query failed: ${queryKey}`, error);
+      // 可选：显示错误提示
+    },
+    ...options
+  });
 }
 ```
 
-## 4.3 共同最佳实践
+---
 
-### 4.3.1 错误处理
-```javascript
-try {
-  const data = await api.updatePhoto(id, changes);
-  Alert.alert('成功', '保存成功');
-} catch (err) {
-  console.error('Update failed:', err);
-  Alert.alert('错误', err.message || '保存失败');
-}
-```
-
-### 4.3.2 加载状态
-```jsx
-{isLoading && <ActivityIndicator />}
-{error && <Text>加载失败：{error.message}</Text>}
-{data && <ContentView data={data} />}
-```
-
-### 4.3.3 图片 URL 处理
-```javascript
-// 桌面端：相对路径
-const imageUrl = `${baseUrl}${photo.thumb_rel_path}`;
-
-// 移动端：绝对路径（避免跨域问题）
-const imageUrl = `${baseUrl}${photo.thumb_rel_path}`.replace('//', '/');
-```
-
-### 4.3.4 性能优化
-- 使用 `React.memo` 避免不必要的重渲染
-- 虚拟滚动处理长列表
-- 图片懒加载和压缩
-- React Query 缓存减少网络请求
+**相关文档**：
+- [03-backend-api.md](./03-backend-api.md) - API 接口
+- [05-core-features.md](./05-core-features.md) - 核心功能

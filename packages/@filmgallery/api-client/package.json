@@ -1,0 +1,23 @@
+{
+  "name": "@filmgallery/api-client",
+  "version": "1.0.0",
+  "description": "Shared API client for FilmGallery applications (Web, Mobile, Watch)",
+  "main": "index.js",
+  "type": "commonjs",
+  "exports": {
+    ".": "./index.js",
+    "./equipment": "./equipment.js",
+    "./rolls": "./rolls.js",
+    "./photos": "./photos.js",
+    "./films": "./films.js",
+    "./locations": "./locations.js"
+  },
+  "private": true,
+  "keywords": [
+    "filmgallery",
+    "api",
+    "client"
+  ],
+  "author": "",
+  "license": "MIT"
+}

@@ -1,9 +1,17 @@
 import React, { useContext, useState } from 'react';
-import { View, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { TextInput, Button, Text, Switch, useTheme } from 'react-native-paper';
+import { View, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import { TextInput, Button, Text, Switch, useTheme, Chip, SegmentedButtons } from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiContext } from '../context/ApiContext';
-import { discoverPort, cleanIpAddress, validateServer } from '../utils/portDiscovery';
+import { 
+  discoverPort, 
+  discoverServices, 
+  discoverByMdns,
+  cleanIpAddress, 
+  validateServer,
+  isPrivateIp,
+  DISCOVERY_MODE 
+} from '../utils/portDiscovery';
 
 export default function SettingsScreen({ navigation }) {
   const theme = useTheme();
@@ -13,6 +21,9 @@ export default function SettingsScreen({ navigation }) {
   const [isDark, setIsDark] = useState(!!darkMode);
   const [ipAddress, setIpAddress] = useState(''); // For auto-discovery
   const [discovering, setDiscovering] = useState(false);
+  const [discoveredServices, setDiscoveredServices] = useState([]);
+  const [discoveryMode, setDiscoveryMode] = useState('auto');
+  const [discoveryStatus, setDiscoveryStatus] = useState('');
 
   const cleanUrlString = (input) => {
     let clean = input.trim();
@@ -24,34 +35,61 @@ export default function SettingsScreen({ navigation }) {
     return clean;
   };
 
-  // Auto-discover port from IP address
+  // LAN auto-discover using mDNS + port scan
   const handleAutoDiscover = async () => {
-    const ip = cleanIpAddress(ipAddress || url);
-    if (!ip) {
-      Alert.alert('提示', '请输入服务器 IP 地址');
-      return;
-    }
-    
     setDiscovering(true);
+    setDiscoveredServices([]);
+    setDiscoveryStatus('正在扫描局域网...');
+    
     try {
-      const result = await discoverPort(ip);
-      if (result) {
-        setUrl(result.fullUrl);
+      const options = {
+        mode: discoveryMode,
+        ip: cleanIpAddress(ipAddress) || undefined,
+        timeout: 5000,
+        onProgress: (progress) => {
+          if (progress.step === 'mdns') {
+            setDiscoveryStatus(progress.status === 'scanning' ? '正在通过 mDNS 发现服务...' : `mDNS 发现完成`);
+          } else if (progress.step === 'portscan') {
+            setDiscoveryStatus(progress.status === 'scanning' ? `正在扫描端口 (${progress.ip})...` : '端口扫描完成');
+          }
+        }
+      };
+      
+      const result = await discoverServices(options);
+      
+      if (result.services.length > 0) {
+        setDiscoveredServices(result.services);
+        setDiscoveryStatus(`发现 ${result.services.length} 个服务`);
+        
+        // 自动选择第一个服务
+        if (result.primaryService) {
+          setUrl(result.primaryService.fullUrl);
+        }
+        
         Alert.alert(
-          '发现服务', 
-          `已找到 FilmGallery 服务\n地址: ${result.fullUrl}\n版本: ${result.version}`
+          '发现服务',
+          `已找到 ${result.services.length} 个 FilmGallery 服务\n` +
+          result.services.map(s => `• ${s.device || s.ip}: ${s.fullUrl}`).join('\n')
         );
       } else {
+        setDiscoveryStatus('未找到服务');
         Alert.alert(
-          '未找到服务', 
-          '在常用端口上未发现 FilmGallery 服务。\n请检查:\n1. IP 地址是否正确\n2. 电脑上的 FilmGallery 是否已启动\n3. 防火墙是否允许连接'
+          '未找到服务',
+          '在局域网内未发现 FilmGallery 服务。\n\n请检查:\n1. 电脑上的 FilmGallery 是否已启动\n2. 手机和电脑是否在同一网络\n3. 防火墙是否允许连接\n\n如果是公网服务器，请输入 IP 地址后使用"端口扫描"模式'
         );
       }
     } catch (e) {
+      setDiscoveryStatus('发现失败');
       Alert.alert('错误', e.message || '发现过程出错');
     } finally {
       setDiscovering(false);
     }
+  };
+
+  // 选择已发现的服务
+  const selectService = (service) => {
+    setUrl(service.fullUrl);
+    Alert.alert('已选择', `服务器地址已设为: ${service.fullUrl}`);
   };
 
   const save = async () => {
@@ -100,35 +138,81 @@ export default function SettingsScreen({ navigation }) {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+    <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Auto Discovery Section */}
-      <Text style={styles.sectionTitle}>🔍 自动发现 (推荐)</Text>
+      <Text style={styles.sectionTitle}>🔍 自动发现</Text>
       <Text style={styles.hint}>
-        只需输入电脑的 IP 地址，自动发现 FilmGallery 服务端口
+        自动发现局域网内的 FilmGallery 服务，或通过 IP 地址扫描端口
       </Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-        <TextInput
-          mode="outlined"
-          value={ipAddress}
-          onChangeText={setIpAddress}
-          placeholder="192.168.1.100"
-          autoCapitalize="none"
-          keyboardType="numeric"
-          activeOutlineColor="#5a4632"
-          style={{ backgroundColor: '#f5f0e6', flex: 1, marginRight: 8 }}
+      
+      {/* Discovery Mode Selection */}
+      <View style={{ marginBottom: 12 }}>
+        <SegmentedButtons
+          value={discoveryMode}
+          onValueChange={setDiscoveryMode}
+          buttons={[
+            { value: 'auto', label: '自动' },
+            { value: 'mdns', label: '局域网 (mDNS)' },
+            { value: 'portscan', label: '端口扫描' },
+          ]}
+          style={{ marginBottom: 8 }}
         />
-        <Button 
-          mode="contained" 
-          onPress={handleAutoDiscover} 
-          loading={discovering}
-          disabled={discovering}
-          buttonColor="#5a4632"
-          icon="magnify"
-          compact
-        >
-          发现
-        </Button>
+        <Text style={styles.modeHint}>
+          {discoveryMode === 'auto' && '自动模式：优先使用 mDNS 发现，然后端口扫描'}
+          {discoveryMode === 'mdns' && 'mDNS 模式：零配置发现局域网内的服务'}
+          {discoveryMode === 'portscan' && '端口扫描：输入 IP 地址扫描常用端口（适用于公网）'}
+        </Text>
       </View>
+      
+      {/* IP Address Input (for portscan mode) */}
+      {(discoveryMode === 'auto' || discoveryMode === 'portscan') && (
+        <View style={{ marginBottom: 12 }}>
+          <TextInput
+            mode="outlined"
+            value={ipAddress}
+            onChangeText={setIpAddress}
+            placeholder="192.168.1.100 (可选)"
+            autoCapitalize="none"
+            keyboardType="numeric"
+            activeOutlineColor="#5a4632"
+            style={{ backgroundColor: '#f5f0e6' }}
+            label="服务器 IP 地址"
+          />
+        </View>
+      )}
+      
+      {/* Discover Button */}
+      <Button 
+        mode="contained" 
+        onPress={handleAutoDiscover} 
+        loading={discovering}
+        disabled={discovering}
+        buttonColor="#5a4632"
+        icon="magnify"
+        style={{ marginBottom: 12 }}
+      >
+        {discovering ? discoveryStatus : '开始发现'}
+      </Button>
+      
+      {/* Discovered Services List */}
+      {discoveredServices.length > 0 && (
+        <View style={{ marginBottom: 16 }}>
+          <Text style={styles.label}>发现的服务:</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {discoveredServices.map((service, index) => (
+              <Chip
+                key={index}
+                icon={service.method === 'mdns' ? 'wifi' : 'magnify'}
+                onPress={() => selectService(service)}
+                selected={url === service.fullUrl}
+                style={{ marginRight: 8, marginBottom: 8 }}
+              >
+                {service.device || service.ip}:{service.port}
+              </Chip>
+            ))}
+          </View>
+        </View>
+      )}
       
       {/* Manual Configuration Section */}
       <Text style={styles.sectionTitle}>手动配置</Text>
@@ -221,7 +305,10 @@ export default function SettingsScreen({ navigation }) {
           Open Location Diagnostic
         </Button>
       </View>
-    </View>
+      
+      {/* Bottom padding for scroll */}
+      <View style={{ height: 40 }} />
+    </ScrollView>
   );
 }
 
@@ -248,6 +335,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     marginBottom: 16,
+  },
+  modeHint: {
+    fontSize: 12,
+    color: '#888',
+    fontStyle: 'italic',
   },
   button: {
     marginTop: 20,

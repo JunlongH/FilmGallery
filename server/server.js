@@ -171,11 +171,23 @@ const mountRoutes = () => {
   app.get('/api/discover', (req, res) => {
     const appInfo = require('./constants/app-info');
     const capabilities = getCapabilities();
+    
+    // Get mDNS status if available
+    let mdnsStatus = null;
+    try {
+      const mdnsService = require('./services/mdns-service');
+      mdnsStatus = mdnsService.getStatus();
+    } catch (e) {
+      // mDNS service not loaded yet
+    }
+    
     res.json({
       app: appInfo.APP_IDENTIFIER,
       version: appInfo.APP_VERSION,
       port: global.__actualServerPort || 4000,
       timestamp: Date.now(),
+      // mDNS discovery info
+      mdns: mdnsStatus,
       // Server capabilities for hybrid compute mode
       ...capabilities
     });
@@ -397,9 +409,23 @@ const seedLocations = async () => {
 		console.log('[PREPARED STATEMENTS] Ready for lazy initialization');
 		scheduleProfilerLog();
 		
+		// Initialize mDNS service for LAN auto-discovery
+		const mdnsService = require('./services/mdns-service');
+		const appInfo = require('./constants/app-info');
+		const mdnsEnabled = await mdnsService.initialize({
+			port: actualPort,
+			version: appInfo.APP_VERSION
+		});
+		if (mdnsEnabled) {
+			console.log('[SERVER] mDNS auto-discovery enabled for LAN clients');
+		}
+		
 		// Graceful shutdown on signals
 		const gracefulShutdown = async (signal) => {
 			console.log(`\n[SERVER] Received ${signal}. Shutting down gracefully...`);
+			
+			// Stop mDNS service first
+			mdnsService.shutdown();
 			
 			// Force exit timeout
 			const forceExitTimer = setTimeout(() => {

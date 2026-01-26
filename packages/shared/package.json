@@ -10,7 +10,8 @@
       "default": "./index.js"
     },
     "./filmlab-core": "./filmlab-core.js",
-    "./constants": "./filmLabConstants.js"
+    "./constants": "./filmLabConstants.js",
+    "./constants/equipment": "./constants/equipment.js"
   },
   "private": true
 }

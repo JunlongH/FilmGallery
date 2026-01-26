@@ -10,7 +10,13 @@ import {
   ScrollView,
 } from 'react-native';
 import { api } from '../services/api';
-import { discoverPort, cleanIpAddress } from '../utils/portDiscovery';
+import { 
+  discoverPort, 
+  discoverServices, 
+  cleanIpAddress,
+  DISCOVERY_MODE,
+  type DiscoveryResult
+} from '../utils/portDiscovery';
 
 const SettingsScreen: React.FC = () => {
   const [serverURL, setServerURL] = useState('');
@@ -18,6 +24,9 @@ const SettingsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [discovering, setDiscovering] = useState(false);
+  const [discoveryStatus, setDiscoveryStatus] = useState('');
+  const [discoveredServices, setDiscoveredServices] = useState<DiscoveryResult[]>([]);
+  const [discoveryMode, setDiscoveryMode] = useState<'auto' | 'mdns' | 'portscan'>('auto');
 
   useEffect(() => {
     loadSettings();
@@ -35,34 +44,55 @@ const SettingsScreen: React.FC = () => {
     }
   };
 
-  // Auto-discover port from IP address
+  // Auto-discover using mDNS + port scan
   const handleAutoDiscover = async () => {
-    const ip = cleanIpAddress(ipAddress || serverURL);
-    if (!ip) {
-      Alert.alert('提示', '请输入服务器 IP 地址');
-      return;
-    }
-    
     setDiscovering(true);
+    setDiscoveredServices([]);
+    setDiscoveryStatus('正在扫描...');
+    
     try {
-      const result = await discoverPort(ip);
-      if (result) {
-        setServerURL(result.fullUrl);
+      const result = await discoverServices({
+        mode: discoveryMode,
+        ip: cleanIpAddress(ipAddress) || undefined,
+        timeout: 5000,
+        onProgress: (progress) => {
+          if (progress.step === 'mdns') {
+            setDiscoveryStatus(progress.status === 'scanning' ? 'mDNS 发现中...' : 'mDNS 完成');
+          } else if (progress.step === 'portscan') {
+            setDiscoveryStatus(progress.status === 'scanning' ? '端口扫描中...' : '扫描完成');
+          }
+        }
+      });
+      
+      if (result.services.length > 0) {
+        setDiscoveredServices(result.services);
+        setDiscoveryStatus(`发现 ${result.services.length} 个服务`);
+        
+        if (result.primaryService) {
+          setServerURL(result.primaryService.fullUrl);
+        }
+        
         Alert.alert(
-          '发现服务', 
-          `已找到 FilmGallery 服务\n地址: ${result.fullUrl}\n版本: ${result.version}`
+          '发现服务',
+          `已找到 ${result.services.length} 个服务`
         );
       } else {
+        setDiscoveryStatus('未找到服务');
         Alert.alert(
-          '未找到服务', 
-          '在常用端口上未发现 FilmGallery 服务。\n请检查:\n1. IP 地址是否正确\n2. 电脑上的 FilmGallery 是否已启动\n3. 防火墙是否允许连接'
+          '未找到服务',
+          '请检查:\n1. FilmGallery 是否已启动\n2. 设备是否在同一网络\n3. 防火墙设置'
         );
       }
     } catch (e: any) {
+      setDiscoveryStatus('发现失败');
       Alert.alert('错误', e.message || '发现过程出错');
     } finally {
       setDiscovering(false);
     }
+  };
+
+  const selectService = (service: DiscoveryResult) => {
+    setServerURL(service.fullUrl);
   };
 
   const handleSave = async () => {
@@ -102,32 +132,85 @@ const SettingsScreen: React.FC = () => {
       
       {/* Auto Discovery Section */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🔍 自动发现 (推荐)</Text>
+        <Text style={styles.sectionTitle}>🔍 自动发现</Text>
         <Text style={styles.hint}>
-          只需输入电脑的 IP 地址，自动发现服务端口
+          自动发现局域网内的 FilmGallery 服务
         </Text>
-        <View style={styles.discoverRow}>
+        
+        {/* Discovery Mode Buttons */}
+        <View style={styles.modeRow}>
+          {(['auto', 'mdns', 'portscan'] as const).map((mode) => (
+            <TouchableOpacity
+              key={mode}
+              style={[
+                styles.modeButton,
+                discoveryMode === mode && styles.modeButtonActive
+              ]}
+              onPress={() => setDiscoveryMode(mode)}
+            >
+              <Text style={[
+                styles.modeButtonText,
+                discoveryMode === mode && styles.modeButtonTextActive
+              ]}>
+                {mode === 'auto' ? '自动' : mode === 'mdns' ? 'mDNS' : '端口扫描'}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        
+        {/* IP Input for portscan mode */}
+        {(discoveryMode === 'auto' || discoveryMode === 'portscan') && (
           <TextInput
-            style={[styles.input, styles.ipInput]}
+            style={[styles.input, { marginBottom: 8 }]}
             value={ipAddress}
             onChangeText={setIpAddress}
-            placeholder="192.168.1.100"
+            placeholder="IP 地址 (可选)"
             placeholderTextColor="#666"
             keyboardType="numeric"
             autoCapitalize="none"
           />
-          <TouchableOpacity
-            style={[styles.discoverButton, discovering && styles.saveButtonDisabled]}
-            onPress={handleAutoDiscover}
-            disabled={discovering}
-          >
-            {discovering ? (
+        )}
+        
+        {/* Discover Button */}
+        <TouchableOpacity
+          style={[styles.discoverButton, discovering && styles.saveButtonDisabled]}
+          onPress={handleAutoDiscover}
+          disabled={discovering}
+        >
+          {discovering ? (
+            <View style={styles.discoverButtonContent}>
               <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.discoverButtonText}>发现</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+              <Text style={styles.discoverButtonText}>{discoveryStatus}</Text>
+            </View>
+          ) : (
+            <Text style={styles.discoverButtonText}>开始发现</Text>
+          )}
+        </TouchableOpacity>
+        
+        {/* Discovered Services */}
+        {discoveredServices.length > 0 && (
+          <View style={styles.servicesContainer}>
+            <Text style={styles.label}>发现的服务:</Text>
+            {discoveredServices.map((service, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.serviceItem,
+                  serverURL === service.fullUrl && styles.serviceItemActive
+                ]}
+                onPress={() => selectService(service)}
+              >
+                <Text style={styles.serviceIcon}>
+                  {service.method === 'mdns' ? '📡' : '🔍'}
+                </Text>
+                <View style={styles.serviceInfo}>
+                  <Text style={styles.serviceDevice}>{service.device || service.ip}</Text>
+                  <Text style={styles.serviceUrl}>{service.fullUrl}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </View>
       
       {/* Manual Configuration Section */}
@@ -234,6 +317,72 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 12,
     marginTop: 6,
+  },
+  modeRow: {
+    flexDirection: 'row',
+    marginBottom: 12,
+    gap: 8,
+  },
+  modeButton: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+    backgroundColor: '#1a1a1a',
+    alignItems: 'center',
+  },
+  modeButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  modeButtonText: {
+    color: '#888',
+    fontSize: 12,
+  },
+  modeButtonTextActive: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  discoverButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  servicesContainer: {
+    marginTop: 12,
+  },
+  serviceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 8,
+    padding: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  serviceItemActive: {
+    borderColor: '#4CAF50',
+    backgroundColor: '#1a2a1a',
+  },
+  serviceIcon: {
+    fontSize: 20,
+    marginRight: 12,
+  },
+  serviceInfo: {
+    flex: 1,
+  },
+  serviceDevice: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  serviceUrl: {
+    color: '#888',
+    fontSize: 12,
+    marginTop: 2,
   },
   saveButton: {
     backgroundColor: '#4CAF50',
