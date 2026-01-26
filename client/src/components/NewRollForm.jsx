@@ -141,6 +141,7 @@ export default function NewRollForm({ onCreated }) {
       const count = Number(log.count || log.shots || 0) || 0;
       const date = log.date || '';
       const lensFromLog = log.lens || '';
+      const focal_length = Number.isFinite(log.focal_length) ? log.focal_length : (log.focal_length !== undefined && log.focal_length !== null ? Number(log.focal_length) : null);
       const aperture = Number.isFinite(log.aperture) ? log.aperture : (log.aperture !== undefined && log.aperture !== null ? Number(log.aperture) : null);
       const shutter_speed = log.shutter_speed || '';
       const country = log.country || '';
@@ -151,7 +152,7 @@ export default function NewRollForm({ onCreated }) {
       for (let i = 0; i < count; i++) {
         if (fileIndex >= sortedFiles.length) break;
         const name = sortedFiles[fileIndex].name;
-        metaMap[name] = { date, lens: lensFromLog, country, city, detail_location, aperture, shutter_speed, latitude, longitude, logIndex: shotLogs.indexOf(log) };
+        metaMap[name] = { date, lens: lensFromLog, focal_length, country, city, detail_location, aperture, shutter_speed, latitude, longitude, logIndex: shotLogs.indexOf(log) };
         if (date) dateMap[name] = date;
         fileIndex++;
       }
@@ -216,13 +217,14 @@ export default function NewRollForm({ onCreated }) {
         ? { ...fieldsBase, film_item_id: filmItemId }
         : { ...fieldsBase, filmId };
 
-      // Add file metadata (date + lens + location)
+      // Add file metadata (date + lens + focal_length + location)
       const metaToSend = {};
       const keys = new Set([...Object.keys(fileDates), ...Object.keys(fileMeta)]);
       keys.forEach((k) => {
         const entry = fileMeta[k] || {};
         const date = entry.date || fileDates[k] || '';
         const lensFromMeta = entry.lens || '';
+        const focal_length = entry.focal_length;
         const country = entry.country || '';
         const city = entry.city || '';
         const detail_location = entry.detail_location || '';
@@ -230,10 +232,11 @@ export default function NewRollForm({ onCreated }) {
         const shutter_speed = entry.shutter_speed;
         const latitude = entry.latitude;
         const longitude = entry.longitude;
-        if (date || lensFromMeta || country || city || detail_location || Number.isFinite(aperture) || !!shutter_speed || Number.isFinite(latitude) || Number.isFinite(longitude)) {
+        if (date || lensFromMeta || Number.isFinite(focal_length) || country || city || detail_location || Number.isFinite(aperture) || !!shutter_speed || Number.isFinite(latitude) || Number.isFinite(longitude)) {
           metaToSend[k] = {
             ...(date ? { date } : {}),
             ...(lensFromMeta ? { lens: lensFromMeta } : {}),
+            ...(Number.isFinite(focal_length) ? { focal_length } : {}),
             ...(Number.isFinite(aperture) ? { aperture } : {}),
             ...(shutter_speed ? { shutter_speed } : {}),
             ...(country ? { country } : {}),

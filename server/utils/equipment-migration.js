@@ -620,6 +620,10 @@ function runEquipmentMigration() {
       }
 
       // 4f. Migrate lenses from shot_logs in film_items
+      // DISABLED: This was creating duplicate lenses because shot_logs store displayName format
+      // (e.g., "Ricoh XR Rikenon 70-150mm f/3.5") which doesn't match the original lens name.
+      // The equipment library should be managed explicitly by users.
+      /*
       const filmItemsWithLogs = await all(`SELECT id, shot_logs FROM film_items WHERE shot_logs IS NOT NULL AND shot_logs != ''`);
       for (const item of filmItemsWithLogs) {
         try {
@@ -643,6 +647,7 @@ function runEquipmentMigration() {
           // Invalid JSON, skip
         }
       }
+      */
 
       // 4g. Migrate film formats
       const filmsWithFormat = await all(`SELECT id, format FROM films WHERE format IS NOT NULL AND format != '' AND format_id IS NULL`);

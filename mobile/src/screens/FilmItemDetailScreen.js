@@ -164,7 +164,8 @@ export default function FilmItemDetailScreen({ route, navigation }) {
                     status: 'loaded', 
                     loaded_date: actionDate || todayStr,
                     loaded_camera: loadCameraName || null,
-                    loaded_camera_equip_id: loadCameraId || null
+                    camera_equip_id: loadCameraId || null,
+                    loaded_at: new Date().toISOString()
                   };
                   const updated = await updateFilmItem(itemId, patch);
                   setItem(updated.item || updated);

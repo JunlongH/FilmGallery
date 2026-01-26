@@ -799,7 +799,16 @@ _ipcMainAlias.on('filmlab-gpu:result', async (_e, result) => {
     if (photoId) {
       LOG('[GPU-RESULT] Uploading to backend for photoId:', photoId);
       try {
-        const API_BASE = 'http://127.0.0.1:4000';
+        // Ensure config is loaded to determine correct API_BASE
+        if (!appConfig || Object.keys(appConfig).length === 0) appConfig = loadConfig();
+        
+        const mode = appConfig.serverMode || 'local';
+        const API_BASE = (mode === 'local') 
+          ? `http://127.0.0.1:${actualServerPort}`
+          : (appConfig.apiBase || `http://127.0.0.1:${actualServerPort}`);
+          
+        LOG('[GPU-RESULT] Using API_BASE:', API_BASE);
+
         // Use robust upload instead of fetch+FormData
         const data = await uploadBuffer(`${API_BASE}/api/photos/${photoId}/ingest-positive`, buf, 'gpu_export.jpg');
         

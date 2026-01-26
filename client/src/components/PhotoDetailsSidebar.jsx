@@ -10,7 +10,7 @@ import '../styles/sidebar.css';
 const FIELD_GROUPS = {
   time: ['date_taken', 'time_taken'],
   equipment: ['camera', 'lens', 'camera_equip_id', 'lens_equip_id', 'photographer'],
-  params: ['aperture', 'shutter_speed', 'iso'],
+  params: ['aperture', 'shutter_speed', 'iso', 'focal_length'],
   location: ['location_id', 'country', 'city', 'detail_location', 'latitude', 'longitude'],
   scanning: ['scanner_equip_id', 'scan_resolution', 'scan_software', 'scan_lab', 'scan_date', 'scan_cost', 'scan_notes']
 };
@@ -38,6 +38,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   const [aperture, setAperture] = useState(base?.aperture != null ? base.aperture : '');
   const [shutterSpeed, setShutterSpeed] = useState(base?.shutter_speed || '');
   const [iso, setIso] = useState(base?.iso != null ? base.iso : '');
+  const [focalLength, setFocalLength] = useState(base?.focal_length != null ? base.focal_length : '');
   
   const [detailLocation, setDetailLocation] = useState(base?.detail_location || '');
   const [location, setLocation] = useState({
@@ -81,6 +82,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
     setAperture(base.aperture != null ? base.aperture : '');
     setShutterSpeed(base.shutter_speed || '');
     setIso(base.iso != null ? base.iso : '');
+    setFocalLength(base.focal_length != null ? base.focal_length : '');
     setDetailLocation(base.detail_location || '');
     setLocation({
       location_id: base.location_id || null,
@@ -134,6 +136,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       case 'aperture': return aperture !== '' ? parseFloat(aperture) : null;
       case 'shutter_speed': return shutterSpeed || null;
       case 'iso': return iso !== '' ? parseInt(iso) : null;
+      case 'focal_length': return focalLength !== '' ? parseFloat(focalLength) : null;
       case 'scanner_equip_id': return scannerEquipId || null;
       case 'scan_resolution': return scanResolution || null;
       case 'scan_software': return scanSoftware || null;
@@ -347,7 +350,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       <section className="fg-sidepanel-section">
         <SectionHeader title="Shooting Parameters" sectionKey="params" />
         <div className="fg-separator" />
-        <div className="fg-sidepanel-groupGrid cols-3">
+        <div className="fg-sidepanel-groupGrid cols-4">
           <div className="fg-field">
             <label className="fg-label">Aperture</label>
             <input 
@@ -381,6 +384,19 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
               placeholder="e.g. 400" 
               value={iso} 
               onChange={e=>{ setIso(e.target.value); markDirty('iso'); }} 
+            />
+          </div>
+          <div className="fg-field">
+            <label className="fg-label">Focal (mm)</label>
+            <input 
+              className="fg-input" 
+              type="number" 
+              step="1"
+              min="1"
+              max="2000"
+              placeholder="e.g. 50" 
+              value={focalLength} 
+              onChange={e=>{ setFocalLength(e.target.value); markDirty('focal_length'); }} 
             />
           </div>
         </div>

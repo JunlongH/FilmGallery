@@ -1079,7 +1079,8 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, 
                     f: calculatedExposure.targetAperture,
                     s: calculatedExposure.targetShutter,
                     iso,
-                    location 
+                    location,
+                    focal_length: Math.round(24 * zoom)
                   })}
               >
                 Use Settings

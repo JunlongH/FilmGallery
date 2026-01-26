@@ -135,11 +135,12 @@ router.get('/:id/shot-logs/export', async (req, res) => {
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="shot-logs-${id}.csv"`);
-    res.write('date,count,lens,aperture,shutter_speed,country,city,detail_location,latitude,longitude,iso\r\n');
+    res.write('date,count,lens,focal_length,aperture,shutter_speed,country,city,detail_location,latitude,longitude,iso\r\n');
     for (const entry of logs) {
       const date = entry.date || '';
       const count = entry.count || entry.shots || 0;
       const lens = entry.lens || '';
+      const focal_length = entry.focal_length ?? '';
       const aperture = entry.aperture ?? '';
       const shutter = entry.shutter_speed || '';
       const country = entry.country || '';
@@ -153,6 +154,7 @@ router.get('/:id/shot-logs/export', async (req, res) => {
         escapeCsv(date),
         escapeCsv(count),
         escapeCsv(lens),
+        escapeCsv(focal_length),
         escapeCsv(aperture),
         escapeCsv(shutter),
         escapeCsv(country),

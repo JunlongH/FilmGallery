@@ -21,6 +21,7 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
   const [aperture, setAperture] = useState(photo.aperture != null ? photo.aperture : '');
   const [shutterSpeed, setShutterSpeed] = useState(photo.shutter_speed || '');
   const [iso, setIso] = useState(photo.iso != null ? photo.iso : '');
+  const [focalLength, setFocalLength] = useState(photo.focal_length != null ? photo.focal_length : '');
 
   useEffect(() => {
     // Clamp date within roll bounds if provided
@@ -71,18 +72,22 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
               <input className="fg-input" value={lens} onChange={e=>setLens(e.target.value)} placeholder="e.g., Summicron 50mm f/2" />
             </div>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap: 8, marginTop: 8 }}>
             <div className="fg-field">
-              <label className="fg-label">Aperture (f-stop)</label>
+              <label className="fg-label">Aperture</label>
               <input className="fg-input" type="number" step="0.1" min="0.5" max="64" value={aperture} onChange={e=>setAperture(e.target.value)} placeholder="e.g., 2.8" />
             </div>
             <div className="fg-field">
-              <label className="fg-label">Shutter Speed</label>
-              <input className="fg-input" value={shutterSpeed} onChange={e=>setShutterSpeed(e.target.value)} placeholder="e.g., 1/125, 1s" />
+              <label className="fg-label">Shutter</label>
+              <input className="fg-input" value={shutterSpeed} onChange={e=>setShutterSpeed(e.target.value)} placeholder="e.g., 1/125" />
             </div>
             <div className="fg-field">
               <label className="fg-label">ISO</label>
               <input className="fg-input" type="number" min="6" max="25600" value={iso} onChange={e=>setIso(e.target.value)} placeholder="e.g., 400" />
+            </div>
+            <div className="fg-field">
+              <label className="fg-label">Focal (mm)</label>
+              <input className="fg-input" type="number" step="1" min="1" max="2000" value={focalLength} onChange={e=>setFocalLength(e.target.value)} placeholder="e.g., 50" />
             </div>
           </div>
         </fieldset>
@@ -159,7 +164,8 @@ export default function PhotoMetaEditModal({ roll, photo, onSave, onClose }) {
             lens: lens || null,
             aperture: aperture !== '' ? parseFloat(aperture) : null,
             shutter_speed: shutterSpeed || null,
-            iso: iso !== '' ? parseInt(iso) : null
+            iso: iso !== '' ? parseInt(iso) : null,
+            focal_length: focalLength !== '' ? parseFloat(focalLength) : null
           })}>Save</button>
         </div>
       </div>

@@ -21,6 +21,7 @@ function parseShotLog(raw) {
         date: entry.date,
         count: Number(entry.count || entry.shots || 0) || 0,
         lens: entry.lens || '',
+        focal_length: entry.focal_length !== undefined && entry.focal_length !== null ? Number(entry.focal_length) : null,
         aperture: entry.aperture !== undefined && entry.aperture !== null ? Number(entry.aperture) : null,
         shutter_speed: entry.shutter_speed || '',
         country: entry.country || '',
@@ -58,6 +59,7 @@ export default function ShotLogScreen({ route, navigation }) {
   const [newLens, setNewLens] = useState('');
   const [newAperture, setNewAperture] = useState('');
   const [newShutter, setNewShutter] = useState('');
+  const [newFocalLength, setNewFocalLength] = useState('');
   const [newCountry, setNewCountry] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newDetail, setNewDetail] = useState('');
@@ -226,8 +228,11 @@ export default function ShotLogScreen({ route, navigation }) {
               });
               setNativeLenses([]);
               setAdaptedLenses([]);
-              // Auto-fill lens for fixed lens cameras
+              // Auto-fill lens and focal_length for fixed lens cameras
               setNewLens(fixedLensText);
+              if (result.focal_length) {
+                setNewFocalLength(String(result.focal_length));
+              }
             } else {
               // Interchangeable lens camera - store native and adapted lenses
               setCameraName(result.camera_name || '');
@@ -287,6 +292,41 @@ export default function ShotLogScreen({ route, navigation }) {
     if (data.lens) setNewLens(data.lens);
     if (data.f) setNewAperture(data.f.toString());
     if (data.s) setNewShutter(data.s.toString());
+    
+    // Smart focal_length handling based on lens type
+    if (data.focal_length) {
+      const meterFocal = Number(data.focal_length);
+      let finalFocal = meterFocal;
+      
+      // 1. Fixed lens camera - always use fixed lens focal_length
+      if (fixedLensInfo && fixedLensInfo.focal_length) {
+        finalFocal = fixedLensInfo.focal_length;
+      } else {
+        // 2. Check if we have a selected lens from inventory
+        const currentLensName = data.lens || newLens;
+        if (currentLensName) {
+          // Match by either name (database) or displayName (formatted)
+          const selectedLens = [...nativeLenses, ...adaptedLenses].find(
+            l => l.name === currentLensName || l.displayName === currentLensName
+          );
+          if (selectedLens && selectedLens.focal_length_min) {
+            const isPrime = !selectedLens.focal_length_max || selectedLens.focal_length_min === selectedLens.focal_length_max;
+            if (isPrime) {
+              // Prime lens - always use lens focal_length
+              finalFocal = selectedLens.focal_length_min;
+            } else {
+              // Zoom lens - clamp to min if meter focal < min
+              if (meterFocal < selectedLens.focal_length_min) {
+                finalFocal = selectedLens.focal_length_min;
+              }
+              // Could also clamp to max: else if (meterFocal > selectedLens.focal_length_max) finalFocal = selectedLens.focal_length_max;
+            }
+          }
+        }
+      }
+      setNewFocalLength(finalFocal.toString());
+    }
+    
     if (data.location) {
       setNewCountry(data.location.country || '');
       setNewCity(data.location.city || '');
@@ -344,11 +384,13 @@ export default function ShotLogScreen({ route, navigation }) {
     const last = entries[entries.length - 1] || {};
     const apertureVal = newAperture !== '' ? Number(newAperture) : (last.aperture ?? null);
     const shutterVal = newShutter || last.shutter_speed || '';
+    const focalVal = newFocalLength !== '' ? Number(newFocalLength) : (last.focal_length ?? null);
     setEntries(prev => {
       const next = [...prev, {
         date: newDate,
         count,
         lens: lensVal,
+        focal_length: Number.isFinite(focalVal) ? focalVal : null,
         aperture: Number.isFinite(apertureVal) ? apertureVal : null,
         shutter_speed: shutterVal,
         country: newCountry || last.country || '',
@@ -363,6 +405,7 @@ export default function ShotLogScreen({ route, navigation }) {
     setNewShots('1');
     setNewAperture(apertureVal !== null && apertureVal !== undefined && apertureVal !== '' ? String(apertureVal) : '');
     setNewShutter(shutterVal || '');
+    setNewFocalLength(focalVal !== null && focalVal !== undefined ? String(focalVal) : '');
     setNewCountry(prev => prev || last.country || '');
     setNewCity(prev => prev || last.city || '');
     setNewDetail(prev => prev || last.detail_location || '');
@@ -389,6 +432,7 @@ export default function ShotLogScreen({ route, navigation }) {
           date: e.date,
           count: e.count,
           lens: e.lens || '',
+          focal_length: Number.isFinite(e.focal_length) ? e.focal_length : null,
           aperture: Number.isFinite(e.aperture) ? e.aperture : (e.aperture !== undefined && e.aperture !== null && e.aperture !== '' ? Number(e.aperture) : null),
           shutter_speed: e.shutter_speed || '',
           country: e.country || '',
@@ -468,7 +512,11 @@ export default function ShotLogScreen({ route, navigation }) {
               </Text>
               {item.lens ? (
                 <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                  Lens: {item.lens}
+                  Lens: {item.lens}{item.focal_length ? ` @ ${item.focal_length}mm` : ''}
+                </Text>
+              ) : item.focal_length ? (
+                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                  Focal: {item.focal_length}mm
                 </Text>
               ) : null}
               {(item.aperture !== undefined && item.aperture !== null) || item.shutter_speed ? (
@@ -568,6 +616,16 @@ export default function ShotLogScreen({ route, navigation }) {
             style={[styles.input, { flex: 1 }]}
             dense
           />
+          <TextInput
+            label="Focal (mm)"
+            mode="outlined"
+            keyboardType="numeric"
+            value={newFocalLength}
+            onChangeText={setNewFocalLength}
+            placeholder="50"
+            style={[styles.input, { flex: 1 }]}
+            dense
+          />
         </View>
         {/* Lens suggestions - hidden for fixed lens cameras, shown for interchangeable */}
         {!fixedLensInfo && (
@@ -588,17 +646,30 @@ export default function ShotLogScreen({ route, navigation }) {
                       📷 Native Lenses {cameraMount ? `(${cameraMount})` : ''}
                     </Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm }}>
-                      {nativeLenses.map(l => (
-                        <Button
-                          key={`native-${l.id}`}
-                          mode={newLens === l.displayName ? 'contained' : 'outlined'}
-                          onPress={() => { setNewLens(l.displayName); setShowLensOptions(false); }}
-                          compact
-                          style={{ marginRight: 4 }}
-                        >
-                          {l.displayName}
-                        </Button>
-                      ))}
+                      {nativeLenses.map(l => {
+                        // Check if prime lens (focal_length_min === focal_length_max)
+                        const isPrime = l.focal_length_min && (!l.focal_length_max || l.focal_length_min === l.focal_length_max);
+                        // Use lens.name for storage (matches database), displayName for UI
+                        const lensNameForStorage = l.name || l.displayName;
+                        return (
+                          <Button
+                            key={`native-${l.id}`}
+                            mode={newLens === lensNameForStorage ? 'contained' : 'outlined'}
+                            onPress={() => {
+                              setNewLens(lensNameForStorage);
+                              // Auto-fill focal length for prime lenses
+                              if (isPrime) {
+                                setNewFocalLength(String(l.focal_length_min));
+                              }
+                              setShowLensOptions(false);
+                            }}
+                            compact
+                            style={{ marginRight: 4 }}
+                          >
+                            {l.displayName}
+                          </Button>
+                        );
+                      })}
                     </View>
                   </>
                 )}
@@ -610,17 +681,30 @@ export default function ShotLogScreen({ route, navigation }) {
                       🔄 Adapted Lenses
                     </Text>
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: spacing.sm }}>
-                      {adaptedLenses.map(l => (
-                        <Button
-                          key={`adapted-${l.id}`}
-                          mode={newLens === l.displayName ? 'contained' : 'outlined'}
-                          onPress={() => { setNewLens(l.displayName); setShowLensOptions(false); }}
-                          compact
-                          style={{ marginRight: 4 }}
-                        >
-                          {l.displayName} [{l.mount}]
-                        </Button>
-                      ))}
+                      {adaptedLenses.map(l => {
+                        // Check if prime lens (focal_length_min === focal_length_max)
+                        const isPrime = l.focal_length_min && (!l.focal_length_max || l.focal_length_min === l.focal_length_max);
+                        // Use lens.name for storage (matches database), displayName for UI
+                        const lensNameForStorage = l.name || l.displayName;
+                        return (
+                          <Button
+                            key={`adapted-${l.id}`}
+                            mode={newLens === lensNameForStorage ? 'contained' : 'outlined'}
+                            onPress={() => {
+                              setNewLens(lensNameForStorage);
+                              // Auto-fill focal length for prime lenses
+                              if (isPrime) {
+                                setNewFocalLength(String(l.focal_length_min));
+                              }
+                              setShowLensOptions(false);
+                            }}
+                            compact
+                            style={{ marginRight: 4 }}
+                          >
+                            {l.displayName} [{l.mount}]
+                          </Button>
+                        );
+                      })}
                     </View>
                   </>
                 )}

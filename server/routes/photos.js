@@ -270,7 +270,7 @@ router.get('/negatives', async (req, res) => {
 // update photo (adds tags support)
 router.put('/:id', async (req, res) => {
   const id = req.params.id;
-  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, altitude, location_name, country, city, camera, lens, photographer, aperture, shutter_speed, iso, camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id, scan_resolution, scan_software, scan_lab, scan_date, scan_cost, scan_notes } = req.body;
+  const { frame_number, caption, taken_at, rating, tags, date_taken, time_taken, location_id, detail_location, latitude, longitude, altitude, location_name, country, city, camera, lens, photographer, aperture, shutter_speed, iso, focal_length, camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id, scan_resolution, scan_software, scan_lab, scan_date, scan_cost, scan_notes } = req.body;
   console.log(`[PUT] Update photo ${id}`, req.body);
 
   const updates = [];
@@ -295,6 +295,7 @@ router.put('/:id', async (req, res) => {
   if (aperture !== undefined) { updates.push('aperture=?'); params.push(aperture !== null && aperture !== '' ? parseFloat(aperture) : null); }
   if (shutter_speed !== undefined) { updates.push('shutter_speed=?'); params.push(shutter_speed || null); }
   if (iso !== undefined) { updates.push('iso=?'); params.push(iso !== null && iso !== '' ? parseInt(iso) : null); }
+  if (focal_length !== undefined) { updates.push('focal_length=?'); params.push(focal_length !== null && focal_length !== '' ? parseFloat(focal_length) : null); }
   // Equipment IDs
   if (camera_equip_id !== undefined) { updates.push('camera_equip_id=?'); params.push(camera_equip_id); }
   if (lens_equip_id !== undefined) { updates.push('lens_equip_id=?'); params.push(lens_equip_id); }

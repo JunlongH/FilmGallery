@@ -368,11 +368,11 @@ router.post('/', (req, res) => {
           original_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
           is_negative_source, taken_at, date_taken, time_taken,
           location_id, detail_location, country, city,
-          camera, lens, photographer, aperture, shutter_speed, iso,
+          camera, lens, photographer, aperture, shutter_speed, iso, focal_length,
           latitude, longitude,
           scanner_equip_id, scan_resolution, scan_software, scan_date, scan_bit_depth,
           source_make, source_model, source_software
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         stmtToFinalize = stmt;
         
         const runInsert = (params) => new Promise((resolve, reject) => {
@@ -596,6 +596,7 @@ router.post('/', (req, res) => {
           const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' ? Number(meta.aperture) : null;
           const shutterForPhoto = meta.shutter_speed || null;
           const isoForPhoto = filmIso !== null && filmIso !== undefined ? filmIso : null;
+          const focalLengthForPhoto = meta.focal_length !== undefined && meta.focal_length !== null && meta.focal_length !== '' ? Number(meta.focal_length) : null;
           
           // Fallback logic for Location: Meta > Roll Default Location
           const countryForPhoto = meta.country || default_country || null;
@@ -643,6 +644,7 @@ router.post('/', (req, res) => {
             apertureForPhoto,
             shutterForPhoto,
             isoForPhoto,
+            focalLengthForPhoto,
             latitudeForPhoto,
             longitudeForPhoto,
             // Scanner info: EXIF优先，roll字段回退
@@ -722,6 +724,7 @@ router.post('/', (req, res) => {
             p.apertureForPhoto,
             p.shutterForPhoto,
             p.isoForPhoto,
+            p.focalLengthForPhoto,
             p.latitudeForPhoto,
             p.longitudeForPhoto,
             // Scanner info

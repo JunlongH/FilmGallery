@@ -42,8 +42,8 @@ function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCoun
         </div>
         
         <div className="fg-modal-body" style={{ padding: 24 }}>
-          {/* Row 1: Shots, Aperture, Shutter */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
+          {/* Row 1: Shots, Aperture, Shutter, Focal Length */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
             <div className="fg-field">
               <label className="fg-label">Shots</label>
               <input
@@ -76,6 +76,22 @@ function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCoun
                 value={editData.shutter_speed || ''}
                 placeholder="e.g. 1/125"
                 onChange={e => setEditData(prev => ({ ...prev, shutter_speed: e.target.value }))}
+              />
+            </div>
+            <div className="fg-field">
+              <label className="fg-label">Focal (mm)</label>
+              <input
+                type="number"
+                step="1"
+                min="1"
+                max="2000"
+                className="fg-input"
+                value={editData.focal_length ?? ''}
+                placeholder="e.g. 50"
+                onChange={e => {
+                  const val = e.target.value === '' ? null : Number(e.target.value);
+                  setEditData(prev => ({ ...prev, focal_length: Number.isFinite(val) ? val : null }));
+                }}
               />
             </div>
           </div>
@@ -220,6 +236,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const [newLens, setNewLens] = useState('');
   const [newAperture, setNewAperture] = useState('');
   const [newShutter, setNewShutter] = useState('');
+  const [newFocalLength, setNewFocalLength] = useState('');
   const [newCountry, setNewCountry] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newDetail, setNewDetail] = useState('');
@@ -254,7 +271,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const fileInputRef = useRef(null);
 
   // CSV Template header
-  const CSV_TEMPLATE = 'date,count,lens,aperture,shutter_speed,country,city,detail_location,latitude,longitude\n2026-01-01,1,50mm f/1.8,2.8,1/125,China,Beijing,Sample Location,39.9042,116.4074';
+  const CSV_TEMPLATE = 'date,count,lens,focal_length,aperture,shutter_speed,country,city,detail_location,latitude,longitude\n2026-01-01,1,50mm f/1.8,50,2.8,1/125,China,Beijing,Sample Location,39.9042,116.4074';
 
   // Parse CSV string to log entries
   const parseCSV = (csvText) => {
@@ -298,6 +315,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           case 'lens':
             entry.lens = val;
             break;
+          case 'focal_length':
+          case 'focal':
+            entry.focal_length = val ? Number(val) : null;
+            break;
           case 'aperture':
           case 'f':
             entry.aperture = val ? Number(val) : null;
@@ -339,6 +360,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           date: entry.date,
           count: entry.count,
           lens: entry.lens || '',
+          focal_length: Number.isFinite(entry.focal_length) ? entry.focal_length : null,
           aperture: Number.isFinite(entry.aperture) ? entry.aperture : null,
           shutter_speed: entry.shutter_speed || '',
           country: entry.country || '',
@@ -461,6 +483,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
             date: entry.date,
             count: Number(entry.count || entry.shots || 0) || 0,
             lens: entry.lens || '',
+            focal_length: entry.focal_length !== undefined && entry.focal_length !== null ? Number(entry.focal_length) : null,
             aperture: entry.aperture !== undefined && entry.aperture !== null ? Number(entry.aperture) : null,
             shutter_speed: entry.shutter_speed || '',
             country: entry.country || '',
@@ -520,9 +543,12 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           setNativeLenses([]);
           setAdaptedLenses([]);
           
-          // Auto-fill lens for new entries
+          // Auto-fill lens and focal_length for new entries
           setSelectedLens(lensText);
           setNewLens('');
+          if (result.focal_length) {
+            setNewFocalLength(String(result.focal_length));
+          }
         } else {
           // Interchangeable lens camera - store native and adapted lenses separately
           setFixedLensInfo(null);
@@ -613,6 +639,30 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     }
   }, [newCountry, countries, citiesByCountry]);
 
+  // Handle lens selection from dropdown - auto-fill focal_length for prime lenses
+  // Store lens.name (database original) instead of displayName to avoid creating duplicate lenses
+  const handleLensSelect = (lensDisplayName) => {
+    if (!lensDisplayName) {
+      setSelectedLens('');
+      return;
+    }
+    
+    // Find the lens object in native or adapted lenses
+    const lens = [...nativeLenses, ...adaptedLenses].find(l => l.displayName === lensDisplayName);
+    if (lens) {
+      // Store the original database name, not displayName
+      setSelectedLens(lens.name || lensDisplayName);
+      // Check if prime lens (focal_length_min === focal_length_max)
+      const isPrime = lens.focal_length_min && (!lens.focal_length_max || lens.focal_length_min === lens.focal_length_max);
+      if (isPrime) {
+        setNewFocalLength(String(lens.focal_length_min));
+      }
+    } else {
+      // Custom/fallback lens - use as-is
+      setSelectedLens(lensDisplayName);
+    }
+  };
+
   const handleAdd = () => {
     if (!newDate || !newCount || Number(newCount) <= 0) return;
     // For fixed lens cameras, always use the fixed lens text
@@ -620,10 +670,12 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     const last = logs[logs.length - 1] || {};
     const apertureVal = newAperture !== '' ? Number(newAperture) : (last.aperture ?? null);
     const shutterVal = newShutter || last.shutter_speed || '';
+    const focalVal = newFocalLength !== '' ? Number(newFocalLength) : (fixedLensInfo?.focal_length ?? last.focal_length ?? null);
     const entry = {
       date: newDate,
       count: Number(newCount),
       lens: lensVal,
+      focal_length: Number.isFinite(focalVal) ? focalVal : null,
       aperture: Number.isFinite(apertureVal) ? apertureVal : null,
       shutter_speed: shutterVal,
       country: newCountry || last.country || '',
@@ -641,6 +693,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     setNewLens('');
     setNewAperture(apertureVal !== null && apertureVal !== undefined && apertureVal !== '' ? String(apertureVal) : '');
     setNewShutter(shutterVal || '');
+    setNewFocalLength(focalVal !== null && focalVal !== undefined ? String(focalVal) : '');
     setNewCountry(entry.country || '');
     setNewCity(entry.city || '');
     setNewDetail(entry.detail_location || '');
@@ -926,6 +979,21 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   onKeyDown={e => e.key === 'Enter' && handleAdd()}
                 />
               </div>
+              <div className="fg-field" style={{ flex: '0 0 80px' }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>mm</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="2000"
+                  className="fg-input"
+                  value={newFocalLength}
+                  onChange={e => setNewFocalLength(e.target.value)}
+                  placeholder="50"
+                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                />
+              </div>
               <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
                 <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>
                   Lens {fixedLensInfo && <span style={{ opacity: 0.7 }}>(Fixed)</span>}
@@ -954,23 +1022,33 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     <select
                       className="fg-input"
                       value={selectedLens}
-                      onChange={e => setSelectedLens(e.target.value)}
+                      onChange={e => {
+                        // e.target.value is now lens.name, find the lens to get focal info
+                        const lens = [...nativeLenses, ...adaptedLenses].find(l => l.name === e.target.value);
+                        setSelectedLens(e.target.value);
+                        if (lens) {
+                          const isPrime = lens.focal_length_min && (!lens.focal_length_max || lens.focal_length_min === lens.focal_length_max);
+                          if (isPrime) {
+                            setNewFocalLength(String(lens.focal_length_min));
+                          }
+                        }
+                      }}
                       style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
                     >
                       <option value="">Select lens...</option>
-                      {/* Inventory lenses (Native) */}
+                      {/* Inventory lenses (Native) - use name for value, displayName for label */}
                       {nativeLenses.length > 0 && (
                         <optgroup label={`📷 Native Lenses${cameraMount ? ` (${cameraMount})` : ''}`}>
                           {nativeLenses.map(l => (
-                            <option key={`native-${l.id}`} value={l.displayName}>{l.displayName}</option>
+                            <option key={`native-${l.id}`} value={l.name}>{l.displayName}</option>
                           ))}
                         </optgroup>
                       )}
-                      {/* Inventory lenses (Adapted) */}
+                      {/* Inventory lenses (Adapted) - use name for value, displayName for label */}
                       {adaptedLenses.length > 0 && (
                         <optgroup label="🔄 Adapted Lenses">
                           {adaptedLenses.map(l => (
-                            <option key={`adapted-${l.id}`} value={l.displayName}>
+                            <option key={`adapted-${l.id}`} value={l.name}>
                               {l.displayName} [{l.mount}]
                             </option>
                           ))}
@@ -1120,6 +1198,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                       </span>
                       {entry.aperture && <span style={{ color: '#64748b', fontSize: 13 }}>f/{entry.aperture}</span>}
                       {entry.shutter_speed && <span style={{ color: '#64748b', fontSize: 13 }}>{entry.shutter_speed}</span>}
+                      {entry.focal_length && <span style={{ color: '#64748b', fontSize: 13 }}>{entry.focal_length}mm</span>}
                       {entry.lens && <span style={{ color: '#475569', fontSize: 13 }}>• {entry.lens}</span>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1394,10 +1473,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     </div>
                     
                     {/* Row 2: Lens */}
-                    {entry.lens && (
+                    {(entry.lens || entry.focal_length) && (
                       <div style={{ marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                         <span style={{ color: '#94a3b8', fontSize: 12 }}>📷</span>
-                        <span style={{ color: '#475569', fontSize: 13 }}>{entry.lens}</span>
+                        <span style={{ color: '#475569', fontSize: 13 }}>{entry.lens}{entry.focal_length ? ` @ ${entry.focal_length}mm` : ''}</span>
                       </div>
                     )}
                     
