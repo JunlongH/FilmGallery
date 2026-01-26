@@ -36,24 +36,33 @@ router.get('/', async (req, res) => {
     };
     let items = await listFilmItems(filters);
     
-    // Enrich each item with film name, brand, format, and ISO from films table
-    items = await Promise.all(items.map(async (item) => {
-      if (item.film_id) {
-        try {
-          const filmRow = await getAsync('SELECT name, brand, iso, format, category FROM films WHERE id = ?', [item.film_id]);
-          if (filmRow) {
-            item.film_name = filmRow.name || undefined;
-            item.film_brand = filmRow.brand || undefined;
-            item.film_format = filmRow.format || undefined;
-            item.film_category = filmRow.category || undefined;
-            item.iso = filmRow.iso || undefined;
+    // Enrich items with film data using batch query (fixes N+1 problem)
+    const filmIds = [...new Set(items.map(item => item.film_id).filter(Boolean))];
+    if (filmIds.length > 0) {
+      try {
+        const { allAsync } = require('../utils/db-helpers');
+        const placeholders = filmIds.map(() => '?').join(',');
+        const filmRows = await allAsync(
+          `SELECT id, name, brand, iso, format, category FROM films WHERE id IN (${placeholders})`,
+          filmIds
+        );
+        const filmMap = new Map(filmRows.map(f => [f.id, f]));
+        
+        items = items.map(item => {
+          const filmData = filmMap.get(item.film_id);
+          if (filmData) {
+            item.film_name = filmData.name || undefined;
+            item.film_brand = filmData.brand || undefined;
+            item.film_format = filmData.format || undefined;
+            item.film_category = filmData.category || undefined;
+            item.iso = filmData.iso || undefined;
           }
-        } catch (e) {
-          console.warn(`[film-items] failed to fetch film data for film_id ${item.film_id}:`, e.message);
-        }
+          return item;
+        });
+      } catch (e) {
+        console.warn('[film-items] failed to batch fetch film data:', e.message);
       }
-      return item;
-    }));
+    }
     
     const duration = Date.now() - startTime;
     if (duration > 100) {

@@ -180,6 +180,11 @@ const mountRoutes = () => {
       ...capabilities
     });
   });
+  
+  // Mount centralized error handling (must be after all routes)
+  const { errorHandler, notFoundHandler } = require('./middleware/error-handler');
+  app.use('/api/*', notFoundHandler); // 404 for unmatched API routes
+  app.use(errorHandler); // Global error handler
 };
 
 // Ensure database schema exists before accepting requests (first-run install)

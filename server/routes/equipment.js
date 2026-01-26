@@ -40,40 +40,8 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 10 * 1024 * 1024 } }); // 10MB limit
 
-// Lazy-load db to avoid circular dependency
-let db;
-function getDb() {
-  if (!db) db = require('../db');
-  return db;
-}
-
-// Helper: promisified db methods
-const runAsync = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    getDb().run(sql, params, function(err) {
-      if (err) reject(err);
-      else resolve({ lastID: this.lastID, changes: this.changes });
-    });
-  });
-};
-
-const allAsync = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    getDb().all(sql, params, (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows || []);
-    });
-  });
-};
-
-const getAsync = (sql, params = []) => {
-  return new Promise((resolve, reject) => {
-    getDb().get(sql, params, (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-};
+// Import centralized db-helpers (removed duplicate definitions)
+const { runAsync, allAsync, getAsync } = require('../utils/db-helpers');
 
 // ========================================
 // CONSTANTS

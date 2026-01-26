@@ -380,10 +380,10 @@ process.on('uncaughtException', (err) => {
 
 | # | 任务 | 文件 | 预计时间 | 状态 |
 |---|------|------|----------|------|
-| 1.1 | 修复 N+1 查询 | `server/routes/film-items.js` | 2h | ⬜ 待开始 |
-| 1.2 | 移除 equipment.js 重复 db-helpers | `server/routes/equipment.js` | 30min | ⬜ 待开始 |
-| 1.3 | 清理 watch-app 占位符 IP | `watch-app/src/services/api.ts` | 15min | ⬜ 待开始 |
-| 1.4 | 添加统一错误处理中间件 | `server/middleware/error-handler.js` | 2h | ⬜ 待开始 |
+| 1.1 | 修复 N+1 查询 | `server/routes/film-items.js` | 2h | ✅ 已完成 |
+| 1.2 | 移除 equipment.js 重复 db-helpers | `server/routes/equipment.js` | 30min | ✅ 已完成 |
+| 1.3 | 清理 watch-app 占位符 IP | `watch-app/src/services/api.ts` | 15min | ✅ 已完成 |
+| 1.4 | 添加统一错误处理中间件 | `server/middleware/error-handler.js` | 2h | ✅ 已完成 |
 
 ### Phase 2: 代码重构 (1 周) 🟡 中优先级
 

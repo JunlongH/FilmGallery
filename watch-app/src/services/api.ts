@@ -3,7 +3,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Photo, FilmItem, ShotLog, Roll, Film } from '../types';
 
 const SERVER_URL_KEY = '@server_url';
-const DEFAULT_URL = 'http://xxx.xxx.xx.xxx:4000';
+// Default to empty - user must configure server URL in settings
+// This avoids having placeholder IP addresses in production code
+const DEFAULT_URL = '';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 1000;
 
