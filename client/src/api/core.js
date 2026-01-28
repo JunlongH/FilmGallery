@@ -11,37 +11,52 @@ export const API_BASE = (typeof window !== 'undefined' && window.__electron?.API
   : (process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000');
 
 /**
+ * Get current API_BASE (may change in hybrid mode after initial load)
+ * Use this for runtime requests to ensure we use the latest configured server
+ */
+export function getApiBase() {
+  if (typeof window !== 'undefined' && window.__electron?.API_BASE) {
+    return window.__electron.API_BASE;
+  }
+  return API_BASE;
+}
+
+/**
  * Build an absolute URL for an uploaded file value stored in the DB.
+ * Uses dynamic API_BASE for hybrid mode support.
  */
 export function buildUploadUrl(pathOrUrl) {
+  const apiBase = getApiBase();
   if (!pathOrUrl) return null;
   // already absolute URL
   if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) return pathOrUrl;
   // leading slash -> relative to API_BASE
-  if (pathOrUrl.startsWith('/')) return `${API_BASE}${pathOrUrl}`;
+  if (pathOrUrl.startsWith('/')) return `${apiBase}${pathOrUrl}`;
   // contains 'uploads' somewhere (e.g. Windows full path like D:\...\uploads\rolls\...)
   const lower = pathOrUrl.toLowerCase();
   const idx = lower.indexOf('uploads');
   if (idx !== -1) {
     // extract from 'uploads' onward and normalize slashes
     const sub = pathOrUrl.slice(idx).replace(/\\/g, '/').replace(/^\/+/, '');
-    return `${API_BASE}/${sub}`;
+    return `${apiBase}/${sub}`;
   }
   // Windows path fallback - use basename
   if (pathOrUrl.indexOf('\\') !== -1 || /^([a-zA-Z]:\\)/.test(pathOrUrl)) {
     const parts = pathOrUrl.split(/[/\\]+/);
     const base = parts[parts.length - 1];
-    return `${API_BASE}/uploads/${base}`;
+    return `${apiBase}/uploads/${base}`;
   }
   // default: assume value is relative inside uploads (e.g. 'rolls/..')
-  return `${API_BASE}/uploads/${pathOrUrl.replace(/^\/+/, '')}`;
+  return `${apiBase}/uploads/${pathOrUrl.replace(/^\/+/, '')}`;
 }
 
 /**
  * Generic JSON fetch wrapper
+ * Uses dynamic API_BASE to support runtime server switching
  */
 export async function jsonFetch(url, opts = {}) {
-  const r = await fetch(`${API_BASE}${url}`, opts);
+  const apiBase = getApiBase();
+  const r = await fetch(`${apiBase}${url}`, opts);
   const text = await r.text();
   try { return JSON.parse(text); } catch { return text; }
 }
@@ -77,20 +92,46 @@ export async function deleteRequest(url) {
 
 /**
  * Upload file with progress support using XMLHttpRequest
+ * @param {string} url - API endpoint path
+ * @param {FormData} formData - Form data to upload
+ * @param {function} onProgress - Progress callback (0-100)
+ * @param {object} options - Optional settings
+ * @param {number} options.timeout - Timeout in ms (default: 5 minutes)
  */
-export function uploadWithProgress(url, formData, onProgress) {
+export function uploadWithProgress(url, formData, onProgress, options = {}) {
+  const { timeout = 5 * 60 * 1000 } = options; // 5 minutes default
+  
+  // Get current API_BASE (may have changed since module load in hybrid mode)
+  const apiBase = (typeof window !== 'undefined' && window.__electron?.API_BASE) 
+    ? window.__electron.API_BASE 
+    : API_BASE;
+  
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE}${url}`);
+    xhr.open('POST', `${apiBase}${url}`);
+    xhr.timeout = timeout;
+    
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try { resolve(JSON.parse(xhr.responseText)); } 
         catch(e) { resolve(xhr.responseText); }
       } else {
-        reject(new Error(xhr.statusText || 'Upload failed'));
+        const errorMsg = xhr.statusText || `HTTP ${xhr.status}`;
+        console.error('[Upload] Failed:', xhr.status, xhr.responseText);
+        reject(new Error(errorMsg));
       }
     };
-    xhr.onerror = () => reject(new Error('Network error'));
+    
+    xhr.onerror = () => {
+      console.error('[Upload] Network error - API_BASE:', apiBase, 'URL:', url);
+      reject(new Error('Network error: Failed to connect to server'));
+    };
+    
+    xhr.ontimeout = () => {
+      console.error('[Upload] Timeout - API_BASE:', apiBase, 'URL:', url);
+      reject(new Error('Upload timeout: Request took too long'));
+    };
+    
     if (xhr.upload && onProgress) {
       xhr.upload.onprogress = (ev) => {
         if (ev.lengthComputable) {

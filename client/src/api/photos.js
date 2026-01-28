@@ -2,7 +2,7 @@
  * Photos API - Photo management and processing
  */
 
-import { API_BASE, jsonFetch, putJson, deleteRequest, uploadWithProgress, buildQueryString } from './core';
+import { API_BASE, getApiBase, jsonFetch, putJson, deleteRequest, uploadWithProgress, buildQueryString } from './core';
 
 // ========================================
 // PHOTO CRUD
@@ -89,9 +89,10 @@ export async function uploadPhotosToRoll({ rollId, files = [], onProgress, isNeg
  * Update positive from negative (save processed image)
  */
 export async function updatePositiveFromNegative(photoId, blob) {
+  const apiBase = getApiBase();
   const fd = new FormData();
   fd.append('positive', blob, 'positive.jpg');
-  const res = await fetch(`${API_BASE}/api/photos/${photoId}/update-positive`, {
+  const res = await fetch(`${apiBase}/api/photos/${photoId}/update-positive`, {
     method: 'POST',
     body: fd
   });
@@ -100,12 +101,16 @@ export async function updatePositiveFromNegative(photoId, blob) {
 
 /**
  * Export processed positive image
+ * @param {number} photoId - Photo ID
+ * @param {object} params - FilmLab parameters
+ * @param {object} options - Options (format, sourceType)
  */
-export async function exportPositive(photoId, params, { format = 'jpeg' } = {}) {
-  const res = await fetch(`${API_BASE}/api/filmlab/export`, {
+export async function exportPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/filmlab/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ photoId, params, format })
+    body: JSON.stringify({ photoId, params, format, sourceType })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -116,12 +121,16 @@ export async function exportPositive(photoId, params, { format = 'jpeg' } = {}) 
 
 /**
  * Render positive image (in-memory processing)
+ * @param {number} photoId - Photo ID
+ * @param {object} params - FilmLab parameters
+ * @param {object} options - Options (format, sourceType)
  */
-export async function renderPositive(photoId, params, { format = 'jpeg' } = {}) {
-  const res = await fetch(`${API_BASE}/api/filmlab/render`, {
+export async function renderPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/filmlab/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ photoId, params, format })
+    body: JSON.stringify({ photoId, params, format, sourceType })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -132,11 +141,33 @@ export async function renderPositive(photoId, params, { format = 'jpeg' } = {}) 
 
 /**
  * Get FilmLab preview
+ * @param {object} options
+ * @param {number} options.photoId - Photo ID
+ * @param {object} options.params - FilmLab parameters
+ * @param {number} options.maxWidth - Max width for preview
+ * @param {string} options.sourceType - Source type: 'original' | 'negative' | 'positive'
  */
-export async function filmlabPreview({ photoId, params, maxWidth = 1400 }) {
-  const qs = new URLSearchParams();
-  qs.append('photoId', photoId);
-  qs.append('maxWidth', maxWidth);
-  if (params) qs.append('params', JSON.stringify(params));
-  return jsonFetch(`/api/filmlab/preview?${qs.toString()}`);
+export async function filmlabPreview({ photoId, params, maxWidth = 1400, sourceType = 'original' }) {
+  const apiBase = getApiBase();
+  console.log('[API] filmlabPreview request:', { photoId, params, maxWidth, sourceType, apiBase });
+  const resp = await fetch(`${apiBase}/api/filmlab/preview`, {
+    method: 'POST',
+    headers: { 
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache'
+    },
+    body: JSON.stringify({ photoId, params, maxWidth, sourceType }),
+    cache: 'no-store'
+  });
+  const ct = resp.headers.get('content-type') || '';
+  if (ct.startsWith('image/')) {
+    const blob = await resp.blob();
+    console.log('[API] filmlabPreview received image blob:', blob.size, 'bytes');
+    return { ok: true, blob };
+  }
+  const text = await resp.text();
+  let err;
+  try { err = JSON.parse(text); } catch { err = { error: text }; }
+  console.error('[API] filmlabPreview error:', err);
+  return { ok: false, error: err && (err.error || err.message) };
 }

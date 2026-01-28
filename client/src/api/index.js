@@ -14,7 +14,8 @@
 
 // Core utilities
 export { 
-  API_BASE, 
+  API_BASE,
+  getApiBase,
   buildUploadUrl, 
   jsonFetch,
   postJson,
@@ -195,8 +196,9 @@ export async function getExportStats() {
 }
 
 export async function cleanupExportHistory(keepCount = 100) {
-  const { API_BASE } = await import('./core');
-  const resp = await fetch(`${API_BASE}/api/export-history/cleanup?keepCount=${keepCount}`, {
+  const { getApiBase } = await import('./core');
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/export-history/cleanup?keepCount=${keepCount}`, {
     method: 'DELETE'
   });
   return resp.json();

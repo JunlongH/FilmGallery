@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import LutLibrary from './Settings/LutLibrary';
 import ServerSettings from './Settings/ServerSettings';
-import { API_BASE } from '../api';
+import { getApiBase } from '../api';
 
 export default function Settings() {
   const [config, setConfig] = useState({});
@@ -17,7 +17,7 @@ export default function Settings() {
   // 检测是否连接远程服务器 (非 localhost)
   const isRemoteServer = (() => {
     try {
-      const url = new URL(API_BASE);
+      const url = new URL(getApiBase());
       const host = url.hostname.toLowerCase();
       return host !== 'localhost' && host !== '127.0.0.1';
     } catch {
@@ -29,16 +29,17 @@ export default function Settings() {
     let mounted = true;
     (async () => {
       try {
+        const apiBase = getApiBase();
         const cfg = await (window.__electron?.getConfig?.() || {});
         if (mounted) setConfig(cfg || {});
         // Fetch actual backend paths for verification (use dynamic API_BASE)
-        const res = await fetch(`${API_BASE}/api/health`);
+        const res = await fetch(`${apiBase}/api/health`);
         if (res.ok) {
           const data = await res.json();
           if (mounted && data.storage) setActualPaths(data.storage);
         }
         // Fetch server info (mode, version etc)
-        const infoRes = await fetch(`${API_BASE}/api/discover`);
+        const infoRes = await fetch(`${apiBase}/api/discover`);
         if (infoRes.ok) {
           const info = await infoRes.json();
           if (mounted) setServerInfo(info);
@@ -78,7 +79,8 @@ export default function Settings() {
         setConfig(res.config || {});
         // Refresh actual paths after change (use dynamic API_BASE)
         try {
-          const healthRes = await fetch(`${API_BASE}/api/health`);
+          const apiBase = getApiBase();
+          const healthRes = await fetch(`${apiBase}/api/health`);
           if (healthRes.ok) {
             const data = await healthRes.json();
             if (data.storage) setActualPaths(data.storage);

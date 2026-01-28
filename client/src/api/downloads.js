@@ -2,7 +2,7 @@
  * Batch Download & Import API
  */
 
-import { API_BASE, jsonFetch, postJson } from './core';
+import { API_BASE, getApiBase, jsonFetch, postJson } from './core';
 
 // ========================================
 // BATCH DOWNLOAD
@@ -47,7 +47,8 @@ export async function checkDownloadAvailability(rollId, type, scope = 'all', pho
  * Get single download URL with optional EXIF
  */
 export function getSingleDownloadUrl(photoId, type = 'positive', exif = false) {
-  return `${API_BASE}/api/batch-download/single/${photoId}?type=${type}&exif=${exif}`;
+  const apiBase = getApiBase();
+  return `${apiBase}/api/batch-download/single/${photoId}?type=${type}&exif=${exif}`;
 }
 
 // ========================================

@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { API_BASE } from '../../api';
+import { getApiBase } from '../../api';
 
 // 文件图标
 const ICONS = {
@@ -48,7 +48,8 @@ export default function RemoteFileBrowser({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/filesystem/roots`);
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/filesystem/roots`);
       const data = await res.json();
       if (data.ok) {
         setRoots(data.roots || []);
@@ -77,7 +78,8 @@ export default function RemoteFileBrowser({
         params.set('filter', fileFilter.join(','));
       }
       
-      const res = await fetch(`${API_BASE}/api/filesystem/browse?${params}`);
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/filesystem/browse?${params}`);
       const data = await res.json();
       
       if (data.ok) {

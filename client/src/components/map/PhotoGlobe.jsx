@@ -9,7 +9,7 @@
  */
 import React, { useRef, useMemo, useCallback, useEffect, useState } from 'react';
 import Globe from 'react-globe.gl';
-import { API_BASE } from '../../api';
+import { getApiBase } from '../../api';
 
 /**
  * Get thumbnail URL for a photo
@@ -17,7 +17,8 @@ import { API_BASE } from '../../api';
 const getThumbUrl = (photo) => {
   const thumbPath = photo.thumb_rel_path || photo.positive_thumb_rel_path || photo.negative_thumb_rel_path;
   if (thumbPath) {
-    return `${API_BASE}/uploads/${thumbPath}`;
+    const apiBase = getApiBase();
+    return `${apiBase}/uploads/${thumbPath}`;
   }
   return null;
 };

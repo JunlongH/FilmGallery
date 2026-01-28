@@ -5,7 +5,7 @@
  * 此模块检测服务器能力并智能路由请求。
  */
 
-import { API_BASE } from '../api';
+import { API_BASE, getApiBase } from '../api';
 
 // 缓存服务器能力
 let serverCapabilities = null;
@@ -31,7 +31,7 @@ export const ComputeErrorCodes = {
 /**
  * 创建标准化错误对象
  */
-function createError(code, message, details = {}) {
+export function createError(code, message, details = {}) {
   return {
     ok: false,
     error: message,
@@ -51,7 +51,8 @@ export async function getServerCapabilities() {
   }
   
   try {
-    const res = await fetch(`${API_BASE}/api/discover`);
+    const apiBase = getApiBase();
+    const res = await fetch(`${apiBase}/api/discover`);
     if (res.ok) {
       const data = await res.json();
       serverCapabilities = {
@@ -111,18 +112,19 @@ export function getLocalGpuProcessor() {
  * 智能 FilmLab 预览
  * 在混合模式下使用本地 GPU，否则使用服务器
  */
-export async function smartFilmlabPreview({ photoId, params, maxWidth = 1400 }) {
+export async function smartFilmlabPreview({ photoId, params, maxWidth = 1400, sourceType = 'original' }) {
   const hasCompute = await isComputeAvailable();
   
   // 如果服务器有计算能力，使用服务器
   if (hasCompute) {
-    const resp = await fetch(`${API_BASE}/api/filmlab/preview`, {
+    const apiBase = getApiBase();
+    const resp = await fetch(`${apiBase}/api/filmlab/preview`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'Cache-Control': 'no-cache'
       },
-      body: JSON.stringify({ photoId, params, maxWidth }),
+      body: JSON.stringify({ photoId, params, maxWidth, sourceType }),
       cache: 'no-store'
     });
     
@@ -148,13 +150,13 @@ export async function smartFilmlabPreview({ photoId, params, maxWidth = 1400 }) 
   }
   
   // 服务器无计算能力，使用本地 GPU
-  return await localGpuPreview({ photoId, params, maxWidth });
+  return await localGpuPreview({ photoId, params, maxWidth, sourceType });
 }
 
 /**
  * 本地 GPU 预览处理
  */
-async function localGpuPreview({ photoId, params, maxWidth }) {
+async function localGpuPreview({ photoId, params, maxWidth, sourceType = 'original' }) {
   const gpuProcessor = getLocalGpuProcessor();
   
   if (!gpuProcessor) {
@@ -165,10 +167,10 @@ async function localGpuPreview({ photoId, params, maxWidth }) {
   }
   
   try {
-    // 需要获取图片 URL
-    const imageUrl = await getPhotoImageUrl(photoId);
+    // 需要获取图片 URL (根据 sourceType)
+    const imageUrl = await getPhotoImageUrl(photoId, sourceType);
     if (!imageUrl) {
-      return { ok: false, error: 'Cannot get photo image URL' };
+      return { ok: false, error: `Cannot get photo image URL for sourceType: ${sourceType}` };
     }
     
     const result = await gpuProcessor({ 
@@ -176,7 +178,8 @@ async function localGpuPreview({ photoId, params, maxWidth }) {
       photoId, 
       imageUrl,
       previewMode: true,
-      maxWidth 
+      maxWidth,
+      sourceType 
     });
     
     if (result?.ok) {
@@ -196,14 +199,29 @@ async function localGpuPreview({ photoId, params, maxWidth }) {
 
 /**
  * 获取照片的图片 URL
+ * @param {number} photoId - 照片 ID
+ * @param {string} sourceType - 源类型: 'original' | 'negative' | 'positive'
  */
-async function getPhotoImageUrl(photoId) {
+async function getPhotoImageUrl(photoId, sourceType = 'original') {
   try {
-    const res = await fetch(`${API_BASE}/api/photos/${photoId}`);
+    const apiBase = getApiBase();
+    const res = await fetch(`${apiBase}/api/photos/${photoId}`);
     if (res.ok) {
       const photo = await res.json();
-      // 返回原始文件路径或 URL
-      return photo.original_path || photo.processed_path || photo.thumbnail_url;
+      // 根据 sourceType 返回对应的路径
+      switch (sourceType) {
+        case 'positive':
+          return photo.positive_rel_path ? `${apiBase}/uploads/${photo.positive_rel_path}` : null;
+        case 'negative':
+          return photo.negative_rel_path ? `${apiBase}/uploads/${photo.negative_rel_path}` :
+                 photo.original_rel_path ? `${apiBase}/uploads/${photo.original_rel_path}` :
+                 photo.full_rel_path ? `${apiBase}/uploads/${photo.full_rel_path}` : null;
+        case 'original':
+        default:
+          return photo.original_rel_path ? `${apiBase}/uploads/${photo.original_rel_path}` :
+                 photo.negative_rel_path ? `${apiBase}/uploads/${photo.negative_rel_path}` :
+                 photo.full_rel_path ? `${apiBase}/uploads/${photo.full_rel_path}` : null;
+      }
     }
   } catch (e) {
     console.error('[ComputeService] Failed to get photo info:', e);
@@ -215,15 +233,16 @@ async function getPhotoImageUrl(photoId) {
  * 智能渲染正片
  * 在混合模式下使用本地 GPU，否则使用服务器
  */
-export async function smartRenderPositive(photoId, params, { format = 'jpeg' } = {}) {
+export async function smartRenderPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
   const hasCompute = await isComputeAvailable();
   
   if (hasCompute) {
     // 使用服务器渲染
-    const resp = await fetch(`${API_BASE}/api/photos/${photoId}/render-positive`, {
+    const apiBase = getApiBase();
+    const resp = await fetch(`${apiBase}/api/photos/${photoId}/render-positive`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ params, format })
+      body: JSON.stringify({ params, format, sourceType })
     });
     
     const ct = resp.headers.get('content-type') || '';
@@ -236,7 +255,7 @@ export async function smartRenderPositive(photoId, params, { format = 'jpeg' } =
     if (resp.status === 503) {
       const data = await resp.json().catch(() => ({}));
       if (data.code === 'E_NAS_NO_COMPUTE') {
-        return await localRenderPositive(photoId, params, { format });
+        return await localRenderPositive(photoId, params, { format, sourceType });
       }
     }
     
@@ -247,13 +266,13 @@ export async function smartRenderPositive(photoId, params, { format = 'jpeg' } =
   }
   
   // 使用本地渲染
-  return await localRenderPositive(photoId, params, { format });
+  return await localRenderPositive(photoId, params, { format, sourceType });
 }
 
 /**
  * 本地渲染正片
  */
-async function localRenderPositive(photoId, params, { format = 'jpeg' } = {}) {
+async function localRenderPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
   const gpuProcessor = getLocalGpuProcessor();
   
   if (!gpuProcessor) {
@@ -264,9 +283,9 @@ async function localRenderPositive(photoId, params, { format = 'jpeg' } = {}) {
   }
   
   try {
-    const imageUrl = await getPhotoImageUrl(photoId);
+    const imageUrl = await getPhotoImageUrl(photoId, sourceType);
     if (!imageUrl) {
-      return { ok: false, error: 'Cannot get photo image URL' };
+      return { ok: false, error: `Cannot get photo image URL for sourceType: ${sourceType}` };
     }
     
     const result = await gpuProcessor({ 
@@ -274,7 +293,8 @@ async function localRenderPositive(photoId, params, { format = 'jpeg' } = {}) {
       photoId, 
       imageUrl,
       previewMode: false,
-      outputFormat: format
+      outputFormat: format,
+      sourceType
     });
     
     if (result?.ok) {
@@ -299,6 +319,105 @@ async function localRenderPositive(photoId, params, { format = 'jpeg' } = {}) {
 export function clearCapabilityCache() {
   serverCapabilities = null;
   lastCapabilityCheck = 0;
+}
+
+/**
+ * 智能导出正片
+ * 在混合模式下使用本地 GPU 渲染后上传，否则使用服务器
+ * @param {number} photoId - 照片 ID
+ * @param {object} params - FilmLab 参数
+ * @param {object} options - 选项 (format, sourceType)
+ * @returns {Promise<{ok: boolean, error?: string, photo?: object}>}
+ */
+export async function smartExportPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
+  const hasCompute = await isComputeAvailable();
+  
+  if (hasCompute) {
+    // 服务器有计算能力，使用服务器导出
+    const apiBase = getApiBase();
+    try {
+      const resp = await fetch(`${apiBase}/api/filmlab/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ photoId, params, format, sourceType })
+      });
+      
+      if (resp.ok) {
+        const data = await resp.json();
+        return { ok: true, ...data, source: 'server' };
+      }
+      
+      // 检查是否是计算不可用错误
+      if (resp.status === 503) {
+        const data = await resp.json().catch(() => ({}));
+        if (data.code === 'E_NAS_NO_COMPUTE') {
+          // 服务器明确表示无计算能力，尝试本地处理
+          return await localExportPositive(photoId, params, { format, sourceType });
+        }
+      }
+      
+      const err = await resp.json().catch(() => ({}));
+      return { ok: false, error: err?.error || `Server export failed: ${resp.status}` };
+    } catch (e) {
+      console.error('[ComputeService] Server export failed:', e);
+      return { ok: false, error: e.message || 'Server export failed' };
+    }
+  }
+  
+  // 服务器无计算能力，使用本地处理
+  return await localExportPositive(photoId, params, { format, sourceType });
+}
+
+/**
+ * 本地导出正片（本地渲染 + 上传到服务器）
+ */
+async function localExportPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
+  const gpuProcessor = getLocalGpuProcessor();
+  
+  if (!gpuProcessor) {
+    return createError(
+      ComputeErrorCodes.NO_GPU_PROCESSOR,
+      '本地 GPU 处理不可用。请在 Electron 桌面客户端中使用混合模式。'
+    );
+  }
+  
+  try {
+    // 获取图片 URL
+    const imageUrl = await getPhotoImageUrl(photoId, sourceType);
+    if (!imageUrl) {
+      return createError(
+        ComputeErrorCodes.PHOTO_NOT_FOUND,
+        `Cannot get photo image URL for sourceType: ${sourceType}`
+      );
+    }
+    
+    console.log('[ComputeService] Local GPU export starting, photoId:', photoId);
+    
+    // 使用 Electron GPU 处理（这会自动上传到服务器）
+    const result = await gpuProcessor({ 
+      params, 
+      photoId, 
+      imageUrl,
+      previewMode: false,
+      outputFormat: format,
+      sourceType
+    });
+    
+    if (result?.ok) {
+      console.log('[ComputeService] Local GPU export successful:', result);
+      return { 
+        ok: true, 
+        photo: result.photo,
+        filePath: result.filePath,
+        source: 'local-gpu' 
+      };
+    }
+    
+    return { ok: false, error: result?.error || 'Local GPU export failed' };
+  } catch (e) {
+    console.error('[ComputeService] Local export failed:', e);
+    return { ok: false, error: e.message || 'Local GPU export failed' };
+  }
 }
 
 // ========================================
@@ -332,8 +451,9 @@ export async function uploadProcessedResult(blob, options = {}) {
   try {
     // 使用 XMLHttpRequest 支持进度
     return await new Promise((resolve, reject) => {
+      const apiBase = getApiBase();
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', `${API_BASE}/api/uploads/processed`);
+      xhr.open('POST', `${apiBase}/api/uploads/processed`);
       
       xhr.onload = () => {
         if (xhr.status >= 200 && xhr.status < 300) {
@@ -392,6 +512,7 @@ export async function uploadProcessedResult(blob, options = {}) {
 export async function processAndUpload(photoId, params, options = {}) {
   const { 
     format = 'jpeg',
+    sourceType = 'original',
     onProgress,
     uploadToServer = true 
   } = options;
@@ -401,7 +522,7 @@ export async function processAndUpload(photoId, params, options = {}) {
     onProgress({ phase: 'processing', percent: 0, message: '开始处理...' });
   }
   
-  const result = await localRenderPositive(photoId, params, { format });
+  const result = await localRenderPositive(photoId, params, { format, sourceType });
   
   if (!result.ok) {
     return result;
@@ -636,6 +757,7 @@ const ComputeService = {
   // 智能处理
   smartFilmlabPreview,
   smartRenderPositive,
+  smartExportPositive,
   
   // 上传
   uploadProcessedResult,

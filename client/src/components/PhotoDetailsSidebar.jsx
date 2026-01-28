@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import LocationInput from './LocationInput.jsx';
 import GeoSearchInput from './GeoSearchInput.jsx';
-import { getMetadataOptions, API_BASE } from '../api';
+import { getMetadataOptions, getApiBase } from '../api';
 import EquipmentSelector from './EquipmentSelector';
 import '../styles/forms.css';
 import '../styles/sidebar.css';
@@ -169,8 +169,9 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
 
     try {
       const targets = isBatch ? photos : [photo];
+      const apiBase = getApiBase();
       for (const p of targets) {
-        await fetch(`${API_BASE}/api/photos/${p.id}`, {
+        await fetch(`${apiBase}/api/photos/${p.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)

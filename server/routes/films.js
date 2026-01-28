@@ -141,4 +141,40 @@ router.put('/:id', uploadFilm.single('thumb'), async (req, res) => {
   }
 });
 
+// Upload/update film thumbnail image (standalone endpoint)
+router.post('/:id/thumb', uploadFilm.single('thumb'), async (req, res) => {
+  try {
+    const id = req.params.id;
+    const filmRow = await getAsync('SELECT * FROM films WHERE id = ?', [id]);
+    if (!filmRow) {
+      return res.status(404).json({ error: 'film_not_found' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'no file uploaded' });
+    }
+
+    const newThumbPath = `/uploads/films/${req.file.filename}`;
+    
+    // Update database
+    await runAsync(
+      'UPDATE films SET thumbPath = ?, thumbnail_url = ? WHERE id = ?',
+      [newThumbPath, newThumbPath, id]
+    );
+
+    // Delete old thumb if exists
+    if (filmRow.thumbPath) {
+      const rel = filmRow.thumbPath.replace(/^\/uploads\//, '');
+      const oldPath = path.join(uploadsDir, rel);
+      fs.unlink(oldPath, () => { /* ignore error */ });
+    }
+
+    const updated = await getAsync('SELECT * FROM films WHERE id = ?', [id]);
+    res.json(updated);
+  } catch (err) {
+    console.error('POST /api/films/:id/thumb error', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

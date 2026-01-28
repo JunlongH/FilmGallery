@@ -262,6 +262,28 @@ function runSchemaMigration() {
         { table: 'photos', col: 'taken_at', type: 'DATETIME' },
         { table: 'photos', col: 'camera', type: 'TEXT' },
         { table: 'photos', col: 'lens', type: 'TEXT' },
+        // Photos - Exposure/EXIF (added 2026-01-27)
+        { table: 'photos', col: 'aperture', type: 'REAL' },
+        { table: 'photos', col: 'shutter_speed', type: 'TEXT' },
+        { table: 'photos', col: 'iso', type: 'INTEGER' },
+        { table: 'photos', col: 'focal_length', type: 'REAL' },
+        // Photos - Equipment IDs
+        { table: 'photos', col: 'camera_equip_id', type: 'INTEGER' },
+        { table: 'photos', col: 'lens_equip_id', type: 'INTEGER' },
+        { table: 'photos', col: 'flash_equip_id', type: 'INTEGER' },
+        { table: 'photos', col: 'scanner_equip_id', type: 'INTEGER' },
+        // Photos - Scan info
+        { table: 'photos', col: 'scan_resolution', type: 'INTEGER' },
+        { table: 'photos', col: 'scan_software', type: 'TEXT' },
+        { table: 'photos', col: 'scan_lab', type: 'TEXT' },
+        { table: 'photos', col: 'scan_date', type: 'DATE' },
+        { table: 'photos', col: 'scan_cost', type: 'REAL' },
+        { table: 'photos', col: 'scan_notes', type: 'TEXT' },
+        // Photos - Location
+        { table: 'photos', col: 'altitude', type: 'REAL' },
+        { table: 'photos', col: 'location_name', type: 'TEXT' },
+        { table: 'photos', col: 'country', type: 'TEXT' },
+        { table: 'photos', col: 'city', type: 'TEXT' },
 
         // Films
         { table: 'films', col: 'category', type: 'TEXT' },

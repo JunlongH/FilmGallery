@@ -15,7 +15,7 @@ import PhotoMarker from './PhotoMarker';
 import MapPhotoPreview from './MapPhotoPreview';
 import PhotoGlobe from './PhotoGlobe';
 import useGeoPhotos from '../../hooks/useGeoPhotos';
-import { API_BASE } from '../../api';
+import { getApiBase } from '../../api';
 
 // Import Leaflet CSS
 import 'leaflet/dist/leaflet.css';
@@ -34,7 +34,8 @@ L.Icon.Default.mergeOptions({
 const getThumbUrl = (photo) => {
   const thumbPath = photo.thumb_rel_path || photo.positive_thumb_rel_path || photo.negative_thumb_rel_path;
   if (thumbPath) {
-    return `${API_BASE}/uploads/${thumbPath}`;
+    const apiBase = getApiBase();
+    return `${apiBase}/uploads/${thumbPath}`;
   }
   return null;
 };

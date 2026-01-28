@@ -16,7 +16,7 @@ import {
   resumeBatchRender,
   listPresets,
   getPhotos, // Added for hybrid mode
-  API_BASE
+  getApiBase
 } from '../../api';
 import ComputeService from '../../services/ComputeService'; // Added for hybrid mode
 import RemoteFileBrowser from '../common/RemoteFileBrowser'; // Added for remote path selection
@@ -710,7 +710,8 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
   const loadLuts = async () => {
     // setLoading(true); // unused
     try {
-      const res = await fetch(`${API_BASE}/api/luts`);
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/luts`);
       if (res.ok) {
         const data = await res.json();
         setLuts(data.luts || []);
@@ -737,7 +738,8 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
     formData.append('lut', file);
     
     try {
-      const res = await fetch(`${API_BASE}/api/luts/upload`, {
+      const apiBase = getApiBase();
+      const res = await fetch(`${apiBase}/api/luts/upload`, {
         method: 'POST',
         body: formData
       });

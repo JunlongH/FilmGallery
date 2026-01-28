@@ -2,13 +2,14 @@
  * LUT (Look-Up Table) API
  */
 
-import { API_BASE } from './core';
+import { API_BASE, getApiBase } from './core';
 
 /**
  * Get LUT list
  */
 export async function listLuts() {
-  const resp = await fetch(`${API_BASE}/api/luts`);
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/luts`);
   
   const contentType = resp.headers.get('content-type');
   if (!resp.ok) {
@@ -27,9 +28,10 @@ export async function listLuts() {
  * Upload LUT file
  */
 export async function uploadLut(file) {
+  const apiBase = getApiBase();
   const fd = new FormData();
   fd.append('lut', file);
-  const resp = await fetch(`${API_BASE}/api/luts/upload`, {
+  const resp = await fetch(`${apiBase}/api/luts/upload`, {
     method: 'POST',
     body: fd
   });
@@ -55,7 +57,8 @@ export async function uploadLut(file) {
  * Delete LUT file
  */
 export async function deleteLut(name) {
-  const resp = await fetch(`${API_BASE}/api/luts/${encodeURIComponent(name)}`, {
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/luts/${encodeURIComponent(name)}`, {
     method: 'DELETE'
   });
   
@@ -76,7 +79,8 @@ export async function deleteLut(name) {
  * Load and parse LUT file from library
  */
 export async function loadLutFromLibrary(name) {
-  const resp = await fetch(`${API_BASE}/api/luts/${encodeURIComponent(name)}`);
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/luts/${encodeURIComponent(name)}`);
   
   if (!resp.ok) {
     const text = await resp.text();

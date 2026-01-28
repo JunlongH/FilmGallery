@@ -8,13 +8,14 @@
  */
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { API_BASE } from '../../api';
+import { getApiBase } from '../../api';
 
 /**
  * Fetch all rolls for the dropdown
  */
 async function fetchRolls() {
-  const response = await fetch(`${API_BASE}/api/rolls`);
+  const apiBase = getApiBase();
+  const response = await fetch(`${apiBase}/api/rolls`);
   if (!response.ok) throw new Error('Failed to fetch rolls');
   return response.json();
 }

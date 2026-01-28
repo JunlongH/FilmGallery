@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { buildUploadUrl, API_BASE } from '../api';
+import { buildUploadUrl, getApiBase } from '../api';
 import ImageViewer from './ImageViewer';
 
 export default function HeroRandomPhotos() {
@@ -12,7 +12,8 @@ export default function HeroRandomPhotos() {
   const loadRandom = useCallback(async () => {
     try {
       setIsRefreshing(true);
-      const r = await fetch(`${API_BASE}/api/photos/random?limit=5`);
+      const apiBase = getApiBase();
+      const r = await fetch(`${apiBase}/api/photos/random?limit=5`);
       const data = await r.json();
       if (Array.isArray(data)) {
         setPhotos(data);

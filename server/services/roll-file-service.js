@@ -389,11 +389,23 @@ function deleteRollFiles({ roll, photos, rollId }) {
   const photoPaths = collectPhotoFilePaths(photos);
 
   // Handle cover image if outside roll folder
+  // IMPORTANT: Skip covers that point to other resource folders (films, equipment, etc.)
+  // These are shared assets and should not be deleted with the roll
   const cover = roll && (roll.cover_photo || roll.coverPath);
   if (cover) {
-    const coverAbs = toUploadAbsPath(cover);
-    if (coverAbs && (!folderPath || !path.resolve(coverAbs).startsWith(path.resolve(folderPath)))) {
-      photoPaths.push(coverAbs);
+    // Skip if cover is in a protected folder (films, equipment, cameras, lenses, etc.)
+    const protectedFolders = ['/uploads/films/', '/uploads/equipment/', '/uploads/cameras/', 
+                              '/uploads/lenses/', '/uploads/flashes/', '/uploads/scanners/',
+                              '/uploads/film-backs/'];
+    const isProtected = protectedFolders.some(pf => 
+      cover.includes(pf) || cover.replace(/^\/uploads\//, '').startsWith(pf.replace('/uploads/', ''))
+    );
+    
+    if (!isProtected) {
+      const coverAbs = toUploadAbsPath(cover);
+      if (coverAbs && (!folderPath || !path.resolve(coverAbs).startsWith(path.resolve(folderPath)))) {
+        photoPaths.push(coverAbs);
+      }
     }
   }
 

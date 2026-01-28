@@ -91,5 +91,9 @@
       "createStartMenuShortcut": true,
       "allowToChangeInstallationDirectory": true
     }
+  },
+  "dependencies": {
+    "nativewind": "^4.2.1",
+    "tailwindcss": "^3.4.19"
   }
 }

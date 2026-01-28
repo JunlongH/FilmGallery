@@ -24,7 +24,8 @@ export {
 // 智能处理路由
 export {
   smartFilmlabPreview,
-  smartRenderPositive
+  smartRenderPositive,
+  smartExportPositive
 } from './ComputeService';
 
 // Phase 3.4: 结果上传

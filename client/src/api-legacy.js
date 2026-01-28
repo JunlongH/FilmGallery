@@ -5,45 +5,60 @@ export const API_BASE = (typeof window !== 'undefined' && window.__electron?.API
   ? window.__electron.API_BASE 
   : (process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000');
 
+/**
+ * Get the current API base URL dynamically.
+ * This is important for hybrid mode where API_BASE can change after module load.
+ * @returns {string} The current API base URL
+ */
+export function getApiBase() {
+  if (typeof window !== 'undefined' && window.__electron?.API_BASE) {
+    return window.__electron.API_BASE;
+  }
+  return process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000';
+}
+
 // Build an absolute URL for an uploaded file value stored in the DB.
 export function buildUploadUrl(pathOrUrl) {
+  const apiBase = getApiBase();
   if (!pathOrUrl) return null;
   // already absolute URL
   if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) return pathOrUrl;
   // leading slash -> relative to API_BASE
-  if (pathOrUrl.startsWith('/')) return `${API_BASE}${pathOrUrl}`;
+  if (pathOrUrl.startsWith('/')) return `${apiBase}${pathOrUrl}`;
   // contains 'uploads' somewhere (e.g. Windows full path like D:\...\uploads\rolls\...)
   const lower = pathOrUrl.toLowerCase();
   const idx = lower.indexOf('uploads');
   if (idx !== -1) {
     // extract from 'uploads' onward and normalize slashes
     const sub = pathOrUrl.slice(idx).replace(/\\/g, '/').replace(/^\/+/, '');
-    return `${API_BASE}/${sub}`;
+    return `${apiBase}/${sub}`;
   }
   // Windows path fallback - use basename
   if (pathOrUrl.indexOf('\\') !== -1 || /^([a-zA-Z]:\\)/.test(pathOrUrl)) {
     const parts = pathOrUrl.split(/[/\\]+/);
     const base = parts[parts.length - 1];
-    return `${API_BASE}/uploads/${base}`;
+    return `${apiBase}/uploads/${base}`;
   }
   // default: assume value is relative inside uploads (e.g. 'rolls/..')
-  return `${API_BASE}/uploads/${pathOrUrl.replace(/^\/+/, '')}`;
+  return `${apiBase}/uploads/${pathOrUrl.replace(/^\/+/, '')}`;
 }
 
 async function jsonFetch(url, opts = {}) {
-  const r = await fetch(`${API_BASE}${url}`, opts);
+  const apiBase = getApiBase();
+  const r = await fetch(`${apiBase}${url}`, opts);
   const text = await r.text();
   try { return JSON.parse(text); } catch { return text; }
 }
 
 // Upload multiple files to tmp for preview
 export async function uploadTmpFiles(files, onProgress) {
+  const apiBase = getApiBase();
   const fd = new FormData();
   files.forEach(f => fd.append('files', f));
   // use XMLHttpRequest to support progress
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE}/api/uploads`);
+    xhr.open('POST', `${apiBase}/api/uploads`);
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try { resolve(JSON.parse(xhr.responseText)); } catch(e){ resolve(xhr.responseText); }
@@ -61,12 +76,13 @@ export async function uploadTmpFiles(files, onProgress) {
 
 // Create roll (multipart direct create)
 export async function createRollMultipart({ fields = {}, files = [], onProgress } = {}) {
+  const apiBase = getApiBase();
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => { if (v !== undefined && v !== null) fd.append(k, v); });
   (files || []).forEach(f => fd.append('files', f));
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${API_BASE}/api/rolls`);
+    xhr.open('POST', `${apiBase}/api/rolls`);
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
         try { resolve(JSON.parse(xhr.responseText)); } catch(e){ resolve(xhr.responseText); }
@@ -82,8 +98,9 @@ export async function createRollMultipart({ fields = {}, files = [], onProgress 
 
 // Create roll using previously uploaded tmp files
 export async function createRollWithTmp({ fields = {}, tmpFiles = [], coverIndex = 0 } = {}) {
+  const apiBase = getApiBase();
   const payload = Object.assign({}, fields, { tmpFiles, coverIndex });
-  const res = await fetch(`${API_BASE}/api/rolls`, {
+  const res = await fetch(`${apiBase}/api/rolls`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -178,10 +195,11 @@ export async function searchPhotos(filters = {}) {
   }));
 }
 export async function uploadPhotoToRoll(rollId, file, fields = {}) {
+  const apiBase = getApiBase();
   const fd = new FormData();
   Object.entries(fields).forEach(([k, v]) => { if (v !== undefined && v !== null) fd.append(k, v); });
   fd.append('image', file);
-  const resp = await fetch(`${API_BASE}/api/rolls/${rollId}/photos`, { method: 'POST', body: fd });
+  const resp = await fetch(`${apiBase}/api/rolls/${rollId}/photos`, { method: 'POST', body: fd });
   return resp.json();
 }
 
@@ -226,9 +244,10 @@ export async function uploadPhotosToRoll({ rollId, files = [], onProgress, isNeg
 
 // Films API
 export async function getFilms(noCache = false) {
+  const apiBase = getApiBase();
   const url = noCache 
-    ? `${API_BASE}/api/films?_t=${Date.now()}` 
-    : `${API_BASE}/api/films`;
+    ? `${apiBase}/api/films?_t=${Date.now()}` 
+    : `${apiBase}/api/films`;
   const res = await fetch(url, noCache ? { cache: 'no-store' } : {});
   const data = await res.json();
   // 防御性处理：确保返回数组
@@ -243,7 +262,8 @@ export async function getFilmConstants() {
 
 // FilmItems API
 export async function createFilmItemsBatch(batch) {
-  const res = await fetch(`${API_BASE}/api/film-items/purchase-batch`, {
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/film-items/purchase-batch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(batch || {}),
@@ -270,7 +290,8 @@ export async function getFilmItem(id) {
 }
 
 export async function updateFilmItem(id, patch) {
-  const res = await fetch(`${API_BASE}/api/film-items/${id}`, {
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/film-items/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(patch || {}),
@@ -291,13 +312,15 @@ export async function updateFilmItem(id, patch) {
 }
 
 export async function deleteFilmItem(id, hard = false) {
-  const url = hard ? `${API_BASE}/api/film-items/${id}?hard=true` : `${API_BASE}/api/film-items/${id}`;
+  const apiBase = getApiBase();
+  const url = hard ? `${apiBase}/api/film-items/${id}?hard=true` : `${apiBase}/api/film-items/${id}`;
   const res = await fetch(url, { method: 'DELETE' });
   return res.json();
 }
 
 export async function exportShotLogsCsv(id) {
-  const res = await fetch(`${API_BASE}/api/film-items/${id}/shot-logs/export`);
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/film-items/${id}/shot-logs/export`);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(text || `Export failed (${res.status})`);
@@ -315,7 +338,8 @@ export async function createFilm({ name, iso, category, brand, format, process, 
   if (format) fd.append('format', format);
   if (process) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
-  const resp = await fetch(`${API_BASE}/api/films`, { method: 'POST', body: fd });
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/films`, { method: 'POST', body: fd });
   return resp.json();
 }
 
@@ -328,7 +352,8 @@ export async function updateFilm({ id, name, iso, category, brand, format, proce
   if (format !== undefined) fd.append('format', format);
   if (process !== undefined) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
-  const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'PUT', body: fd });
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/films/${id}`, { method: 'PUT', body: fd });
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('application/json')) return resp.json();
   const text = await resp.text();
@@ -336,7 +361,8 @@ export async function updateFilm({ id, name, iso, category, brand, format, proce
 }
 
 export async function deleteFilm(id) {
-  const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'DELETE' });
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/films/${id}`, { method: 'DELETE' });
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('application/json')) return resp.json();
   const text = await resp.text();
@@ -345,9 +371,10 @@ export async function deleteFilm(id) {
 
 // Upload film thumbnail image
 export async function uploadFilmImage(id, file) {
+  const apiBase = getApiBase();
   const fd = new FormData();
   fd.append('thumb', file);
-  const resp = await fetch(`${API_BASE}/api/films/${id}`, { method: 'PUT', body: fd });
+  const resp = await fetch(`${apiBase}/api/films/${id}`, { method: 'PUT', body: fd });
   if (!resp.ok) {
     throw new Error(`Upload failed: ${resp.status}`);
   }
@@ -355,7 +382,8 @@ export async function uploadFilmImage(id, file) {
 }
 
 export async function deleteRoll(id) {
-  const resp = await fetch(`${API_BASE}/api/rolls/${id}`, { method: 'DELETE' });
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/rolls/${id}`, { method: 'DELETE' });
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('application/json')) return resp.json();
   const text = await resp.text();
@@ -363,7 +391,8 @@ export async function deleteRoll(id) {
 }
 
 export async function deletePhoto(id) {
-  const resp = await fetch(`${API_BASE}/api/photos/${id}`, { method: 'DELETE' });
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/photos/${id}`, { method: 'DELETE' });
   const ct = resp.headers.get('content-type') || '';
   if (ct.includes('application/json')) return resp.json();
   const text = await resp.text();
@@ -371,10 +400,11 @@ export async function deletePhoto(id) {
 }
 
 export async function setRollCover(rollId, { photoId, filename } = {}) {
+  const apiBase = getApiBase();
   const payload = {};
   if (photoId) payload.photoId = photoId;
   if (filename) payload.filename = filename;
-  const res = await fetch(`${API_BASE}/api/rolls/${rollId}/cover`, {
+  const res = await fetch(`${apiBase}/api/rolls/${rollId}/cover`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
@@ -386,7 +416,8 @@ export async function setRollCover(rollId, { photoId, filename } = {}) {
 }
 
 export async function updateRoll(id, data) {
-  const resp = await fetch(`${API_BASE}/api/rolls/${id}`, {
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/rolls/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
@@ -403,7 +434,8 @@ export async function getRollPreset(rollId) {
 }
 
 export async function setRollPreset(rollId, { name, params }) {
-  const resp = await fetch(`${API_BASE}/api/rolls/${rollId}/preset`, {
+  const apiBase = getApiBase();
+  const resp = await fetch(`${apiBase}/api/rolls/${rollId}/preset`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, params })
@@ -577,15 +609,15 @@ export async function renderPositive(photoId, params, { format = 'jpeg' } = {}) 
 }
 
 // Film Lab preview (server-rendered)
-export async function filmlabPreview({ photoId, params, maxWidth = 1400 }) {
-  console.log('[API] filmlabPreview request:', { photoId, params, maxWidth });
+export async function filmlabPreview({ photoId, params, maxWidth = 1400, sourceType = 'original' }) {
+  console.log('[API] filmlabPreview request:', { photoId, params, maxWidth, sourceType });
   const resp = await fetch(`${API_BASE}/api/filmlab/preview`, {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache'
     },
-    body: JSON.stringify({ photoId, params, maxWidth }),
+    body: JSON.stringify({ photoId, params, maxWidth, sourceType }),
     cache: 'no-store'
   });
   const ct = resp.headers.get('content-type') || '';

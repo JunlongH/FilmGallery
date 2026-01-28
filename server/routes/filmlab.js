@@ -108,17 +108,36 @@ router.post('/preview', async (req, res) => {
 });
 
 // POST /api/filmlab/render
-// Body: { photoId, params }
+// Body: { photoId, params, sourceType }
 router.post('/render', async (req, res) => {
-  const { photoId, params } = req.body || {};
+  const { photoId, params, sourceType } = req.body || {};
   if (!photoId) return res.status(400).json({ error: 'photoId required' });
   try {
     const row = await new Promise((resolve, reject) => {
       db.get('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path, filename FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
     });
     if (!row) return res.status(404).json({ error: 'photo not found' });
-    const relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
-    if (!relSource) return res.status(400).json({ error: 'no usable source path' });
+    
+    // 使用严格源路径选择
+    const sourceResult = getStrictSourcePath(row, sourceType || 'original', {
+      allowFallbackWithinType: true,
+      allowCrossTypeFallback: false
+    });
+    
+    if (!sourceResult.path) {
+      return res.status(400).json({ 
+        error: 'source_type_unavailable',
+        message: sourceResult.warning || `No ${sourceType} file available for this photo`,
+        sourceType,
+        photoId
+      });
+    }
+    
+    const relSource = sourceResult.path;
+    if (sourceResult.warning) {
+      console.log(`[FilmLab Render] Photo ${photoId}: ${sourceResult.warning}`);
+    }
+    
     const abs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 
@@ -191,17 +210,36 @@ router.post('/render', async (req, res) => {
 });
 
 // POST /api/filmlab/export
-// Body: { photoId, params }
+// Body: { photoId, params, sourceType }
 router.post('/export', async (req, res) => {
-  const { photoId, params } = req.body || {};
+  const { photoId, params, sourceType } = req.body || {};
   if (!photoId) return res.status(400).json({ error: 'photoId required' });
   try {
     const row = await new Promise((resolve, reject) => {
       db.get('SELECT id, roll_id, filename, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
     });
     if (!row) return res.status(404).json({ error: 'photo not found' });
-    const relSource = row.original_rel_path || row.positive_rel_path || row.full_rel_path || row.negative_rel_path;
-    if (!relSource) return res.status(400).json({ error: 'no usable source path' });
+    
+    // 使用严格源路径选择
+    const sourceResult = getStrictSourcePath(row, sourceType || 'original', {
+      allowFallbackWithinType: true,
+      allowCrossTypeFallback: false
+    });
+    
+    if (!sourceResult.path) {
+      return res.status(400).json({ 
+        error: 'source_type_unavailable',
+        message: sourceResult.warning || `No ${sourceType} file available for this photo`,
+        sourceType,
+        photoId
+      });
+    }
+    
+    const relSource = sourceResult.path;
+    if (sourceResult.warning) {
+      console.log(`[FilmLab Export] Photo ${photoId}: ${sourceResult.warning}`);
+    }
+    
     const abs = path.join(uploadsDir, relSource);
     if (!fs.existsSync(abs)) return res.status(404).json({ error: 'source missing on disk' });
 

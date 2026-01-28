@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { setRollPreset, listPresets, createPreset, updatePreset, deletePreset as deletePresetApi, filmlabPreview, renderPositive, exportPositive, getFilmCurveProfiles } from '../../api';
+import { setRollPreset, listPresets, createPreset, updatePreset, deletePreset as deletePresetApi, getFilmCurveProfiles } from '../../api';
+import { smartFilmlabPreview, smartRenderPositive, smartExportPositive, processAndUpload, isHybridMode, isComputeAvailable } from '../../services';
 import { getCurveLUT, parseCubeLUT, getMaxSafeRect, getPresetRatio, getExifOrientation } from './utils';
 import FilmLabControls from './FilmLabControls';
 import FilmLabCanvas from './FilmLabCanvas';
@@ -584,8 +585,9 @@ export default function FilmLab({
                 // We use a reasonably large size for the editor base
                 // 传入 sourceType 以确保加载正确的源文件
                 // 对于 RAW 文件，服务器会自动解码为 TIFF 再处理
-                console.log(`[FilmLab] Loading ${isRawImage ? 'RAW' : 'TIFF'} file via API proxy...`);
-                const res = await filmlabPreview({ photoId, params: {}, maxWidth: 2000, sourceType });
+                // 使用 smartFilmlabPreview 支持混合模式
+                console.log(`[FilmLab] Loading ${isRawImage ? 'RAW' : 'TIFF'} file via smart proxy...`);
+                const res = await smartFilmlabPreview({ photoId, params: {}, maxWidth: 2000, sourceType });
                 if (active && res.ok) {
                     const url = URL.createObjectURL(res.blob);
                     const img = new Image();
@@ -611,12 +613,12 @@ export default function FilmLab({
     };
     img.onerror = (e) => {
       console.error('Failed to load image:', imageUrl, e);
-      // 如果直接加载失败且有 photoId，尝试通过 API 代理加载
+      // 如果直接加载失败且有 photoId，尝试通过智能路由代理加载
       if (photoId) {
-        console.log('Attempting to load via API proxy...');
+        console.log('Attempting to load via smart proxy...');
         (async () => {
           try {
-            const res = await filmlabPreview({ photoId, params: {}, maxWidth: 2000, sourceType });
+            const res = await smartFilmlabPreview({ photoId, params: {}, maxWidth: 2000, sourceType });
             if (res.ok) {
               const url = URL.createObjectURL(res.blob);
               const proxyImg = new Image();
@@ -1624,10 +1626,15 @@ export default function FilmLab({
         lut1Intensity: lut1?.intensity ?? 1.0,
         lut2Intensity: lut2?.intensity ?? 1.0
       };
-      const res = await exportPositive(photoId, params, { format: 'jpeg' }); // Always store JPEG into library
+      // 使用 smartExportPositive 智能路由：服务器有算力用服务器，否则用本地 GPU
+      const res = await smartExportPositive(photoId, params, { format: 'jpeg', sourceType });
       if (res && res.ok) {
         // Ask parent to refresh photo list / data
         if (onPhotoUpdate) onPhotoUpdate();
+        // 如果有本地文件路径，显示给用户
+        if (res.filePath && window.__electron?.showInFolder) {
+          console.log('[FilmLab] Export saved to:', res.filePath);
+        }
       } else if (res && res.error) {
         if (typeof window !== 'undefined') alert('Export Failed: ' + res.error);
       }
@@ -1737,7 +1744,7 @@ export default function FilmLab({
       baseMode, baseDensityR, baseDensityG, baseDensityB,
       rotation, orientation, cropRect: committedCrop, curves, sourceType 
     };
-    // TIFF16 or BOTH use server render-positive endpoint for high bit depth / parity
+    // TIFF16 or BOTH use smart render endpoint for high bit depth / parity
     if (saveAsFormat === 'tiff16' || saveAsFormat === 'both') {
       try {
         // JPEG first if BOTH
@@ -1745,7 +1752,8 @@ export default function FilmLab({
           // Download JPEG via client pipeline (fast) before TIFF
           await downloadClientJPEG();
         }
-        const r = await renderPositive(photoId, paramsForServer, { format: 'tiff16' });
+        // 使用 smartRenderPositive 智能路由
+        const r = await smartRenderPositive(photoId, paramsForServer, { format: 'tiff16', sourceType });
         if (!r.ok) {
           if (typeof window !== 'undefined') alert('TIFF16 Render Failed: ' + r.error);
           return;

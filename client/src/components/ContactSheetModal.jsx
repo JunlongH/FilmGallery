@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { buildUploadUrl, API_BASE } from '../api';
+import { buildUploadUrl, getApiBase } from '../api';
 import '../styles/FilmInventory.css';
 
 // Style presets metadata
@@ -319,7 +319,8 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
     abortControllerRef.current = new AbortController();
 
     try {
-      const response = await fetch(`${API_BASE}/api/rolls/${roll.id}/contact-sheet`, {
+      const apiBase = getApiBase();
+      const response = await fetch(`${apiBase}/api/rolls/${roll.id}/contact-sheet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

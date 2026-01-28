@@ -2,7 +2,7 @@
  * Films API - Film stock and film item management
  */
 
-import { API_BASE, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
+import { API_BASE, getApiBase, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
 
 // ========================================
 // FILM STOCKS
@@ -36,7 +36,8 @@ export async function createFilm({ name, iso, category, brand, format, process, 
   if (process) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
   
-  const res = await fetch(`${API_BASE}/api/films`, { method: 'POST', body: fd });
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/films`, { method: 'POST', body: fd });
   return res.json();
 }
 
@@ -53,7 +54,8 @@ export async function updateFilm({ id, name, iso, category, brand, format, proce
   if (process !== undefined) fd.append('process', process);
   if (thumbFile) fd.append('thumb', thumbFile);
   
-  const res = await fetch(`${API_BASE}/api/films/${id}`, { method: 'PUT', body: fd });
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/films/${id}`, { method: 'PUT', body: fd });
   return res.json();
 }
 
@@ -68,9 +70,10 @@ export async function deleteFilm(id) {
  * Upload film stock image
  */
 export async function uploadFilmImage(id, file) {
+  const apiBase = getApiBase();
   const fd = new FormData();
   fd.append('thumb', file);
-  const res = await fetch(`${API_BASE}/api/films/${id}/thumb`, { method: 'POST', body: fd });
+  const res = await fetch(`${apiBase}/api/films/${id}/thumb`, { method: 'POST', body: fd });
   return res.json();
 }
 
@@ -119,7 +122,8 @@ export async function createFilmItemsBatch(batch) {
  * Export shot logs as CSV
  */
 export async function exportShotLogsCsv(id) {
-  const res = await fetch(`${API_BASE}/api/film-items/${id}/shot-logs/export`);
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}/api/film-items/${id}/shot-logs/export`);
   if (!res.ok) throw new Error('Export failed');
   return res.blob();
 }

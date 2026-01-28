@@ -46,26 +46,46 @@ function createPhotosApi(http) {
     
     /**
      * Export processed positive
+     * @param {number} photoId - Photo ID
+     * @param {object} params - FilmLab parameters
+     * @param {object} options - Options (format, sourceType)
      */
     exportPositive: (photoId, params, options = {}) => 
-      http.post('/api/filmlab/export', { photoId, params, format: options.format || 'jpeg' }),
+      http.post('/api/filmlab/export', { 
+        photoId, 
+        params, 
+        format: options.format || 'jpeg',
+        sourceType: options.sourceType || 'original'
+      }),
     
     /**
      * Render positive (in-memory processing)
+     * @param {number} photoId - Photo ID
+     * @param {object} params - FilmLab parameters
+     * @param {object} options - Options (format, sourceType)
      */
     renderPositive: (photoId, params, options = {}) => 
-      http.post('/api/filmlab/render', { photoId, params, format: options.format || 'jpeg' }),
+      http.post('/api/filmlab/render', { 
+        photoId, 
+        params, 
+        format: options.format || 'jpeg',
+        sourceType: options.sourceType || 'original'
+      }),
     
     /**
      * Get FilmLab preview
+     * @param {number} photoId - Photo ID
+     * @param {object} params - FilmLab parameters
+     * @param {number} maxWidth - Max width for preview
+     * @param {string} sourceType - Source type: 'original' | 'negative' | 'positive'
      */
-    getFilmlabPreview: (photoId, params, maxWidth = 1400) => {
-      const qs = new URLSearchParams();
-      qs.append('photoId', photoId);
-      qs.append('maxWidth', maxWidth);
-      if (params) qs.append('params', JSON.stringify(params));
-      return http.get(`/api/filmlab/preview?${qs.toString()}`);
-    }
+    getFilmlabPreview: (photoId, params, maxWidth = 1400, sourceType = 'original') => 
+      http.post('/api/filmlab/preview', { 
+        photoId, 
+        params, 
+        maxWidth, 
+        sourceType 
+      })
   };
 }
 

@@ -2,7 +2,7 @@
  * Equipment API - Cameras, Lenses, Flashes, Scanners, Film Backs
  */
 
-import { API_BASE, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
+import { API_BASE, getApiBase, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
 
 // ========================================
 // CONSTANTS & SUGGESTIONS
@@ -67,9 +67,10 @@ function createEquipmentApi(type) {
     },
 
     async uploadImage(id, file) {
+      const apiBase = getApiBase();
       const fd = new FormData();
       fd.append('image', file);
-      const res = await fetch(`${API_BASE}${basePath}/${id}/image`, {
+      const res = await fetch(`${apiBase}${basePath}/${id}/image`, {
         method: 'POST',
         body: fd
       });
