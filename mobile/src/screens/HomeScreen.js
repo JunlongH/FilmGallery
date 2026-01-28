@@ -1,7 +1,6 @@
-import React, { useContext, useEffect, useMemo, useState, useCallback, useLayoutEffect } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl, ScrollView } from 'react-native';
-import { Card, Title, Paragraph, FAB, ActivityIndicator, Text, Chip, useTheme, IconButton, Dialog, Portal, List, Button } from 'react-native-paper';
-import TouchScale from '../components/TouchScale';
+import React, { useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
+import { View, FlatList, StyleSheet, RefreshControl, ScrollView, Animated, Dimensions, TouchableOpacity, Image } from 'react-native';
+import { Card, Title, Paragraph, ActivityIndicator, Text, useTheme, Dialog, Portal, List, Button } from 'react-native-paper';
 import { colors, spacing, radius } from '../theme';
 import CachedImage from '../components/CachedImage';
 import CoverOverlay from '../components/CoverOverlay';
@@ -10,6 +9,10 @@ import axios from 'axios';
 import { format } from 'date-fns';
 import { getRollCoverUrl } from '../utils/urls';
 import { getFilmItems, getFilms } from '../api/filmItems';
+import { Icon, Badge } from '../components/ui';
+import { useFocusEffect } from '@react-navigation/native';
+
+const { width } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }) {
   const theme = useTheme();
@@ -25,6 +28,31 @@ export default function HomeScreen({ navigation }) {
   const [quickError, setQuickError] = useState('');
   const [loadedFilmItems, setLoadedFilmItems] = useState([]);
   const [films, setFilms] = useState([]);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  // Animate on focus
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, [])
+  );
 
   const fetchRolls = useCallback(async () => {
     if (!baseUrl) return;
@@ -72,14 +100,6 @@ export default function HomeScreen({ navigation }) {
     await loadLoadedFilmItems();
   }, [loadLoadedFilmItems]);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <IconButton icon="refresh" onPress={async () => { const { clearImageCache } = await import('../components/CachedImage'); await clearImageCache(); fetchRolls(); }} />
-      ),
-    });
-  }, [navigation, fetchRolls]);
-
   // Derive year list from rolls
   const years = useMemo(() => {
     const set = new Set();
@@ -107,30 +127,65 @@ export default function HomeScreen({ navigation }) {
     });
   }, [rolls, selectedYear]);
 
-  const renderItem = ({ item }) => {
+  const renderItem = ({ item, index }) => {
     const coverUrl = getRollCoverUrl(baseUrl, item);
     const filmLabel = item.film_name_joined || item.film_type || 'Unknown Film';
     const dateStr = item.start_date ? format(new Date(item.start_date), 'yyyy-MM-dd') : '';
     const dateRange = item.end_date ? `${dateStr} - ${format(new Date(item.end_date), 'yyyy-MM-dd')}` : dateStr;
+    const photoCount = item.photo_count || item.photos?.length || 0;
 
     return (
-      <TouchScale onPress={() => navigation.navigate('RollDetail', { rollId: item.id, rollName: item.title || `Roll #${item.id}` })}>
-        <Card style={[styles.card, { backgroundColor: theme.colors.surface }]} mode="elevated">
-          {coverUrl && (
-            <View style={styles.coverWrapper}>
+      <Animated.View
+        style={{
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        }}
+      >
+        <TouchableOpacity 
+          onPress={() => navigation.navigate('RollDetail', { rollId: item.id, rollName: item.title || `Roll #${item.id}` })}
+          activeOpacity={0.9}
+          style={[styles.card, { backgroundColor: theme.colors.surface }]}
+        >
+          <View style={styles.coverWrapper}>
+            {coverUrl ? (
               <CachedImage uri={coverUrl} style={styles.cover} contentFit="cover" />
-              <CoverOverlay title={item.title || `Roll #${item.id}`} leftText={filmLabel} rightText={dateRange} />
+            ) : (
+              <View style={[styles.cover, styles.placeholderCover, { backgroundColor: theme.colors.surfaceVariant }]}>
+                <Icon name="film" size={48} color={theme.colors.onSurfaceVariant} />
+              </View>
+            )}
+            {/* Gradient overlay */}
+            <View style={styles.gradientOverlay} />
+            
+            {/* Content overlay */}
+            <View style={styles.cardContent}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {item.title || `Roll #${item.id}`}
+              </Text>
+              <View style={styles.cardMeta}>
+                <View style={styles.metaItem}>
+                  <Icon name="film" size={14} color="#fff" />
+                  <Text style={styles.metaText}>{filmLabel}</Text>
+                </View>
+                {dateStr ? (
+                  <View style={styles.metaItem}>
+                    <Icon name="calendar" size={14} color="#fff" />
+                    <Text style={styles.metaText}>{dateRange}</Text>
+                  </View>
+                ) : null}
+              </View>
             </View>
-          )}
-          {!coverUrl && (
-             <Card.Content>
-                <Title>{item.title || `Roll #${item.id}`}</Title>
-                <Paragraph>{filmLabel}</Paragraph>
-                <Paragraph>{dateRange}</Paragraph>
-             </Card.Content>
-          )}
-        </Card>
-      </TouchScale>
+            
+            {/* Photo count badge */}
+            {photoCount > 0 && (
+              <View style={styles.photoBadge}>
+                <Icon name="image" size={12} color="#fff" />
+                <Text style={styles.photoBadgeText}>{photoCount}</Text>
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
     );
   };
 
@@ -146,30 +201,67 @@ export default function HomeScreen({ navigation }) {
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {error && (
         <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+          <Icon name="wifi-off" size={24} color={theme.colors.error} />
+          <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
         </View>
       )}
       
       {loading && rolls.length === 0 ? (
-        <ActivityIndicator animating={true} size="large" style={styles.loader} color={theme.colors.primary} />
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator animating={true} size="large" color={theme.colors.primary} />
+          <Text style={[styles.loaderText, { color: theme.colors.onSurfaceVariant }]}>Loading rolls...</Text>
+        </View>
       ) : (
-        <View>
+        <>
           {/* Year filter chips */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.yearBar}>
-            <Chip
-              selected={!selectedYear}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.yearBar}
+            contentContainerStyle={styles.yearBarContent}
+          >
+            <TouchableOpacity
               onPress={() => setSelectedYear(null)}
-              style={styles.yearChip}
-            >All</Chip>
+              style={[
+                styles.yearChip,
+                { 
+                  backgroundColor: !selectedYear ? theme.colors.primary : theme.colors.surface,
+                  borderColor: theme.colors.primary,
+                }
+              ]}
+            >
+              <Text style={[
+                styles.yearChipText,
+                { color: !selectedYear ? '#fff' : theme.colors.primary }
+              ]}>All</Text>
+            </TouchableOpacity>
             {years.map(y => (
-              <Chip
+              <TouchableOpacity
                 key={y}
-                selected={selectedYear === y}
                 onPress={() => setSelectedYear(y)}
-                style={styles.yearChip}
-              >{y}</Chip>
+                style={[
+                  styles.yearChip,
+                  { 
+                    backgroundColor: selectedYear === y ? theme.colors.primary : theme.colors.surface,
+                    borderColor: theme.colors.primary,
+                  }
+                ]}
+              >
+                <Text style={[
+                  styles.yearChipText,
+                  { color: selectedYear === y ? '#fff' : theme.colors.primary }
+                ]}>{y}</Text>
+              </TouchableOpacity>
             ))}
           </ScrollView>
+
+          {/* Roll count */}
+          <View style={styles.countBar}>
+            <Text style={[styles.countText, { color: theme.colors.onSurfaceVariant }]}>
+              {filteredRolls.length} {filteredRolls.length === 1 ? 'roll' : 'rolls'}
+              {selectedYear ? ` in ${selectedYear}` : ''}
+            </Text>
+          </View>
 
           <FlatList
             data={filteredRolls}
@@ -179,24 +271,10 @@ export default function HomeScreen({ navigation }) {
             refreshControl={
               <RefreshControl refreshing={loading} onRefresh={fetchRolls} colors={[theme.colors.primary]} />
             }
+            showsVerticalScrollIndicator={false}
           />
-        </View>
+        </>
       )}
-
-      <FAB
-        style={[styles.fab, { backgroundColor: theme.colors.primaryContainer }]}
-        icon="cog"
-        color={theme.colors.primary}
-        onPress={() => navigation.navigate('Settings')}
-      />
-
-      <FAB
-        style={[styles.quickFab, { backgroundColor: theme.colors.primary }]}
-        icon="camera-iris"
-        color={theme.colors.onPrimary}
-        label="Quick Meter"
-        onPress={openQuickMeter}
-      />
 
       <Portal>
         <Dialog visible={quickOpen} onDismiss={() => setQuickOpen(false)}>
@@ -249,76 +327,134 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   list: {
-    padding: spacing.lg,
+    padding: spacing.md,
+    paddingBottom: 100,
   },
   card: {
-    marginBottom: spacing.lg,
-    borderRadius: radius.md,
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
     overflow: 'hidden',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
   },
   coverWrapper: {
     position: 'relative',
-  },
-  cover: {
     height: 200,
   },
-  overlayFilmInfo: {
+  cover: {
+    width: '100%',
+    height: '100%',
+  },
+  placeholderCover: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  gradientOverlay: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0,0,0,0.40)',
-    padding: spacing.sm,
+    height: 100,
+    backgroundColor: 'transparent',
+    backgroundImage: 'linear-gradient(transparent, rgba(0,0,0,0.6))',
   },
-  overlayTitle: {
+  cardContent: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: spacing.md,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  cardTitle: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 18,
+    fontWeight: '700',
     marginBottom: 4,
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: {width: -1, height: 1},
-    textShadowRadius: 2
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 2,
   },
-  overlayRow: {
+  cardMeta: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  overlayFilmText: {
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  metaText: {
     color: '#eee',
     fontSize: 12,
-    fontWeight: '500'
+    fontWeight: '500',
   },
-  overlayDateText: {
-    color: '#eee',
+  photoBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  photoBadgeText: {
+    color: '#fff',
     fontSize: 12,
+    fontWeight: '600',
   },
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 0,
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  quickFab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 80,
-  },
-  loader: {
-    marginTop: 50,
+  loaderText: {
+    marginTop: 12,
+    fontSize: 14,
   },
   errorContainer: {
-    padding: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.md,
+    gap: 8,
   },
   errorText: {
     textAlign: 'center',
+    fontSize: 14,
   },
   yearBar: {
-    paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  yearBarContent: {
+    paddingHorizontal: spacing.md,
+    gap: 8,
   },
   yearChip: {
-    marginRight: spacing.sm,
-  }
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  yearChipText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  countBar: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  countText: {
+    fontSize: 13,
+  },
 });
