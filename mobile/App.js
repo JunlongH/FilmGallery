@@ -12,6 +12,7 @@ import './global.css';
 
 // UI Components
 import { Icon } from './src/components/ui';
+import { HeaderRight } from './src/components/navigation';
 
 // Main Tab Screens (3-tab structure)
 import HomeScreen from './src/screens/HomeScreen';
@@ -109,6 +110,7 @@ function HomeTabs() {
         options={{ 
           title: 'Timeline',
           headerTitle: 'Film Gallery',
+          headerRight: () => <HeaderRight showQuickMeter={true} showSettings={true} />,
         }} 
       />
       <Tab.Screen 
@@ -117,6 +119,7 @@ function HomeTabs() {
         options={{ 
           title: 'Map',
           headerTitle: 'Photo Map',
+          headerRight: () => <HeaderRight showQuickMeter={false} showSettings={true} />,
         }} 
       />
       <Tab.Screen 
@@ -125,6 +128,7 @@ function HomeTabs() {
         options={{ 
           title: 'Library',
           headerTitle: 'My Library',
+          headerRight: () => <HeaderRight showQuickMeter={false} showSettings={true} />,
         }} 
       />
     </Tab.Navigator>

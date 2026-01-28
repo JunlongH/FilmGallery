@@ -12,7 +12,7 @@
  * - Statistics overview
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   View, 
   Text, 
@@ -22,9 +22,10 @@ import {
   RefreshControl,
   Image,
   Dimensions,
+  Animated,
 } from 'react-native';
 import { useTheme } from 'react-native-paper';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
 import { Icon, Card, Badge } from '../components/ui';
 
@@ -47,6 +48,31 @@ export default function LibraryScreen() {
   const [recentFavorites, setRecentFavorites] = useState([]);
   const [topThemes, setTopThemes] = useState([]);
   const [topEquipment, setTopEquipment] = useState([]);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  // Animate on focus
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }, [])
+  );
 
   // Fetch library data
   const fetchData = useCallback(async () => {
@@ -279,8 +305,11 @@ export default function LibraryScreen() {
 
   return (
     <View style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
+      <Animated.ScrollView
+        style={[styles.scrollView, { 
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        }]}
         contentContainerStyle={styles.contentContainer}
         refreshControl={
           <RefreshControl
@@ -495,7 +524,7 @@ export default function LibraryScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 }
