@@ -1,7 +1,11 @@
 module.exports = function(api) {
   api.cache(true);
   return {
-    presets: ['babel-preset-expo'],
+    presets: [
+      'babel-preset-expo',
+      // NativeWind preset for Tailwind CSS support
+      'nativewind/babel',
+    ],
     // IMPORTANT: Reanimated plugin must be last
     plugins: [
       'react-native-paper/babel',

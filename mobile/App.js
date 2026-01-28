@@ -6,9 +6,19 @@ import { Provider as PaperProvider, useTheme } from 'react-native-paper';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+// NativeWind global styles
+import './global.css';
+
+// UI Components
+import { Icon } from './src/components/ui';
+
+// Main Tab Screens (3-tab structure)
 import HomeScreen from './src/screens/HomeScreen';
+import MapScreen from './src/screens/MapScreen';
+import LibraryScreen from './src/screens/LibraryScreen';
+
+// Stack Screens
 import RollDetailScreen from './src/screens/RollDetailScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import PhotoViewScreen from './src/screens/PhotoViewScreen';
@@ -32,8 +42,13 @@ import appTheme, { appDarkTheme } from './src/theme';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
-// Centralized theme imported from src/theme.js
-
+/**
+ * Main 3-Tab Navigation
+ * 
+ * Timeline - Photo rolls in chronological order
+ * Map - Geographic view of photos
+ * Library - Favorites, Collections, Equipment, etc.
+ */
 function HomeTabs() {
   const theme = useTheme();
   return (
@@ -41,30 +56,77 @@ function HomeTabs() {
       screenOptions={({ route }) => ({
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
-          if (route.name === 'Rolls') iconName = focused ? 'filmstrip' : 'filmstrip-box';
-          else if (route.name === 'Favorites') iconName = focused ? 'heart' : 'heart-outline';
-          else if (route.name === 'Themes') iconName = focused ? 'tag-multiple' : 'tag-multiple-outline';
-          else if (route.name === 'Equipment') iconName = focused ? 'camera' : 'camera-outline';
-          else if (route.name === 'Inventory') iconName = focused ? 'clipboard-list' : 'clipboard-list-outline';
-          else if (route.name === 'Stats') iconName = focused ? 'chart-line' : 'chart-line';
-
-          return <MaterialCommunityIcons name={iconName} size={size} color={color} />;
+          
+          switch (route.name) {
+            case 'Timeline':
+              iconName = focused ? 'film' : 'film';
+              break;
+            case 'Map':
+              iconName = focused ? 'map' : 'map';
+              break;
+            case 'Library':
+              iconName = focused ? 'grid' : 'grid';
+              break;
+            default:
+              iconName = 'circle';
+          }
+          
+          return <Icon name={iconName} size={size - 2} color={color} />;
         },
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.onSurfaceVariant,
-        tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outline, height: 65, paddingBottom: 8 },
-        tabBarLabelStyle: { marginTop: -4, paddingBottom: 2 },
-        headerStyle: { backgroundColor: theme.colors.surface },
+        tabBarStyle: { 
+          backgroundColor: theme.colors.surface, 
+          borderTopColor: theme.colors.outline + '30',
+          borderTopWidth: 1,
+          height: 70, 
+          paddingBottom: 16,
+          paddingTop: 8,
+          elevation: 0,
+          shadowOpacity: 0,
+        },
+        tabBarLabelStyle: { 
+          fontSize: 12,
+          fontWeight: '500',
+          marginTop: 2,
+        },
+        headerStyle: { 
+          backgroundColor: theme.colors.surface,
+          elevation: 0,
+          shadowOpacity: 0,
+          borderBottomWidth: 0,
+        },
         headerTintColor: theme.colors.primary,
-        headerTitleStyle: { fontWeight: 'bold' },
+        headerTitleStyle: { 
+          fontWeight: '600',
+          fontSize: 18,
+        },
       })}
     >
-      <Tab.Screen name="Rolls" component={HomeScreen} options={{ title: 'Overview', tabBarLabel: 'Overview' }} />
-      <Tab.Screen name="Favorites" component={FavoritesScreen} />
-      <Tab.Screen name="Themes" component={ThemesScreen} />
-      <Tab.Screen name="Equipment" component={EquipmentScreen} />
-      <Tab.Screen name="Inventory" component={InventoryScreen} />
-      <Tab.Screen name="Stats" component={StatsScreen} />
+      <Tab.Screen 
+        name="Timeline" 
+        component={HomeScreen} 
+        options={{ 
+          title: 'Timeline',
+          headerTitle: 'Film Gallery',
+        }} 
+      />
+      <Tab.Screen 
+        name="Map" 
+        component={MapScreen} 
+        options={{ 
+          title: 'Map',
+          headerTitle: 'Photo Map',
+        }} 
+      />
+      <Tab.Screen 
+        name="Library" 
+        component={LibraryScreen} 
+        options={{ 
+          title: 'Library',
+          headerTitle: 'My Library',
+        }} 
+      />
     </Tab.Navigator>
   );
 }
@@ -163,6 +225,32 @@ export default function App() {
               name="LocationDiagnostic" 
               component={LocationDiagnosticScreen} 
               options={{ title: '位置诊断' }}
+            />
+            {/* Screens previously in Tab Navigator - now accessible from Library */}
+            <Stack.Screen 
+              name="Favorites" 
+              component={FavoritesScreen} 
+              options={{ title: 'Favorites' }}
+            />
+            <Stack.Screen 
+              name="Themes" 
+              component={ThemesScreen} 
+              options={{ title: 'Collections' }}
+            />
+            <Stack.Screen 
+              name="Equipment" 
+              component={EquipmentScreen} 
+              options={{ title: 'Equipment' }}
+            />
+            <Stack.Screen 
+              name="Inventory" 
+              component={InventoryScreen} 
+              options={{ title: 'Inventory' }}
+            />
+            <Stack.Screen 
+              name="Stats" 
+              component={StatsScreen} 
+              options={{ title: 'Statistics' }}
             />
           </Stack.Navigator>
           <StatusBar style={darkMode ? 'light' : 'dark'} />
