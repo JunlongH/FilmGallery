@@ -1,24 +1,26 @@
-import React, { useContext, useEffect, useState, useCallback } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { View, FlatList, StyleSheet, TouchableOpacity, Dimensions, Animated } from 'react-native';
 import CachedImage from '../components/CachedImage';
-import BadgeOverlay from '../components/BadgeOverlay';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { colors, spacing, radius } from '../theme';
 import { ActivityIndicator, Text, useTheme } from 'react-native-paper';
 import { ApiContext } from '../context/ApiContext';
 import axios from 'axios';
 import { useFocusEffect } from '@react-navigation/native';
+import { Icon } from '../components/ui';
 
 const numColumns = 3;
 const screenWidth = Dimensions.get('window').width;
 // compute tile size accounting for horizontal padding and small gaps so items don't touch the right edge
-const tileSize = Math.floor((screenWidth - (spacing.md * 2) - (numColumns * 2)) / numColumns);
+const tileSize = Math.floor((screenWidth - (spacing.md * 2) - (numColumns * 4)) / numColumns);
 
 export default function FavoritesScreen({ navigation }) {
   const theme = useTheme();
   const { baseUrl } = useContext(ApiContext);
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const fetchFavorites = async () => {
     if (!baseUrl) return;
@@ -37,20 +39,36 @@ export default function FavoritesScreen({ navigation }) {
     fetchFavorites();
   }, [baseUrl]);
 
-  // Add header refresh button
-  React.useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <MaterialCommunityIcons name="refresh" size={24} color={colors.primary} onPress={async () => { const { clearImageCache } = await import('../components/CachedImage'); await clearImageCache(); fetchFavorites(); }} />
-      )
-    });
-  }, [navigation, baseUrl]);
-
+  // Animate on focus
   useFocusEffect(
     useCallback(() => {
       fetchFavorites();
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
     }, [baseUrl])
   );
+
+  // Header refresh button with new Icon
+  React.useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity 
+          onPress={async () => { 
+            const { clearImageCache } = await import('../components/CachedImage'); 
+            await clearImageCache(); 
+            fetchFavorites(); 
+          }}
+          style={{ marginRight: 16, padding: 8 }}
+        >
+          <Icon name="refresh-cw" size={20} color={theme.colors.primary} />
+        </TouchableOpacity>
+      )
+    });
+  }, [navigation, baseUrl, theme]);
 
   const renderItem = ({ item, index }) => {
     let thumbUrl;
@@ -62,47 +80,139 @@ export default function FavoritesScreen({ navigation }) {
     
     const showHeart = item.rating === 1;
     return (
-      <TouchableOpacity
-        onPress={() => navigation.navigate('PhotoView', { photo: item, rollId: item.roll_id, photos, initialIndex: index, viewMode: 'positive' })}
-        style={styles.thumbWrapper}
-      >
-          <BadgeOverlay style={{}} icon={showHeart ? 'heart' : null} text={showHeart ? null : ''} color={showHeart ? 'transparent' : undefined} textColor={showHeart ? colors.accent : undefined}>
-            <View style={[styles.thumbInner, { width: tileSize, height: tileSize }] }>
-              <CachedImage
-                uri={thumbUrl}
-                style={styles.thumbImage}
-                contentFit="cover"
-              />
-            </View>
-          </BadgeOverlay>
-      </TouchableOpacity>
+      <Animated.View style={{ opacity: fadeAnim }}>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('PhotoView', { photo: item, rollId: item.roll_id, photos, initialIndex: index, viewMode: 'positive' })}
+          style={styles.thumbWrapper}
+          activeOpacity={0.8}
+        >
+          <View style={[styles.thumbInner, { width: tileSize, height: tileSize }]}>
+            <CachedImage
+              uri={thumbUrl}
+              style={styles.thumbImage}
+              contentFit="cover"
+            />
+            {showHeart && (
+              <View style={styles.heartBadge}>
+                <Icon name="heart" size={14} color="#E53935" />
+              </View>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
     );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {loading ? (
-        <ActivityIndicator animating={true} size="large" style={styles.loader} color="#5a4632" />
+      {loading && photos.length === 0 ? (
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator animating={true} size="large" color={theme.colors.primary} />
+          <Text style={[styles.loaderText, { color: theme.colors.onSurfaceVariant }]}>
+            Loading favorites...
+          </Text>
+        </View>
+      ) : photos.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Icon name="heart" size={64} color={theme.colors.onSurfaceVariant} />
+          <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
+            No favorites yet
+          </Text>
+          <Text style={[styles.emptySubtext, { color: theme.colors.onSurfaceVariant }]}>
+            Add photos to your favorites to see them here
+          </Text>
+        </View>
       ) : (
-        <FlatList
-          data={photos}
-          renderItem={renderItem}
-          keyExtractor={item => item.id.toString()}
-          numColumns={numColumns}
-          contentContainerStyle={styles.listContent}
-        />
+        <>
+          <View style={styles.countBar}>
+            <Text style={[styles.countText, { color: theme.colors.onSurfaceVariant }]}>
+              {photos.length} {photos.length === 1 ? 'favorite' : 'favorites'}
+            </Text>
+          </View>
+          <FlatList
+            data={photos}
+            renderItem={renderItem}
+            keyExtractor={item => item.id.toString()}
+            numColumns={numColumns}
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+          />
+        </>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  loader: { marginTop: 50 },
-  listContent: { paddingBottom: spacing.lg, paddingHorizontal: spacing.md },
-  thumbWrapper: { margin: 1 },
-  thumbInner: { position: 'relative', borderRadius: radius.sm, overflow: 'hidden', backgroundColor: colors.surfaceVariant },
-  thumbImage: { width: '100%', height: '100%' },
-  badge: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.45)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 },
-  badgeText: { color: colors.accent, fontSize: 12, fontWeight: '600' },
+  container: { 
+    flex: 1, 
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loaderText: {
+    marginTop: 12,
+    fontSize: 14,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  countBar: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  countText: {
+    fontSize: 13,
+  },
+  listContent: { 
+    paddingBottom: spacing.lg, 
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.xs,
+  },
+  thumbWrapper: { 
+    margin: 2,
+  },
+  thumbInner: { 
+    position: 'relative', 
+    borderRadius: radius.md, 
+    overflow: 'hidden', 
+    backgroundColor: colors.surfaceVariant,
+  },
+  thumbImage: { 
+    width: '100%', 
+    height: '100%',
+  },
+  heartBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
 });

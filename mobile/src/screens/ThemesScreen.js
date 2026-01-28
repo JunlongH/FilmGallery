@@ -1,14 +1,17 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, FlatList, StyleSheet, Dimensions } from 'react-native';
-import { ActivityIndicator, useTheme, IconButton } from 'react-native-paper';
+import React, { useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { View, FlatList, StyleSheet, Dimensions, TouchableOpacity, Animated } from 'react-native';
+import { ActivityIndicator, useTheme, Text } from 'react-native-paper';
 import { ApiContext } from '../context/ApiContext';
 import axios from 'axios';
 import TagCard from '../components/TagCard';
 import SkeletonBox from '../components/SkeletonBox';
+import { useFocusEffect } from '@react-navigation/native';
+import { Icon } from '../components/ui';
+import { spacing, radius } from '../theme';
 
 const numColumns = 2;
 const screenWidth = Dimensions.get('window').width;
-const cardWidth = (screenWidth - 32 - 10) / numColumns; // 32 padding, 10 gap
+const cardWidth = (screenWidth - 32 - 12) / numColumns; // 32 padding, 12 gap
 
 export default function ThemesScreen({ navigation }) {
   const theme = useTheme();
@@ -16,12 +19,15 @@ export default function ThemesScreen({ navigation }) {
   const [tags, setTags] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
   const fetchTags = async () => {
     if (!baseUrl) return;
     setLoading(true);
     try {
       const res = await axios.get(`${baseUrl}/api/tags`);
-      // Filter out tags with 0 photos if desired, or keep them
+      // Filter out tags with 0 photos
       setTags(res.data.filter(t => t.photos_count > 0));
     } catch (err) {
       console.error(err);
@@ -34,14 +40,35 @@ export default function ThemesScreen({ navigation }) {
     fetchTags();
   }, [baseUrl]);
 
-  // Add header refresh button
+  // Animate on focus
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+    }, [])
+  );
+
+  // Header refresh button with new Icon
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <IconButton icon="refresh" onPress={async () => { const { clearImageCache } = await import('../components/CachedImage'); await clearImageCache(); fetchTags(); }} />
+        <TouchableOpacity 
+          onPress={async () => { 
+            const { clearImageCache } = await import('../components/CachedImage'); 
+            await clearImageCache(); 
+            fetchTags(); 
+          }}
+          style={{ marginRight: 16, padding: 8 }}
+        >
+          <Icon name="refresh-cw" size={20} color={theme.colors.primary} />
+        </TouchableOpacity>
       )
     });
-  }, [navigation, baseUrl]);
+  }, [navigation, baseUrl, theme]);
 
   const renderItem = ({ item }) => {
     let coverUrl = null;
@@ -51,47 +78,101 @@ export default function ThemesScreen({ navigation }) {
       coverUrl = `${baseUrl}/uploads/${item.cover_full}`;
     }
     return (
-      <TagCard
-        coverUri={coverUrl}
-        title={item.name}
-        subtitle={`${item.photos_count} photos`}
-        style={styles.cardContainer}
-        onPress={() => navigation.navigate('TagDetail', { tagId: item.id, tagName: item.name })}
-      />
+      <Animated.View style={{ opacity: fadeAnim }}>
+        <TagCard
+          coverUri={coverUrl}
+          title={item.name}
+          subtitle={`${item.photos_count} photos`}
+          style={styles.cardContainer}
+          onPress={() => navigation.navigate('TagDetail', { tagId: item.id, tagName: item.name })}
+        />
+      </Animated.View>
     );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {loading ? (
+      {loading && tags.length === 0 ? (
         <View style={styles.list}>
           <View style={styles.columnWrapper}>
-            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: 8 }} />
-            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: 8 }} />
+            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: radius.lg }} />
+            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: radius.lg }} />
           </View>
           <View style={[styles.columnWrapper, { marginTop: 12 }]}>
-            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: 8 }} />
-            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: 8 }} />
+            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: radius.lg }} />
+            <SkeletonBox width={cardWidth} height={cardWidth} style={{ borderRadius: radius.lg }} />
           </View>
         </View>
+      ) : tags.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Icon name="tags" size={64} color={theme.colors.onSurfaceVariant} />
+          <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
+            No collections yet
+          </Text>
+          <Text style={[styles.emptySubtext, { color: theme.colors.onSurfaceVariant }]}>
+            Create tags to organize your photos
+          </Text>
+        </View>
       ) : (
-        <FlatList
-          data={tags}
-          renderItem={renderItem}
-          keyExtractor={item => item.id.toString()}
-          numColumns={numColumns}
-          contentContainerStyle={styles.list}
-          columnWrapperStyle={styles.columnWrapper}
-        />
+        <>
+          <View style={styles.countBar}>
+            <Text style={[styles.countText, { color: theme.colors.onSurfaceVariant }]}>
+              {tags.length} {tags.length === 1 ? 'collection' : 'collections'}
+            </Text>
+          </View>
+          <FlatList
+            data={tags}
+            renderItem={renderItem}
+            keyExtractor={item => item.id.toString()}
+            numColumns={numColumns}
+            contentContainerStyle={styles.list}
+            columnWrapperStyle={styles.columnWrapper}
+            showsVerticalScrollIndicator={false}
+          />
+        </>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fdfdfd' },
-  list: { padding: 16 },
-  columnWrapper: { justifyContent: 'space-between' },
-  cardContainer: { width: cardWidth, marginBottom: 12 },
-  loader: { marginTop: 50 },
+  container: { 
+    flex: 1, 
+  },
+  list: { 
+    padding: spacing.md,
+    paddingBottom: 100,
+  },
+  columnWrapper: { 
+    justifyContent: 'space-between',
+  },
+  cardContainer: { 
+    width: cardWidth, 
+    marginBottom: spacing.md,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 16,
+  },
+  emptySubtext: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  countBar: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.05)',
+  },
+  countText: {
+    fontSize: 13,
+  },
 });
