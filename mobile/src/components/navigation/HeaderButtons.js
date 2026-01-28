@@ -5,11 +5,12 @@
  * Includes settings button and quick meter button.
  */
 
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { TouchableOpacity, StyleSheet, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from 'react-native-paper';
 import { Icon } from '../ui';
+import { QuickMeterSheet } from '../metering';
 
 /**
  * Settings button for navigation header
@@ -31,22 +32,29 @@ export function SettingsButton() {
 
 /**
  * Quick Meter button for navigation header
- * Opens shot log / quick meter functionality
+ * Opens bottom sheet to select loaded film
  */
 export function QuickMeterButton() {
-  const navigation = useNavigation();
   const theme = useTheme();
+  const [showSheet, setShowSheet] = useState(false);
+  
+  const openSheet = useCallback(() => setShowSheet(true), []);
+  const closeSheet = useCallback(() => setShowSheet(false), []);
   
   return (
-    <TouchableOpacity
-      onPress={() => navigation.navigate('ShotLog')}
-      style={styles.headerButton}
-      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-    >
-      <View style={[styles.meterIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-        <Icon name="gauge" size={18} color={theme.colors.primary} />
-      </View>
-    </TouchableOpacity>
+    <>
+      <TouchableOpacity
+        onPress={openSheet}
+        style={styles.headerButton}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <View style={[styles.meterIcon, { backgroundColor: theme.colors.primaryContainer }]}>
+          <Icon name="gauge" size={18} color={theme.colors.primary} />
+        </View>
+      </TouchableOpacity>
+      
+      <QuickMeterSheet visible={showSheet} onClose={closeSheet} />
+    </>
   );
 }
 

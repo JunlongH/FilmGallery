@@ -1,15 +1,13 @@
 import React, { useContext, useEffect, useMemo, useState, useCallback, useRef } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl, ScrollView, Animated, Dimensions, TouchableOpacity, Image } from 'react-native';
-import { Card, Title, Paragraph, ActivityIndicator, Text, useTheme, Dialog, Portal, List, Button } from 'react-native-paper';
+import { View, FlatList, StyleSheet, RefreshControl, ScrollView, Animated, Dimensions, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Text, useTheme } from 'react-native-paper';
 import { colors, spacing, radius } from '../theme';
 import CachedImage from '../components/CachedImage';
-import CoverOverlay from '../components/CoverOverlay';
 import { ApiContext } from '../context/ApiContext';
 import axios from 'axios';
 import { format } from 'date-fns';
 import { getRollCoverUrl } from '../utils/urls';
-import { getFilmItems, getFilms } from '../api/filmItems';
-import { Icon, Badge } from '../components/ui';
+import { Icon } from '../components/ui';
 import { useFocusEffect } from '@react-navigation/native';
 
 const { width } = Dimensions.get('window');
@@ -21,13 +19,6 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedYear, setSelectedYear] = useState(null); // null = all years
-
-  // Quick Meter (select from loaded film items)
-  const [quickOpen, setQuickOpen] = useState(false);
-  const [quickLoading, setQuickLoading] = useState(false);
-  const [quickError, setQuickError] = useState('');
-  const [loadedFilmItems, setLoadedFilmItems] = useState([]);
-  const [films, setFilms] = useState([]);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -72,33 +63,6 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     fetchRolls();
   }, [fetchRolls]);
-
-  const loadLoadedFilmItems = useCallback(async () => {
-    if (!baseUrl) return;
-    setQuickLoading(true);
-    setQuickError('');
-    try {
-      const [itemsRes, filmsRes] = await Promise.all([
-        getFilmItems({ status: 'loaded' }),
-        getFilms(),
-      ]);
-      const items = itemsRes && Array.isArray(itemsRes.items) ? itemsRes.items : [];
-      setLoadedFilmItems(items);
-      setFilms(Array.isArray(filmsRes) ? filmsRes : []);
-    } catch (e) {
-      console.log('Failed to load loaded film items', e);
-      setQuickError('Failed to load loaded film items');
-      setLoadedFilmItems([]);
-      setFilms([]);
-    } finally {
-      setQuickLoading(false);
-    }
-  }, [baseUrl]);
-
-  const openQuickMeter = useCallback(async () => {
-    setQuickOpen(true);
-    await loadLoadedFilmItems();
-  }, [loadLoadedFilmItems]);
 
   // Derive year list from rolls
   const years = useMemo(() => {
@@ -189,14 +153,6 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  const filmById = useMemo(() => {
-    const map = new Map();
-    (films || []).forEach(f => {
-      if (f && f.id != null) map.set(f.id, f);
-    });
-    return map;
-  }, [films]);
-
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {error && (
@@ -275,49 +231,6 @@ export default function HomeScreen({ navigation }) {
           />
         </>
       )}
-
-      <Portal>
-        <Dialog visible={quickOpen} onDismiss={() => setQuickOpen(false)}>
-          <Dialog.Title>Select loaded film</Dialog.Title>
-          <Dialog.Content>
-            {quickError ? (
-              <Text style={{ color: theme.colors.error, marginBottom: spacing.sm }}>{quickError}</Text>
-            ) : null}
-            {quickLoading ? (
-              <ActivityIndicator animating size="small" />
-            ) : loadedFilmItems.length === 0 ? (
-              <Text style={{ color: theme.colors.onSurfaceVariant }}>No loaded film items.</Text>
-            ) : (
-              <ScrollView style={{ maxHeight: 360 }}>
-                {loadedFilmItems.map((it) => {
-                  const film = filmById.get(it.film_id) || null;
-                  const filmName = film?.name || it.film_name || it.film_type || `Film #${it.film_id || ''}`;
-                  const secondary = [it.label, it.loaded_camera ? `Loaded on ${it.loaded_camera}` : null].filter(Boolean).join(' • ');
-                  return (
-                    <List.Item
-                      key={String(it.id)}
-                      title={filmName}
-                      description={secondary}
-                      left={(props) => <List.Icon {...props} icon="filmstrip" />}
-                      onPress={() => {
-                        setQuickOpen(false);
-                        navigation.navigate('ShotLog', {
-                          itemId: it.id,
-                          filmName,
-                          autoOpenShotMode: true,
-                        });
-                      }}
-                    />
-                  );
-                })}
-              </ScrollView>
-            )}
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setQuickOpen(false)}>Close</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
     </View>
   );
 }
