@@ -1,0 +1,341 @@
+/**
+ * Tailwind CSS v4 入口样式文件
+ * 
+ * Tailwind v4 使用 CSS-first 配置方式
+ * 所有配置通过 @theme 指令和 CSS 变量完成
+ */
+
+/* 导入 Tailwind CSS v4 */
+@import "tailwindcss";
+
+/* 导入 HeroUI 主题（如果需要的话，使用 tailwind-variants） */
+
+/**
+ * 主题配置 - Tailwind v4 方式
+ * 使用 @theme 定义设计令牌
+ */
+@theme {
+  /* 颜色系统 - 映射到现有 CSS 变量 */
+  --color-bg: #f5f7fa;
+  --color-bg-alt: #ffffff;
+  --color-border: #e2e8f0;
+  --color-text: #1f2937;
+  --color-text-muted: #64748b;
+  
+  /* 主色调 */
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-200: #bfdbfe;
+  --color-primary-300: #93c5fd;
+  --color-primary-400: #60a5fa;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+  --color-primary-800: #1e40af;
+  --color-primary-900: #1e3a8a;
+  
+  /* 语义颜色 */
+  --color-accent: #10b981;
+  --color-danger: #dc2626;
+  --color-warning: #f59e0b;
+  --color-success: #10b981;
+  
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  
+  /* 阴影 */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.10);
+  --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.15);
+  
+  /* 动画时长 */
+  --duration-fast: 120ms;
+  --duration-medium: 240ms;
+  --duration-slow: 480ms;
+  
+  /* 动画曲线 */
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  
+  /* 自定义动画 */
+  --animate-fade-in: fadeIn 0.2s ease-out;
+  --animate-fade-in-up: fadeInUp 0.3s ease-out;
+  --animate-slide-in-right: slideInRight 0.3s ease-out;
+  --animate-scale-in: scaleIn 0.2s ease-out;
+  --animate-shimmer: shimmer 1.5s infinite;
+}
+
+/* 暗色模式主题覆盖 */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #0f172a;
+    --color-bg-alt: #1e293b;
+    --color-border: #334155;
+    --color-text: #f1f5f9;
+    --color-text-muted: #94a3b8;
+    --color-primary-600: #3b82f6;
+    --color-primary-700: #2563eb;
+    --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.55);
+    --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* 手动暗色模式 */
+[data-theme="dark"] {
+  --color-bg: #0f172a;
+  --color-bg-alt: #1e293b;
+  --color-border: #334155;
+  --color-text: #f1f5f9;
+  --color-text-muted: #94a3b8;
+  --color-primary-600: #3b82f6;
+  --color-primary-700: #2563eb;
+  --color-accent: #14b8a6;
+  --color-danger: #f87171;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.6);
+}
+
+/* 关键帧动画 */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeInUp {
+  from { 
+    opacity: 0; 
+    transform: translateY(10px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0); 
+  }
+}
+
+@keyframes slideInRight {
+  from { 
+    opacity: 0; 
+    transform: translateX(20px); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateX(0); 
+  }
+}
+
+@keyframes scaleIn {
+  from { 
+    opacity: 0; 
+    transform: scale(0.95); 
+  }
+  to { 
+    opacity: 1; 
+    transform: scale(1); 
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/**
+ * 自定义工具类 - 使用 @utility 指令
+ */
+
+/* 玻璃态效果 */
+@utility glass {
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+@utility glass-dark {
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 卡片悬浮效果 */
+@utility card-hover {
+  transition: all 200ms var(--ease-smooth);
+  &:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+  }
+}
+
+/* 隐藏滚动条 */
+@utility scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* 文字渐变 */
+@utility text-gradient {
+  background: linear-gradient(to right, var(--color-primary-600), #6366f1);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* 骨架屏效果 */
+@utility skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-border) 25%,
+    var(--color-bg-alt) 50%,
+    var(--color-border) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* 照片网格 */
+@utility photo-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  
+  @media (min-width: 640px) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  @media (min-width: 768px) {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  @media (min-width: 1024px) {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+  @media (min-width: 1280px) {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* 时间线容器 */
+@utility timeline-container {
+  position: relative;
+  padding-left: 1.5rem;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0.5rem;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, var(--color-primary-500), #6366f1);
+  }
+}
+
+/* 时间线项目 */
+@utility timeline-item {
+  position: relative;
+  margin-bottom: 1.5rem;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    left: -1rem;
+    top: 0.5rem;
+    width: 0.75rem;
+    height: 0.75rem;
+    border-radius: 50%;
+    background: var(--color-primary-500);
+    box-shadow: 0 0 0 4px var(--color-primary-100);
+  }
+}
+
+/* 导航项 */
+@utility nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-lg);
+  color: var(--color-text-muted);
+  transition: all 150ms var(--ease-smooth);
+  
+  &:hover {
+    background: var(--color-bg);
+    color: var(--color-text);
+  }
+}
+
+@utility nav-item-active {
+  background: rgba(37, 99, 235, 0.1);
+  color: var(--color-primary-600);
+  font-weight: 500;
+}
+
+/* 动画延迟工具 */
+@utility animation-delay-100 {
+  animation-delay: 100ms;
+}
+
+@utility animation-delay-200 {
+  animation-delay: 200ms;
+}
+
+@utility animation-delay-300 {
+  animation-delay: 300ms;
+}
+
+@utility animation-delay-500 {
+  animation-delay: 500ms;
+}
+
+/* 安全区域（Electron 标题栏） */
+@utility safe-top {
+  padding-top: env(titlebar-area-height, 0px);
+}
+
+/**
+ * 基础层样式
+ */
+@layer base {
+  /* HeroUI Provider 容器样式 */
+  .heroui-provider {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    min-height: 100vh;
+    background-color: var(--color-bg);
+    color: var(--color-text);
+  }
+  
+  /* 链接样式 */
+  a {
+    color: var(--color-primary-600);
+    text-decoration: none;
+    transition: color 150ms var(--ease-smooth);
+    
+    &:hover {
+      color: var(--color-primary-700);
+    }
+  }
+  
+  /* 选中文本样式 */
+  ::selection {
+    background-color: var(--color-primary-200);
+    color: var(--color-primary-900);
+  }
+}
+
+/**
+ * Framer Motion 集成
+ */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

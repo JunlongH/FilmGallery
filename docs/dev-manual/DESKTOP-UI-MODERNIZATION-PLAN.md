@@ -1251,14 +1251,30 @@ export const scaleIn = {
 
 **目标**: 完成 HeroUI + Tailwind 安装配置，不破坏现有功能
 
+**状态**: ✅ 已完成 (2026-01-29)
+
 **任务清单**:
-- [ ] 安装 HeroUI 核心依赖
-- [ ] 配置 Tailwind CSS + PostCSS + CRACO
-- [ ] 创建 `tailwind.config.js` 完整配置
-- [ ] 更新入口样式文件，添加 Tailwind directives
-- [ ] 创建 HeroUIProvider 包装器
-- [ ] 验证现有页面不受影响
-- [ ] 创建基础 UI 组件目录结构
+- [x] 安装 HeroUI 核心依赖 (`@heroui/react`, `@heroui/theme`, `lucide-react`, `@internationalized/date`)
+- [x] 配置 Tailwind CSS + PostCSS + CRACO
+- [x] 创建 `tailwind.config.js` 完整配置 (含 HeroUI 主题集成)
+- [x] 更新入口样式文件，添加 Tailwind directives (`styles/tailwind.css`)
+- [x] 创建 HeroUIProvider 包装器 (`providers/HeroUIProvider.jsx`)
+- [x] 创建基础 UI 组件目录结构 (`components/ui/`)
+- [ ] 验证现有页面不受影响 (待测试)
+
+**产出文件**:
+- `client/tailwind.config.js` - Tailwind 配置 + HeroUI 主题
+- `client/postcss.config.js` - PostCSS 配置
+- `client/craco.config.js` - 更新的 CRACO 配置 (PostCSS file mode + 新别名)
+- `client/src/styles/tailwind.css` - Tailwind 入口样式
+- `client/src/providers/HeroUIProvider.jsx` - HeroUI 提供者 + 主题系统
+- `client/src/providers/index.js` - 统一导出
+- `client/src/components/ui/index.js` - UI 组件统一导出
+- `client/src/components/ui/Button.jsx` - 增强按钮组件
+- `client/src/components/ui/Card.jsx` - 增强卡片组件
+- `client/src/components/ui/Skeleton.jsx` - 骨架屏组件
+- `client/src/components/ui/AnimatedContainer.jsx` - 动画容器组件
+- `client/src/components/ui/icons.js` - Lucide 图标统一导出
 
 **验收标准**:
 ```jsx
@@ -1267,12 +1283,6 @@ import { Button } from "@heroui/button";
 
 <Button color="primary">Test HeroUI</Button>
 ```
-
-**产出**:
-- `client/tailwind.config.js` 完整配置
-- `client/postcss.config.js` 配置
-- `client/src/providers/HeroUIProvider.jsx`
-- `client/src/components/ui/` 目录结构
 
 ---
 

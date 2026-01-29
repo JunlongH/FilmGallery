@@ -18,6 +18,8 @@ import EquipmentManager from './components/EquipmentManager';
 import MapPage from './pages/MapPage';
 import { getTags } from './api';
 import FloatingRefreshButton from './components/FloatingRefreshButton';
+// HeroUI Provider for modern UI components
+import { HeroUIProvider } from './providers';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -74,7 +76,7 @@ function Layout() {
   }, [queryClient]);
 
   return (
-    <>
+    <HeroUIProvider>
       <ConflictBanner />
       <div className="app-shell">
         <TitleBar />
@@ -184,7 +186,7 @@ function Layout() {
         </div>
       </div>
       <FloatingRefreshButton onRefresh={handleHardRefresh} />
-    </>
+    </HeroUIProvider>
   );
 }
 
