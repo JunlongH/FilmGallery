@@ -122,62 +122,90 @@ export function processImageWebGL(canvas, image, params = {}) {
     if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Reusing existing cache, shaderVersion:', cache.shaderVersion);
   }
 
-  // Rotate-then-crop pre-processing via 2D canvas for geometry parity with CPU/export
-  // Respect optional `params.scale` so WebGL output matches preview geometry scale
-  let srcImage = image;
+  // ============================================================================
+  // PHASE 2 REFACTOR: Pure WebGL Geometry via UV Mapping
+  // Replaces 2D Canvas pre-processing with GPU-based rotation/crop
+  // This approach matches gpu-renderer.js for consistency and better performance
+  // ============================================================================
+  
+  const srcImage = image;
+  const srcW = image.width;
+  const srcH = image.height;
   const scale = (typeof params.scale === 'number' && params.scale > 0) ? params.scale : 1;
-  // If scale != 1, create a temporary scaled source so rotation uses scaled dimensions
-  if (scale !== 1 && image && image.width) {
-    const s2 = document.createElement('canvas');
-    s2.width = Math.max(1, Math.round(image.width * scale));
-    s2.height = Math.max(1, Math.round(image.height * scale));
-    const g2 = s2.getContext('2d', { colorSpace: 'srgb', willReadFrequently: false });
-    // draw scaled
-    g2.drawImage(image, 0, 0, image.width, image.height, 0, 0, s2.width, s2.height);
-    srcImage = s2;
-  }
+  
+  // Rotation angle (in radians)
   const rotateDeg = typeof params.rotate === 'number' ? params.rotate : 0;
   const rad = rotateDeg * Math.PI / 180;
-  const s = Math.abs(Math.sin(rad));
-  const c = Math.abs(Math.cos(rad));
-  const rotW = Math.round(srcImage.width * c + srcImage.height * s);
-  const rotH = Math.round(srcImage.width * s + srcImage.height * c);
-  const r2d = document.createElement('canvas');
-  r2d.width = rotW;
-  r2d.height = rotH;
-  const rg = r2d.getContext('2d', { colorSpace: 'srgb', willReadFrequently: false });
-  rg.translate(rotW / 2, rotH / 2);
-  rg.rotate(rad);
-  rg.drawImage(srcImage, -srcImage.width / 2, -srcImage.height / 2);
-  srcImage = r2d;
-
-  // Clamp cropRect and crop in rotated space
-  let outW = rotW;
-  let outH = rotH;
-  const crop = params.cropRect;
-  if (crop && typeof crop.x === 'number') {
-    let crx = Math.max(0, Math.min(1, crop.x));
-    let cry = Math.max(0, Math.min(1, crop.y));
-    let crw = Math.max(0, Math.min(1 - crx, crop.w || crop.width / outW));
-    let crh = Math.max(0, Math.min(1 - cry, crop.h || crop.height / outH));
-    const cx = Math.round(crx * outW);
-    const cy = Math.round(cry * outH);
-    const cw = Math.max(1, Math.round(crw * outW));
-    const ch = Math.max(1, Math.round(crh * outH));
-    const c2d = document.createElement('canvas');
-    c2d.width = cw;
-    c2d.height = ch;
-    const g2 = c2d.getContext('2d', { colorSpace: 'srgb', willReadFrequently: false });
-    g2.drawImage(srcImage, cx, cy, cw, ch, 0, 0, cw, ch);
-    srcImage = c2d;
-    outW = cw;
-    outH = ch;
-  }
-
-  // Set canvas size to processed image size (rotated-then-cropped)
+  
+  // Precompute trig values for backward rotation (Screen -> Source)
+  const cos = Math.cos(-rad);
+  const sin = Math.sin(-rad);
+  
+  // Scaled source dimensions
+  const scaledW = srcW * scale;
+  const scaledH = srcH * scale;
+  
+  // Dimensions of the rotated bounding box
+  const absCos = Math.abs(Math.cos(rad));
+  const absSin = Math.abs(Math.sin(rad));
+  const rotW = Math.round(scaledW * absCos + scaledH * absSin);
+  const rotH = Math.round(scaledW * absSin + scaledH * absCos);
+  
+  // Crop rectangle (normalized 0-1 in rotated space)
+  const crop = params.cropRect || { x: 0, y: 0, w: 1, h: 1 };
+  const cropX = Math.max(0, Math.min(1, crop.x || 0));
+  const cropY = Math.max(0, Math.min(1, crop.y || 0));
+  const cropW = Math.max(0, Math.min(1 - cropX, crop.w || 1));
+  const cropH = Math.max(0, Math.min(1 - cropY, crop.h || 1));
+  
+  // Output canvas dimensions (Crop is relative to the Rotated Image)
+  const outW = Math.max(1, Math.round(rotW * cropW));
+  const outH = Math.max(1, Math.round(rotH * cropH));
+  
+  // Set canvas size
   canvas.width = outW;
   canvas.height = outH;
   gl.viewport(0, 0, canvas.width, canvas.height);
+  
+  // Helper to map UV from Rotated+Cropped Space (0..1) to Source Space (0..1)
+  // This is the core of the pure WebGL geometry approach (ported from gpu-renderer.js)
+  const mapUV = (u_rot, v_rot) => {
+    // 1. Convert normalized crop UV to full rotated space UV
+    const u_full = cropX + u_rot * cropW;
+    const v_full = cropY + v_rot * cropH;
+    
+    // 2. Convert to pixels in Rotated Space
+    const x_rot = u_full * rotW;
+    const y_rot = v_full * rotH;
+    
+    // 3. Shift to center of rotated space
+    const dx_rot = x_rot - rotW / 2;
+    const dy_rot = y_rot - rotH / 2;
+    
+    // 4. Rotate backwards (-rad) to align with Scaled Source Space
+    const dx_src = dx_rot * cos - dy_rot * sin;
+    const dy_src = dx_rot * sin + dy_rot * cos;
+    
+    // 5. Shift back from center of Scaled Source
+    const x_src = dx_src + scaledW / 2;
+    const y_src = dy_src + scaledH / 2;
+    
+    // 6. Normalize to Source UV (0-1)
+    // Note: Since we sample from the original image (not scaled), divide by scaledW/H
+    // but the texture is in original coords, so we use srcW/H
+    return [x_src / scaledW, y_src / scaledH];
+  };
+  
+  // Calculate UVs for the 4 corners of the output quad
+  // WebGL quad: TL(-1,1), TR(1,1), BL(-1,-1), BR(1,-1)
+  // Texture UV: TL(0,0), TR(1,0), BL(0,1), BR(1,1) in standard coords
+  // Store computed UVs directly in cache for use in vertex buffer setup
+  cache.computedUVs = {
+    uvTL: mapUV(0, 0),
+    uvTR: mapUV(1, 0),
+    uvBL: mapUV(0, 1),
+    uvBR: mapUV(1, 1)
+  };
 
   // Vertex shader (shared)
   const vsSource = `
@@ -769,19 +797,38 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.useProgram(program);
 
   // Set up a full-screen quad (cache buffer)
-  if (!cache.buffer) {
-    const verts = new Float32Array([
-      -1, -1, 0, 0,
-       1, -1, 1, 0,
-      -1,  1, 0, 1,
-       1,  1, 1, 1
-    ]);
-    cache.buffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, cache.buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
-  } else {
-    gl.bindBuffer(gl.ARRAY_BUFFER, cache.buffer);
+  // ============================================================================
+  // PHASE 2 REFACTOR: Dynamic UV Vertex Buffer
+  // Uses computed UVs from mapUV() for rotation/crop geometry
+  // ============================================================================
+  
+  // Get computed UVs from earlier calculation
+  const computedUVs = cache.computedUVs;
+  if (!computedUVs) {
+    console.error('[FilmLabWebGL] Missing computedUVs - falling back to identity UVs');
   }
+  
+  // Build vertex buffer with dynamic UVs for geometry transforms
+  // Format: [posX, posY, uvX, uvY] per vertex
+  // Quad vertices: BL(-1,-1), BR(1,-1), TL(-1,1), TR(1,1)
+  const bl = computedUVs ? computedUVs.uvBL : [0, 1];
+  const br = computedUVs ? computedUVs.uvBR : [1, 1];
+  const tl = computedUVs ? computedUVs.uvTL : [0, 0];
+  const tr = computedUVs ? computedUVs.uvTR : [1, 0];
+  
+  const verts = new Float32Array([
+    -1, -1, bl[0], bl[1],  // BL
+     1, -1, br[0], br[1],  // BR
+    -1,  1, tl[0], tl[1],  // TL
+     1,  1, tr[0], tr[1],  // TR
+  ]);
+  
+  // Always update buffer since UVs change with crop/rotation
+  if (!cache.buffer) {
+    cache.buffer = gl.createBuffer();
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, cache.buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
 
   const posLoc = gl.getAttribLocation(program, 'a_pos');
   const uvLoc = gl.getAttribLocation(program, 'a_uv');
@@ -790,7 +837,8 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.enableVertexAttribArray(uvLoc);
   gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 16, 8);
 
-  // Create or reuse texture from image
+  // Create or reuse texture from original image
+  // PHASE 2: We now upload the original image and use UV mapping for geometry
   // 重要：必须先激活 TEXTURE0 再绑定图像纹理，因为着色器期望图像在纹理单元 0
   if (!cache.imageTex) cache.imageTex = gl.createTexture();
   gl.activeTexture(gl.TEXTURE0);
@@ -801,7 +849,7 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, srcImage);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
 
   // Uniform locations - 每次强制重新获取，因为 cache 每次都是新的
   const locs = {};
