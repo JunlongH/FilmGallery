@@ -85,18 +85,33 @@
         -   Auto-updates on crop changes with debouncing
     -   `index.js`: Unified exports
 
-### Phase 5: Pipeline & RAW Logic (Logic Fix)
+### Phase 5: Pipeline & RAW Logic (Logic Fix) ✅ COMPLETED
 **Goal**: Solve the "Non-Commutative" dependency issue (Auto-Levels depends on Crop).
 
-1.  **Define Pipeline events**:
-    -   `EVENT_GEOMETRY_CHANGED` (Crop/Rotate)
-    -   `EVENT_COLOR_CHANGED` (Params)
-2.  **Implement Dependency Chain**:
-    -   When `EVENT_GEOMETRY_CHANGED`:
-        1.  Update geometry uniforms.
-        2.  Render (fast WebGL).
-        3.  **Re-run Histogram** (on the new output, restricted to crop).
-        4.  If `Auto-Levels` is active: Re-calculate levels -> Trigger `EVENT_COLOR_CHANGED`.
+1.  **Created `useFilmLabPipeline.js`**: ✅ Done (2026-01-30)
+    -   `PipelineEvent` - Event type constants for all pipeline stages
+    -   `PipelinePriority` - Priority ordering for render operations
+    -   Event dependency chain: Geometry → Color → Output
+    -   Automatic histogram update on geometry changes
+    -   Debounced event processing (16ms batching)
+    -   `emit()`, `on()`, `off()` for event management
+    -   Convenience methods: `emitGeometryChanged()`, `emitCropChanged()`, etc.
+
+2.  **Created `constants.js`**: ✅ Done (2026-01-30)
+    -   File type constants (RAW, TIFF, standard images)
+    -   Parameter range definitions (exposure, contrast, etc.)
+    -   UI configuration (histogram, zoom, crop ratios)
+    -   Keyboard shortcuts
+    -   LUT and export format definitions
+    -   HSL and curve channel definitions
+    -   API endpoints and error codes
+
+3.  **Created `types.d.ts`**: ✅ Done (2026-01-30)
+    -   Complete TypeScript type definitions
+    -   Interface definitions for all parameter types
+    -   Hook return type definitions
+    -   Export and preset type definitions
+    -   Utility types (PartialParams, DeepPartial)
 
 ## 3. Implementation Details for RAW Issues
 
@@ -129,7 +144,7 @@ The user suspects RAW decoding is part of the problem.
 
 ## 5. File Summary
 
-### New Files Created (Phase 3 & 4)
+### New Files Created (Phase 3, 4, & 5)
 
 ```
 packages/shared/shaders/
@@ -144,12 +159,16 @@ packages/shared/shaders/
 ├── inversion.js      # Negative inversion
 └── baseDensity.js    # Film base correction
 
-client/src/components/FilmLab/hooks/
-├── index.js              # Unified exports
-├── useFilmLabState.js    # State management
-├── useImageSource.js     # Image loading
-├── useFilmLabRenderer.js # WebGL rendering
-└── useHistogram.js       # Histogram calculation
+client/src/components/FilmLab/
+├── constants.js          # All FilmLab constants
+├── types.d.ts            # TypeScript type definitions
+└── hooks/
+    ├── index.js              # Unified exports
+    ├── useFilmLabState.js    # State management (30+ vars)
+    ├── useImageSource.js     # Image loading
+    ├── useFilmLabRenderer.js # WebGL rendering
+    ├── useHistogram.js       # Histogram calculation
+    └── useFilmLabPipeline.js # Pipeline event system
 ```
 
 ### Modified Files
@@ -159,3 +178,143 @@ client/src/components/FilmLab/FilmLabWebGL.js   # Phase 2: UV mapping refactor
 client/src/components/FilmLab/FilmLab.jsx       # Phase 1: Histogram crop fix
 packages/shared/index.js                         # Added shaders exports
 ```
+
+## 6. Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              FilmLab Architecture                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                         React Component Layer                         │   │
+│  │  ┌────────────────────────────────────────────────────────────────┐  │   │
+│  │  │                      FilmLab.jsx (UI)                           │  │   │
+│  │  │  - Tool panels (sliders, buttons)                               │  │   │
+│  │  │  - Preview canvas                                               │  │   │
+│  │  │  - Histogram display                                            │  │   │
+│  │  └────────────────────────────────────────────────────────────────┘  │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                           React Hooks Layer                           │   │
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐ │   │
+│  │  │useFilmLab   │ │useImage     │ │useFilmLab   │ │ useFilmLab      │ │   │
+│  │  │  State      │ │  Source     │ │  Renderer   │ │   Pipeline      │ │   │
+│  │  ├─────────────┤ ├─────────────┤ ├─────────────┤ ├─────────────────┤ │   │
+│  │  │ 30+ state   │ │ RAW detect  │ │ WebGL wrap  │ │ Event system    │ │   │
+│  │  │ variables   │ │ Server call │ │ Render queue│ │ Dependencies    │ │   │
+│  │  │ Serialize   │ │ Load/abort  │ │ Debouncing  │ │ Priority order  │ │   │
+│  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────────┘ │   │
+│  │                                                                       │   │
+│  │  ┌─────────────┐ ┌─────────────────────────────────────────────────┐ │   │
+│  │  │useHistogram │ │              constants.js                       │ │   │
+│  │  ├─────────────┤ │ File types, ranges, presets, shortcuts, etc.   │ │   │
+│  │  │ Crop-aware  │ └─────────────────────────────────────────────────┘ │   │
+│  │  │ CPU + WebGL │                                                     │   │
+│  │  └─────────────┘                                                     │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                         │
+│                                    ▼                                         │
+│  ┌──────────────────────────────────────────────────────────────────────┐   │
+│  │                          WebGL Renderer Layer                         │   │
+│  │  ┌────────────────────────┐    ┌────────────────────────────────┐   │   │
+│  │  │   FilmLabWebGL.js      │    │   packages/shared/shaders/     │   │   │
+│  │  │   (Client Preview)     │◄───┤   (Shared GLSL Modules)        │   │   │
+│  │  │                        │    │                                │   │   │
+│  │  │  - UV mapping          │    │  - colorMath.js                │   │   │
+│  │  │  - Texture management  │    │  - hslAdjust.js                │   │   │
+│  │  │  - Shader compilation  │    │  - splitTone.js                │   │   │
+│  │  └────────────────────────┘    │  - filmCurve.js                │   │   │
+│  │                                │  - tonemap.js                  │   │   │
+│  │  ┌────────────────────────┐    │  - lut3d.js                    │   │   │
+│  │  │   gpu-renderer.js      │◄───┤  - inversion.js                │   │   │
+│  │  │   (Server Export)      │    │  - baseDensity.js              │   │   │
+│  │  │                        │    │  - uniforms.js                 │   │   │
+│  │  │  - High-res render     │    │  - buildFragmentShader()       │   │   │
+│  │  │  - 16-bit output       │    └────────────────────────────────┘   │   │
+│  │  └────────────────────────┘                                         │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+## 7. Usage Examples
+
+### Using the Hooks
+
+```javascript
+import {
+  useFilmLabState,
+  useImageSource,
+  useFilmLabRenderer,
+  useFilmLabPipeline,
+  useHistogram,
+} from './hooks';
+import { EXPOSURE_RANGE, CROP_RATIOS } from './constants';
+
+function FilmLabEditor({ imageUrl }) {
+  // State management
+  const state = useFilmLabState();
+  
+  // Image loading
+  const { image, loading, isRAW } = useImageSource(imageUrl);
+  
+  // Rendering
+  const { canvasRef, requestRender } = useFilmLabRenderer({
+    image,
+    params: state.serializeState(),
+  });
+  
+  // Pipeline events
+  const pipeline = useFilmLabPipeline({
+    onRender: requestRender,
+    onHistogramUpdate: () => histogram.updateHistogram(),
+  });
+  
+  // Histogram
+  const histogram = useHistogram(canvasRef.current, state.cropRect);
+  
+  // Handle crop change
+  const handleCropChange = (newCrop) => {
+    state.setCropRect(newCrop);
+    pipeline.emitCropChanged(newCrop);
+  };
+  
+  return (
+    <div>
+      <canvas ref={canvasRef} />
+      <Slider
+        min={EXPOSURE_RANGE.min}
+        max={EXPOSURE_RANGE.max}
+        value={state.exposure}
+        onChange={state.setExposure}
+      />
+    </div>
+  );
+}
+```
+
+### Shared Shader Integration
+
+```javascript
+// In FilmLabWebGL.js
+import { buildFragmentShader } from '@filmgallery/shared';
+
+const fragmentShader = buildFragmentShader({
+  precision: 'mediump',
+  useHSL: true,
+  useSplitTone: true,
+  useLUT3D: true,
+  useCurves: true,
+});
+```
+
+## 8. Next Steps
+
+1. **Integration Testing**: Test all hooks together in FilmLab.jsx
+2. **Performance Profiling**: Benchmark new architecture vs old
+3. **Gradual Migration**: Replace inline code in FilmLab.jsx with hooks
+4. **Mobile Port**: Adapt hooks for React Native (mobile app)
+5. **Documentation**: Generate API docs from types.d.ts

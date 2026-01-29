@@ -5,6 +5,7 @@
  * 
  * @module hooks
  * @since 2026-01-29
+ * @updated 2026-01-30 - 添加 Pipeline 支持
  */
 
 // 状态管理
@@ -31,3 +32,10 @@ export {
   calculateHistogramFromWebGL,
   HISTOGRAM_BINS,
 } from './useHistogram';
+
+// 管线控制
+export {
+  useFilmLabPipeline,
+  PipelineEvent,
+  PipelinePriority,
+} from './useFilmLabPipeline';
