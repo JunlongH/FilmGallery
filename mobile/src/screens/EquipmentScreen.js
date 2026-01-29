@@ -2,8 +2,8 @@
  * EquipmentScreen - Mobile equipment management
  * Manage cameras, lenses, and flashes
  */
-import React, { useState, useEffect, useCallback, useContext } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Image } from 'react-native';
+import React, { useState, useEffect, useCallback, useContext, useRef } from 'react';
+import { View, FlatList, StyleSheet, RefreshControl, TouchableOpacity, Image, Animated } from 'react-native';
 import { 
   Text, 
   FAB, 
@@ -16,12 +16,13 @@ import {
   Button,
   TextInput
 } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import { getCameras, getLenses, getFlashes, createCamera, createLens, createFlash, deleteCamera, deleteLens, deleteFlash } from '../api/equipment';
 import { getFilms } from '../api/filmItems';
 import { spacing, radius } from '../theme';
 import { ApiContext } from '../context/ApiContext';
 import CachedImage from '../components/CachedImage';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Icon } from '../components/ui';
 import { buildUploadUrl } from '../utils/urlHelper';
 
 export default function EquipmentScreen({ navigation }) {
@@ -32,6 +33,22 @@ export default function EquipmentScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
+  // Animate on focus
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, [])
+  );
   
   // Add dialog - common fields
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -246,8 +263,8 @@ export default function EquipmentScreen({ navigation }) {
               <CachedImage uri={thumbUrl} style={styles.thumbImage} contentFit="cover" />
             ) : (
               <View style={styles.thumbPlaceholder}>
-                <MaterialCommunityIcons 
-                  name={tab === 'camera' ? 'camera' : tab === 'lens' ? 'camera-iris' : tab === 'flash' ? 'flash' : 'filmstrip'} 
+                <Icon 
+                  name={tab === 'camera' ? 'camera' : tab === 'lens' ? 'aperture' : tab === 'flash' ? 'zap' : 'film'} 
                   size={32} 
                   color="#999" 
                 />
@@ -277,7 +294,7 @@ export default function EquipmentScreen({ navigation }) {
           </View>
           
           {/* Arrow */}
-          <MaterialCommunityIcons name="chevron-right" size={24} color="#999" style={styles.arrow} />
+          <Icon name="chevron-right" size={24} color="#999" style={styles.arrow} />
         </View>
       </TouchableOpacity>
     );
@@ -436,8 +453,8 @@ export default function EquipmentScreen({ navigation }) {
                       style={[styles.checkboxRow, styles.dialogInputHalf]}
                       onPress={() => setAddIsMacro(!addIsMacro)}
                     >
-                      <MaterialCommunityIcons 
-                        name={addIsMacro ? 'checkbox-marked' : 'checkbox-blank-outline'} 
+                      <Icon 
+                        name={addIsMacro ? 'check-square' : 'square'} 
                         size={24} 
                         color={theme.colors.primary} 
                       />

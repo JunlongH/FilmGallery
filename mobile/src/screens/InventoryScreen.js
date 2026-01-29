@@ -1,12 +1,14 @@
-import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { View, FlatList, RefreshControl, StyleSheet, Image } from 'react-native';
+import React, { useContext, useEffect, useMemo, useState, useRef } from 'react';
+import { View, FlatList, RefreshControl, StyleSheet, Image, Animated } from 'react-native';
 import { ActivityIndicator, Chip, Text, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import { ApiContext } from '../context/ApiContext';
 import { getFilmItems, getFilms } from '../api/filmItems';
 import { buildUploadUrl } from '../utils/urlHelper';
 import { FILM_ITEM_STATUS_FILTERS, FILM_ITEM_STATUS_LABELS } from '../constants/filmItemStatus';
 import TouchScale from '../components/TouchScale';
 import { spacing, radius } from '../theme';
+import { Icon, Badge } from '../components/ui';
 
 export default function InventoryScreen({ navigation }) {
   const theme = useTheme();
@@ -16,6 +18,22 @@ export default function InventoryScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [films, setFilms] = useState([]);
+
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
+  // Animate on focus
+  useFocusEffect(
+    React.useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, [])
+  );
 
   const loadAll = async () => {
     if (!baseUrl) return;

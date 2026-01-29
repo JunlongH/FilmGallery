@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { View, FlatList, StyleSheet } from 'react-native';
-import { ActivityIndicator, Button, HelperText, IconButton, Text, TextInput, useTheme, FAB } from 'react-native-paper';
+import { View, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, Button, HelperText, Text, TextInput, useTheme } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Icon } from '../components/ui';
 import DatePickerField from '../components/DatePickerField';
 import DraggableFab from '../components/DraggableFab';
 import ShotModeModal from '../components/ShotModeModal';
@@ -535,7 +536,9 @@ export default function ShotLogScreen({ route, navigation }) {
                 </Text>
               ) : null}
             </View>
-            <IconButton icon="delete" onPress={() => removeEntryAt(item._idx)} />
+            <TouchableOpacity style={{ padding: 8 }} onPress={() => removeEntryAt(item._idx)}>
+              <Icon name="trash-2" size={20} color={theme.colors.error} />
+            </TouchableOpacity>
           </View>
         )}
         ListEmptyComponent={() => (
@@ -838,11 +841,25 @@ export default function ShotLogScreen({ route, navigation }) {
       </View>
 
       <DraggableFab initialRight={16} initialBottom={380}>
-        <FAB
-          icon="camera-iris"
+        <TouchableOpacity
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: theme.colors.primary,
+            paddingVertical: 12,
+            paddingHorizontal: 16,
+            borderRadius: 28,
+            elevation: 4,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 4,
+          }}
           onPress={() => setShowShotMode(true)}
-          label="Shot Mode"
-        />
+        >
+          <Icon name="camera" size={20} color="#fff" />
+          <Text style={{ marginLeft: 8, color: '#fff', fontWeight: '600' }}>Shot Mode</Text>
+        </TouchableOpacity>
       </DraggableFab>
 
       <ShotModeModal

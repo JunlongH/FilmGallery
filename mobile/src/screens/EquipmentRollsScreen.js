@@ -2,13 +2,15 @@
  * EquipmentRollsScreen - Shows rolls that use a specific piece of equipment
  * Navigates to RollDetail when a roll is tapped
  */
-import React, { useContext, useEffect, useState, useLayoutEffect } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl } from 'react-native';
-import { Card, Title, Paragraph, ActivityIndicator, Text, useTheme, IconButton } from 'react-native-paper';
+import React, { useContext, useEffect, useState, useLayoutEffect, useRef, useCallback } from 'react';
+import { View, FlatList, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
+import { Card, Title, Paragraph, ActivityIndicator, Text, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import CachedImage from '../components/CachedImage';
 import CoverOverlay from '../components/CoverOverlay';
 import { colors, spacing, radius } from '../theme';
 import { ApiContext } from '../context/ApiContext';
+import { Icon } from '../components/ui';
 import { getRollsByEquipment } from '../api/equipment';
 import { format } from 'date-fns';
 
@@ -46,10 +48,15 @@ export default function EquipmentRollsScreen({ route, navigation }) {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <IconButton icon="refresh" onPress={fetchRolls} />
+        <TouchableOpacity 
+          style={{ marginRight: 16, padding: 4 }}
+          onPress={fetchRolls}
+        >
+          <Icon name="refresh-cw" size={20} color={theme.colors.primary} />
+        </TouchableOpacity>
       )
     });
-  }, [navigation]);
+  }, [navigation, theme]);
 
   const getTypeLabel = () => {
     switch (type) {
@@ -116,7 +123,9 @@ export default function EquipmentRollsScreen({ route, navigation }) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.colors.background }]}>
         <Text variant="bodyLarge" style={styles.errorText}>{error}</Text>
-        <IconButton icon="refresh" size={32} onPress={fetchRolls} />
+        <TouchableOpacity style={{ padding: 8 }} onPress={fetchRolls}>
+          <Icon name="refresh-cw" size={32} color={theme.colors.primary} />
+        </TouchableOpacity>
       </View>
     );
   }

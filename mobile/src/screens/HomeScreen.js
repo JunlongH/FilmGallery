@@ -170,46 +170,47 @@ export default function HomeScreen({ navigation }) {
       ) : (
         <>
           {/* Year filter chips */}
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={styles.yearBar}
-            contentContainerStyle={styles.yearBarContent}
-          >
-            <TouchableOpacity
-              onPress={() => setSelectedYear(null)}
-              style={[
-                styles.yearChip,
-                { 
-                  backgroundColor: !selectedYear ? theme.colors.primary : theme.colors.surface,
-                  borderColor: theme.colors.primary,
-                }
-              ]}
+          <View style={styles.yearBarWrapper}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              contentContainerStyle={styles.yearBarContent}
             >
-              <Text style={[
-                styles.yearChipText,
-                { color: !selectedYear ? '#fff' : theme.colors.primary }
-              ]}>All</Text>
-            </TouchableOpacity>
-            {years.map(y => (
               <TouchableOpacity
-                key={y}
-                onPress={() => setSelectedYear(y)}
+                onPress={() => setSelectedYear(null)}
                 style={[
                   styles.yearChip,
                   { 
-                    backgroundColor: selectedYear === y ? theme.colors.primary : theme.colors.surface,
+                    backgroundColor: !selectedYear ? theme.colors.primary : theme.colors.surface,
                     borderColor: theme.colors.primary,
                   }
                 ]}
               >
                 <Text style={[
                   styles.yearChipText,
-                  { color: selectedYear === y ? '#fff' : theme.colors.primary }
-                ]}>{y}</Text>
+                  { color: !selectedYear ? '#fff' : theme.colors.primary }
+                ]}>All</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+              {years.map(y => (
+                <TouchableOpacity
+                  key={y}
+                  onPress={() => setSelectedYear(y)}
+                  style={[
+                    styles.yearChip,
+                    { 
+                      backgroundColor: selectedYear === y ? theme.colors.primary : theme.colors.surface,
+                      borderColor: theme.colors.primary,
+                    }
+                  ]}
+                >
+                  <Text style={[
+                    styles.yearChipText,
+                    { color: selectedYear === y ? '#fff' : theme.colors.primary }
+                  ]}>{y}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
 
           {/* Roll count */}
           <View style={styles.countBar}>
@@ -343,25 +344,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 14,
   },
-  yearBar: {
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xs,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.05)',
+  yearBarWrapper: {
+    height: 56,
+    backgroundColor: 'transparent',
   },
   yearBarContent: {
-    paddingHorizontal: spacing.md,
-    gap: 8,
+    paddingHorizontal: 16,
+    height: 56,
+    alignItems: 'center',
+    flexDirection: 'row',
   },
   yearChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    height: 40,
+    paddingHorizontal: 20,
     borderRadius: 20,
-    borderWidth: 1,
+    borderWidth: 1.5,
+    marginRight: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   yearChipText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   countBar: {
     paddingHorizontal: spacing.md,

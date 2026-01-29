@@ -1,7 +1,9 @@
-import React, { useContext, useEffect, useState, useCallback } from 'react';
-import { View, FlatList, StyleSheet, ActivityIndicator, RefreshControl, Dimensions } from 'react-native';
+import React, { useContext, useEffect, useState, useCallback, useRef } from 'react';
+import { View, FlatList, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Animated } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { ApiContext } from '../context/ApiContext';
 import { Text, Chip, useTheme } from 'react-native-paper';
+import { Icon } from '../components/ui';
 import TouchScale from '../components/TouchScale';
 import CachedImage from '../components/CachedImage';
 import axios from 'axios';
@@ -17,6 +19,21 @@ export default function NegativeScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedFilm, setSelectedFilm] = useState(null); // film filter
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, [])
+  );
 
   const fetchNegatives = useCallback(async () => {
     if (!baseUrl) return;

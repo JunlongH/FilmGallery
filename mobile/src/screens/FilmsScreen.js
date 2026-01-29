@@ -1,6 +1,8 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, FlatList, StyleSheet, Dimensions } from 'react-native';
-import { ActivityIndicator, useTheme, IconButton } from 'react-native-paper';
+import React, { useContext, useEffect, useState, useRef } from 'react';
+import { View, FlatList, StyleSheet, Dimensions, Animated, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
+import { Icon } from '../components/ui';
 import { ApiContext } from '../context/ApiContext';
 import axios from 'axios';
 import FilmCard from '../components/FilmCard';
@@ -32,11 +34,31 @@ export default function FilmsScreen({ navigation }) {
     fetchFilms();
   }, [baseUrl]);
 
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
+  useFocusEffect(
+    React.useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, [])
+  );
+  
   // Add header refresh button
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <IconButton icon="refresh" onPress={async () => { const { clearImageCache } = await import('../components/CachedImage'); await clearImageCache(); fetchFilms(); }} />
+        <TouchableOpacity 
+          style={{ marginRight: 16, padding: 4 }} 
+          onPress={async () => { const { clearImageCache } = await import('../components/CachedImage'); await clearImageCache(); fetchFilms(); }}
+        >
+          <Icon name="refresh-cw" size={20} color="#5a4632" />
+        </TouchableOpacity>
       )
     });
   }, [navigation, baseUrl]);

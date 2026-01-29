@@ -12,7 +12,7 @@
  * - Statistics overview
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { 
   View, 
   Text, 
@@ -28,6 +28,7 @@ import { useTheme } from 'react-native-paper';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
 import { Icon, Card, Badge } from '../components/ui';
+import { ApiContext } from '../context/ApiContext';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
@@ -35,6 +36,7 @@ const CARD_WIDTH = (width - 48) / 2;
 export default function LibraryScreen() {
   const theme = useTheme();
   const navigation = useNavigation();
+  const { baseUrl } = useContext(ApiContext);
   
   const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState({
@@ -76,45 +78,90 @@ export default function LibraryScreen() {
 
   // Fetch library data
   const fetchData = useCallback(async () => {
+    if (!baseUrl) {
+      console.log('[LibraryScreen] No baseUrl yet, skipping fetch');
+      return;
+    }
     try {
       // Fetch multiple endpoints in parallel
-      const [favoritesRes, themesRes, equipmentRes, statsRes] = await Promise.all([
-        axios.get('/api/favorites').catch(() => ({ data: [] })),
-        axios.get('/api/tags').catch(() => ({ data: [] })),
-        axios.get('/api/equipment').catch(() => ({ data: [] })),
-        axios.get('/api/stats/overview').catch(() => ({ data: {} })),
+      const [favoritesRes, themesRes, gearStatsRes, statsRes] = await Promise.all([
+        axios.get(`${baseUrl}/api/photos/favorites`).catch(() => ({ data: [] })),
+        axios.get(`${baseUrl}/api/tags`).catch(() => ({ data: [] })),
+        axios.get(`${baseUrl}/api/stats/gear`).catch(() => ({ data: { cameras: [], lenses: [], films: [] } })),
+        axios.get(`${baseUrl}/api/stats/summary`).catch(() => ({ data: {} })),
       ]);
 
-      // Process favorites
-      const favorites = Array.isArray(favoritesRes.data) ? favoritesRes.data : [];
+      // Process favorites - fix thumbnail URLs
+      const favoritesRaw = Array.isArray(favoritesRes.data) ? favoritesRes.data : [];
+      console.log('[LibraryScreen] Favorites raw:', favoritesRaw.length, 'items');
+      const favorites = favoritesRaw.map(p => {
+        let thumbPath = p.thumb_rel_path || p.positive_thumb_rel_path || null;
+        let thumbnailUrl = null;
+        if (thumbPath) {
+          if (thumbPath.startsWith('http')) {
+            thumbnailUrl = thumbPath;
+          } else {
+            // Server serves static files from /uploads/rolls/... 
+            // Database stores paths as 'rolls/37/thumb/...'
+            // So we need /uploads/ prefix
+            if (!thumbPath.startsWith('/')) {
+              thumbPath = '/uploads/' + thumbPath;
+            } else if (!thumbPath.startsWith('/uploads')) {
+              thumbPath = '/uploads' + thumbPath;
+            }
+            thumbnailUrl = `${baseUrl}${thumbPath}`;
+          }
+        }
+        console.log('[LibraryScreen] Photo', p.id, 'thumb:', thumbnailUrl);
+        return {
+          ...p,
+          thumbnail_url: thumbnailUrl
+        };
+      });
       setRecentFavorites(favorites.slice(0, 4));
 
-      // Process themes
-      const themes = Array.isArray(themesRes.data) ? themesRes.data : [];
+      // Process themes - use photos_count from API
+      const themesRaw = Array.isArray(themesRes.data) ? themesRes.data : [];
+      const themes = themesRaw.map(t => ({
+        ...t,
+        photo_count: t.photos_count || t.photo_count || t.count || 0
+      }));
       setTopThemes(themes.slice(0, 6));
 
-      // Process equipment
-      const equipment = Array.isArray(equipmentRes.data) ? equipmentRes.data : [];
-      setTopEquipment(equipment.slice(0, 4));
+      // Process gear stats - cameras with photo counts
+      const gearData = gearStatsRes.data || {};
+      const cameras = Array.isArray(gearData.cameras) ? gearData.cameras : [];
+      // Transform to equipment-like structure for display
+      const equipmentWithStats = cameras.map((cam, idx) => ({
+        id: idx + 1,
+        name: cam.name,
+        brand: cam.name.split(' ')[0] || '',
+        model: cam.name.split(' ').slice(1).join(' ') || '',
+        photo_count: cam.count || 0,
+        type: 'camera'
+      }));
+      setTopEquipment(equipmentWithStats.slice(0, 4));
 
       // Process stats
       const statsData = statsRes.data || {};
       setStats({
         favorites: favorites.length,
         themes: themes.length,
-        equipment: equipment.length,
-        inventory: statsData.inventory_count || 0,
+        equipment: cameras.length,
+        inventory: statsData.inventory_in_stock || statsData.inventory_total || 0,
         rolls: statsData.total_rolls || 0,
         photos: statsData.total_photos || 0,
       });
     } catch (error) {
       console.log('Failed to fetch library data:', error.message);
     }
-  }, []);
+  }, [baseUrl]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (baseUrl) {
+      fetchData();
+    }
+  }, [baseUrl, fetchData]);
 
   // Pull-to-refresh
   const onRefresh = useCallback(async () => {
@@ -162,33 +209,38 @@ export default function LibraryScreen() {
     },
     statsGrid: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
-      marginHorizontal: -6,
+      justifyContent: 'space-between',
+      paddingHorizontal: 0,
     },
     statCard: {
-      width: (width - 44) / 3,
-      margin: 6,
+      flex: 1,
+      marginHorizontal: 4,
       backgroundColor: theme.colors.surface,
       borderRadius: 16,
-      padding: 16,
+      padding: 12,
       alignItems: 'center',
+      elevation: 1,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.1,
+      shadowRadius: 2,
     },
     statIconContainer: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
+      width: 40,
+      height: 40,
+      borderRadius: 20,
       backgroundColor: theme.colors.primaryContainer,
       justifyContent: 'center',
       alignItems: 'center',
-      marginBottom: 8,
+      marginBottom: 6,
     },
     statValue: {
-      fontSize: 20,
+      fontSize: 18,
       fontWeight: 'bold',
       color: theme.colors.onSurface,
     },
     statLabel: {
-      fontSize: 12,
+      fontSize: 11,
       color: theme.colors.onSurfaceVariant,
       marginTop: 2,
     },
@@ -221,6 +273,43 @@ export default function LibraryScreen() {
       fontSize: 12,
       color: theme.colors.onSurfaceVariant,
       marginTop: 2,
+    },
+    // Favorite card with overlay
+    favoriteCard: {
+      width: CARD_WIDTH,
+      margin: 8,
+      borderRadius: 12,
+      overflow: 'hidden',
+      position: 'relative',
+    },
+    favoriteCardImage: {
+      width: '100%',
+      height: 140,
+      backgroundColor: theme.colors.surfaceVariant,
+    },
+    favoriteCardOverlay: {
+      position: 'absolute',
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      paddingHorizontal: 10,
+      paddingVertical: 8,
+      minHeight: 36,
+    },
+    favoriteCardNote: {
+      fontSize: 13,
+      fontWeight: '500',
+      color: '#FFFFFF',
+      marginBottom: 4,
+    },
+    favoriteCardMeta: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+    },
+    favoriteCardMetaText: {
+      fontSize: 11,
+      color: 'rgba(255, 255, 255, 0.8)',
     },
     themesGrid: {
       flexDirection: 'row',
@@ -379,20 +468,40 @@ export default function LibraryScreen() {
               {recentFavorites.map((photo) => (
                 <TouchableOpacity
                   key={photo.id}
-                  style={styles.quickCard}
+                  style={styles.favoriteCard}
                   onPress={() => navigation.navigate('PhotoView', { photoId: photo.id })}
                 >
-                  <Image
-                    source={{ uri: photo.thumbnail_url }}
-                    style={styles.quickCardImage}
-                  />
-                  <View style={styles.quickCardContent}>
-                    <Text style={styles.quickCardTitle} numberOfLines={1}>
-                      {photo.filename || 'Photo'}
-                    </Text>
-                    <Text style={styles.quickCardSubtitle} numberOfLines={1}>
-                      {photo.roll_name || 'Unknown Roll'}
-                    </Text>
+                  {photo.thumbnail_url ? (
+                    <Image
+                      source={{ uri: photo.thumbnail_url }}
+                      style={styles.favoriteCardImage}
+                      resizeMode="cover"
+                      onError={(e) => console.log('[LibraryScreen] Image load error:', photo.id, e.nativeEvent.error)}
+                    />
+                  ) : (
+                    <View style={[styles.favoriteCardImage, { justifyContent: 'center', alignItems: 'center', backgroundColor: theme.colors.surfaceVariant }]}>
+                      <Icon name="image" size={32} color={theme.colors.onSurfaceVariant} />
+                    </View>
+                  )}
+                  {/* Semi-transparent overlay with photo info */}
+                  <View style={styles.favoriteCardOverlay}>
+                    {photo.caption ? (
+                      <Text style={styles.favoriteCardNote} numberOfLines={2}>
+                        {photo.caption}
+                      </Text>
+                    ) : null}
+                    <View style={styles.favoriteCardMeta}>
+                      {photo.date_taken || photo.taken_at ? (
+                        <Text style={styles.favoriteCardMetaText} numberOfLines={1}>
+                          {new Date(photo.date_taken || photo.taken_at).toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}
+                        </Text>
+                      ) : null}
+                      {(photo.camera || photo.film_name) ? (
+                        <Text style={styles.favoriteCardMetaText} numberOfLines={1}>
+                          {photo.camera || photo.film_name}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
                 </TouchableOpacity>
               ))}
@@ -431,7 +540,7 @@ export default function LibraryScreen() {
                     style={styles.themeIcon}
                   />
                   <Text style={styles.themeName}>{tag.name}</Text>
-                  <Text style={styles.themeCount}>{tag.count || 0}</Text>
+                  <Text style={styles.themeCount}>{tag.photos_count || tag.photo_count || 0}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -453,18 +562,19 @@ export default function LibraryScreen() {
           
           {topEquipment.length > 0 ? (
             <View>
-              {topEquipment.map((item) => (
+              {topEquipment.map((item, index) => (
                 <TouchableOpacity
-                  key={item.id}
+                  key={item.id || index}
                   style={styles.equipmentRow}
-                  onPress={() => navigation.navigate('EquipmentRolls', { 
-                    id: item.id, 
-                    name: item.name 
+                  onPress={() => navigation.navigate('EquipmentRolls', {
+                    type: 'camera',
+                    id: item.name, // Use camera name since stats/gear doesn't return equip_id
+                    name: item.name
                   })}
                 >
                   <View style={styles.equipmentIcon}>
                     <Icon 
-                      name={item.type === 'camera' ? 'camera' : 'aperture'} 
+                      name="camera" 
                       size={20} 
                       color={theme.colors.secondary} 
                     />
@@ -472,7 +582,7 @@ export default function LibraryScreen() {
                   <View style={styles.equipmentInfo}>
                     <Text style={styles.equipmentName}>{item.name}</Text>
                     <Text style={styles.equipmentMeta}>
-                      {item.roll_count || 0} rolls • {item.type || 'Camera'}
+                      {item.photo_count || 0} photos
                     </Text>
                   </View>
                   <Icon name="chevron-right" size={20} color={theme.colors.onSurfaceVariant} />
@@ -502,7 +612,7 @@ export default function LibraryScreen() {
               </View>
               <View style={styles.quickCardContent}>
                 <Text style={styles.quickCardTitle}>Inventory</Text>
-                <Text style={styles.quickCardSubtitle}>{stats.inventory} items</Text>
+                <Text style={styles.quickCardSubtitle}>{stats.inventory} in stock</Text>
               </View>
             </TouchableOpacity>
             

@@ -9,6 +9,8 @@ router.get('/summary', async (req, res) => {
       SELECT 
         (SELECT COUNT(*) FROM rolls) as total_rolls,
         (SELECT COUNT(*) FROM photos WHERE roll_id IN (SELECT id FROM rolls)) as total_photos,
+        (SELECT COUNT(*) FROM film_items WHERE deleted_at IS NULL AND status = 'in_stock') as inventory_in_stock,
+        (SELECT COUNT(*) FROM film_items WHERE deleted_at IS NULL) as inventory_total,
         (
           -- Inventory Purchase
           (SELECT COALESCE(SUM(purchase_price + COALESCE(purchase_shipping_share, 0)), 0) FROM film_items WHERE deleted_at IS NULL)

@@ -75,10 +75,11 @@ export default function QuickMeterSheet({ visible, onClose }) {
     setError('');
     try {
       const [itemsRes, filmsRes] = await Promise.all([
-        getFilmItems({ status: 'loaded' }),
+        getFilmItems({ status: 'loaded', limit: 50 }),
         getFilms(),
       ]);
       const items = itemsRes && Array.isArray(itemsRes.items) ? itemsRes.items : [];
+      console.log('[QuickMeter] Loaded film items:', items.length, items.map(i => ({ id: i.id, status: i.status, film_id: i.film_id })));
       setLoadedFilmItems(items);
       setFilms(Array.isArray(filmsRes) ? filmsRes : []);
     } catch (e) {
@@ -135,12 +136,13 @@ export default function QuickMeterSheet({ visible, onClose }) {
       backgroundColor: theme.colors.surface,
       borderTopLeftRadius: 24,
       borderTopRightRadius: 24,
-      maxHeight: height * 0.7,
+      maxHeight: height * 0.85,
+      minHeight: height * 0.4,
       shadowColor: '#000',
       shadowOffset: { width: 0, height: -4 },
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
-      elevation: 10,
+      shadowOpacity: 0.25,
+      shadowRadius: 12,
+      elevation: 12,
     },
     handle: {
       width: 40,

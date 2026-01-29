@@ -224,6 +224,30 @@ router.get('/random', async (req, res) => {
   }
 });
 
+// Get single photo by ID
+router.get('/single/:id', async (req, res) => {
+  const { id } = req.params;
+  console.log('[GET] /api/photos/single/' + id);
+  try {
+    const sql = `
+      SELECT p.*, COALESCE(f.name, r.film_type) AS film_name, r.title AS roll_title
+      FROM photos p
+      JOIN rolls r ON r.id = p.roll_id
+      LEFT JOIN films f ON f.id = r.filmId
+      WHERE p.id = ?
+    `;
+    const photo = await getAsync(sql, [id]);
+    if (!photo) {
+      return res.status(404).json({ error: 'Photo not found' });
+    }
+    const withTags = await attachTagsToPhotos([photo]);
+    res.json(withTags[0]);
+  } catch (err) {
+    console.error('[GET] Photo by ID error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get liked photos
 router.get('/favorites', async (req, res) => {
   console.log('[GET] /api/photos/favorites');

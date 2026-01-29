@@ -1,10 +1,12 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl } from 'react-native';
-import { Card, Title, Paragraph, ActivityIndicator, Text, useTheme, IconButton } from 'react-native-paper';
+import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { View, FlatList, StyleSheet, RefreshControl, Animated, TouchableOpacity } from 'react-native';
+import { Card, Title, Paragraph, ActivityIndicator, Text, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import CachedImage from '../components/CachedImage';
 import CoverOverlay from '../components/CoverOverlay';
 import { colors, spacing, radius } from '../theme';
 import { ApiContext } from '../context/ApiContext';
+import { Icon } from '../components/ui';
 import axios from 'axios';
 import { format } from 'date-fns';
 
@@ -42,10 +44,19 @@ export default function FilmRollsScreen({ route, navigation }) {
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <IconButton icon="refresh" onPress={async () => { const { clearImageCache } = await import('../components/CachedImage'); await clearImageCache(); fetchRolls(); }} />
+        <TouchableOpacity 
+          style={{ marginRight: 16, padding: 4 }}
+          onPress={async () => { 
+            const { clearImageCache } = await import('../components/CachedImage'); 
+            await clearImageCache(); 
+            fetchRolls(); 
+          }}
+        >
+          <Icon name="refresh-cw" size={20} color={theme.colors.primary} />
+        </TouchableOpacity>
       )
     });
-  }, [navigation, baseUrl, filmId]);
+  }, [navigation, baseUrl, filmId, theme]);
 
   const renderItem = ({ item }) => {
     let coverUrl = null;

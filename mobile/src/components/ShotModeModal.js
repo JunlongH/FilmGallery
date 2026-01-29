@@ -11,13 +11,14 @@ import {
   View, StyleSheet, Modal, TouchableOpacity, Alert, Platform, 
   FlatList, TouchableWithoutFeedback, useWindowDimensions, ScrollView
 } from 'react-native';
-import { Text, Button, ActivityIndicator, IconButton, Surface } from 'react-native-paper';
+import { Text, Button, ActivityIndicator, Surface } from 'react-native-paper';
 import Slider from '@react-native-community/slider';
 import { 
   Camera, useCameraDevice, useCameraFormat, useCameraPermission 
 } from 'react-native-vision-camera';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Icon } from './ui';
 
 // Native location service (bypasses Expo for HyperOS compatibility)
 import locationService from '../services/locationService.native';
@@ -660,13 +661,19 @@ export default function ShotModeModal({ visible, onClose, onUse, filmIso = 400, 
 
           {/* Top bar */}
           <View style={[styles.topBar, { top: Math.max(20, insets.top + 10) }]}>
-            <IconButton 
-              icon="close" 
-              iconColor="white" 
-              size={28} 
+            <TouchableOpacity 
               onPress={onClose} 
-              style={{ backgroundColor: 'rgba(0,0,0,0.3)' }} 
-            />
+              style={{ 
+                backgroundColor: 'rgba(0,0,0,0.3)', 
+                width: 44, 
+                height: 44, 
+                borderRadius: 22, 
+                justifyContent: 'center', 
+                alignItems: 'center' 
+              }}
+            >
+              <Icon name="x" size={24} color="white" />
+            </TouchableOpacity>
             <TouchableOpacity 
               style={styles.locationBadge}
               onPress={() => setShowDiagPanel(!showDiagPanel)}

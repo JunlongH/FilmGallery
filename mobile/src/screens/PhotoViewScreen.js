@@ -1,7 +1,8 @@
-import React, { useContext, useState } from 'react';
-import { View, StyleSheet, Dimensions, ActivityIndicator, Platform } from 'react-native';
+import React, { useContext, useState, useEffect } from 'react';
+import { View, StyleSheet, Dimensions, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
 import { ApiContext } from '../context/ApiContext';
-import { IconButton, Chip, Text, Snackbar } from 'react-native-paper';
+import { Chip, Text, Snackbar } from 'react-native-paper';
+import { Icon } from '../components/ui';
 // Removed direct legacy FileSystem usage (downloadAsync deprecated).
 // Use unified helper built on new File/Directory API.
 import { downloadImageAsync } from '../utils/fileSystem';
@@ -18,15 +19,52 @@ import { getPhotoUrl } from '../utils/urls';
 const { width, height } = Dimensions.get('window');
 
 export default function PhotoViewScreen({ route, navigation }) {
-  const { photo: initialPhoto, rollId, viewMode: initialViewMode = 'positive', photos = [], initialIndex = 0 } = route.params;
+  const { photo: initialPhoto, photoId, rollId, viewMode: initialViewMode = 'positive', photos = [], initialIndex = 0 } = route.params || {};
   const { baseUrl } = useContext(ApiContext);
-  const [photo, setPhoto] = useState(initialPhoto);
+  const [photo, setPhoto] = useState(initialPhoto || null);
+  const [loading, setLoading] = useState(!initialPhoto && !!photoId);
   const [index, setIndex] = useState(initialIndex);
   const [viewMode, setViewMode] = useState(initialViewMode);
   const [tagModalVisible, setTagModalVisible] = useState(false);
   const [noteModalVisible, setNoteModalVisible] = useState(false);
   const [snack, setSnack] = useState({ visible:false, msg:'' });
   const [downloading, setDownloading] = useState(false);
+
+  // Fetch photo data if only photoId was provided
+  useEffect(() => {
+    if (!initialPhoto && photoId && baseUrl) {
+      setLoading(true);
+      axios.get(`${baseUrl}/api/photos/single/${photoId}`)
+        .then(res => {
+          setPhoto(res.data);
+        })
+        .catch(err => {
+          console.error('Failed to fetch photo:', err.message);
+          setSnack({ visible: true, msg: 'Failed to load photo' });
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [initialPhoto, photoId, baseUrl]);
+
+  // Show loading if fetching photo
+  if (loading) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 16, color: colors.textSecondary }}>Loading photo...</Text>
+      </View>
+    );
+  }
+
+  // Show error if no photo
+  if (!photo) {
+    return (
+      <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <Icon name="alert" size={48} color={colors.error} />
+        <Text style={{ marginTop: 16, color: colors.textSecondary }}>Photo not found</Text>
+      </View>
+    );
+  }
 
   const fullUrl = getPhotoUrl(baseUrl, photo, viewMode === 'negative' ? 'negative' : 'full');
 
@@ -132,7 +170,7 @@ export default function PhotoViewScreen({ route, navigation }) {
   const renderFooter = (currentIndex) => (
     <View style={styles.footerContainer} pointerEvents="box-none">
       {/* Note Overlay */}
-      {photo.caption ? (
+      {photo?.caption ? (
         <View style={styles.noteOverlayBg}>
           <View style={styles.noteOverlayInner}>
             <Text style={styles.noteText}>{photo.caption}</Text>
@@ -141,7 +179,7 @@ export default function PhotoViewScreen({ route, navigation }) {
       ) : null}
 
       {/* Tags Overlay */}
-      {photo.tags && photo.tags.length > 0 ? (
+      {photo?.tags && photo.tags.length > 0 ? (
         <View style={styles.tagsOverlayBg}>
           <View style={styles.tagsOverlayInner}>
             {photo.tags.map((t, i) => (
@@ -187,53 +225,56 @@ export default function PhotoViewScreen({ route, navigation }) {
       {/* Controls Layer - Absolute positioned on top of viewer */}
       <View style={styles.controlsLayer} pointerEvents="box-none">
         {anyNegatives && (
-          <IconButton
-            icon={viewMode === 'negative' ? 'invert-colors' : 'invert-colors-off'}
-            iconColor="#fff"
-            size={28}
+          <TouchableOpacity
             style={styles.modeBtn}
             onPress={() => setViewMode(prev => (prev === 'negative' ? 'positive' : 'negative'))}
-          />
+          >
+            <Icon 
+              name={viewMode === 'negative' ? 'palette' : 'contrast'} 
+              size={28} 
+              color="#fff" 
+            />
+          </TouchableOpacity>
         )}
-        <IconButton
-          icon={isLiked ? 'heart' : 'heart-outline'}
-          iconColor={isLiked ? '#ff9e9e' : '#fff'}
-          size={28}
+        <TouchableOpacity
           style={styles.likeBtn}
           onPress={toggleLike}
-        />
+        >
+          <Icon 
+            name={isLiked ? 'heart' : 'heart'} 
+            size={28} 
+            color={isLiked ? '#ff9e9e' : '#fff'} 
+            fill={isLiked ? '#ff9e9e' : 'transparent'}
+          />
+        </TouchableOpacity>
 
-        <IconButton
-          icon="note-text"
-          iconColor="#fff"
-          size={28}
+        <TouchableOpacity
           style={styles.noteBtn}
           onPress={() => setNoteModalVisible(true)}
-        />
+        >
+          <Icon name="file-text" size={28} color="#fff" />
+        </TouchableOpacity>
 
-        <IconButton
-          icon="tag-multiple"
-          iconColor="#fff"
-          size={30}
+        <TouchableOpacity
           style={styles.tagBtn}
           onPress={() => setTagModalVisible(true)}
-        />
+        >
+          <Icon name="tags" size={30} color="#fff" />
+        </TouchableOpacity>
 
-        <IconButton
-          icon={downloading ? 'progress-download' : 'download'}
-          iconColor="#fff"
-          size={30}
+        <TouchableOpacity
           style={styles.downloadBtn}
           onPress={downloadPhoto}
-        />
+        >
+          <Icon name={downloading ? 'loader' : 'download'} size={30} color="#fff" />
+        </TouchableOpacity>
 
-        <IconButton
-          icon="close"
-          iconColor="#fff"
-          size={30}
+        <TouchableOpacity
           style={styles.closeBtn}
           onPress={() => navigation.goBack()}
-        />
+        >
+          <Icon name="x" size={30} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       <TagEditModal 

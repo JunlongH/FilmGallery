@@ -122,7 +122,7 @@ export default function Badge({
           style={styles.iconLeft}
         />
       )}
-      {typeof children === 'string' ? (
+      {typeof children === 'string' || typeof children === 'number' ? (
         <Text style={textStyles}>{children}</Text>
       ) : (
         children

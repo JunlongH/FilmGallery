@@ -1,6 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { View, ScrollView, StyleSheet, Animated } from 'react-native';
 import { ActivityIndicator, Button, HelperText, Text, TextInput, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
+import { Icon } from '../components/ui';
 import DatePickerField from '../components/DatePickerField';
 import EquipmentPicker from '../components/EquipmentPicker';
 import { parseISODate, toISODateString } from '../utils/date';
@@ -21,6 +23,21 @@ export default function FilmItemDetailScreen({ route, navigation }) {
   const [actionDate, setActionDate] = useState(todayStr);
   const [loadCameraId, setLoadCameraId] = useState(null);
   const [loadCameraName, setLoadCameraName] = useState('');
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, [])
+  );
 
   useEffect(() => {
     navigation.setOptions({ title: filmName || `Film Item #${itemId}` });

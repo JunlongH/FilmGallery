@@ -26,15 +26,31 @@ const LUCIDE_ICON_MAP = {
   'map-pin': 'MapPin',
   'globe': 'Globe',
   'grid': 'LayoutGrid',
+  'layoutgrid': 'LayoutGrid',
   'menu': 'Menu',
   'settings': 'Settings',
   'search': 'Search',
   'filter': 'Filter',
+  'list': 'List',
+  'listordered': 'ListOrdered',
+  'maximize': 'Maximize',
+  'maximize2': 'Maximize2',
+  'gauge': 'Gauge',
   'x': 'X',
   'chevron-left': 'ChevronLeft',
   'chevron-right': 'ChevronRight',
   'chevron-down': 'ChevronDown',
   'chevron-up': 'ChevronUp',
+  // Added mappings for missing icons
+  'inbox': 'Inbox',
+  'bar-chart': 'BarChart3',
+  'bar-chart-2': 'BarChart2',
+  'bar-chart-3': 'BarChart3',
+  'barchart': 'BarChart3',
+  'barchart2': 'BarChart2',
+  'barchart3': 'BarChart3',
+  'refresh-cw': 'RefreshCw',
+  'refreshcw': 'RefreshCw',
   
   // Photography
   'camera': 'Camera',
@@ -57,6 +73,7 @@ const LUCIDE_ICON_MAP = {
   'upload': 'Upload',
   'edit': 'Edit3',
   'trash': 'Trash2',
+  'trash-2': 'Trash2',
   'plus': 'Plus',
   'minus': 'Minus',
   'check': 'Check',
@@ -77,6 +94,10 @@ const LUCIDE_ICON_MAP = {
   'pie-chart': 'PieChart',
   'trending-up': 'TrendingUp',
   'activity': 'Activity',
+  'contrast': 'Contrast',
+  'palette': 'Palette',
+  'file-text': 'FileText',
+  'filetext': 'FileText',
   
   // Status
   'info': 'Info',
@@ -84,6 +105,12 @@ const LUCIDE_ICON_MAP = {
   'warning': 'AlertTriangle',
   'error': 'XCircle',
   'success': 'CheckCircle',
+  'contrast': 'Contrast',
+  
+  // Documents
+  'file-text': 'FileText',
+  'filetext': 'FileText',
+  'document': 'FileText',
   
   // Misc
   'sun': 'Sun',

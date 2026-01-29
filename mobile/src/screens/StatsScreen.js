@@ -1,9 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View, Dimensions } from 'react-native';
-import { ActivityIndicator, Card, Text, useTheme, IconButton } from 'react-native-paper';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { ScrollView, StyleSheet, View, Dimensions, Animated } from 'react-native';
+import { ActivityIndicator, Card, Text, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import { BarChart, PieChart } from 'react-native-chart-kit';
 import { getStatsActivity, getStatsInventory, getStatsOverview, getStatsCosts, getStatsGear } from '../api/stats';
 import { spacing, radius } from '../theme';
+import { Icon } from '../components/ui';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -30,6 +32,21 @@ export default function StatsScreen({ navigation }) {
   const [activity, setActivity] = useState(null);
   const [costs, setCosts] = useState(null);
   const [gear, setGear] = useState(null);
+
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, [])
+  );
 
   const load = async () => {
     setLoading(true);
@@ -62,10 +79,12 @@ export default function StatsScreen({ navigation }) {
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <IconButton icon="refresh" onPress={load} />
+        <View style={{ marginRight: 8 }}>
+          <Icon name="refresh-cw" size={20} color={theme.colors.primary} onPress={load} />
+        </View>
       ),
     });
-  }, [navigation]);
+  }, [navigation, theme]);
 
   if (loading && !overview) {
     return (

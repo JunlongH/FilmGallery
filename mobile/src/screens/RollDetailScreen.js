@@ -1,9 +1,10 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity, Dimensions, ScrollView } from 'react-native';
+import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { View, FlatList, StyleSheet, TouchableOpacity, Dimensions, ScrollView, Animated } from 'react-native';
 import CachedImage from '../components/CachedImage';
 import { colors, spacing, radius } from '../theme';
-import { ActivityIndicator, Text, Surface, Divider, IconButton, useTheme, Switch } from 'react-native-paper';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { ActivityIndicator, Text, Surface, Divider, useTheme, Switch } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
+import { Icon } from '../components/ui';
 import { ApiContext } from '../context/ApiContext';
 import axios from 'axios';
 import { format } from 'date-fns';
@@ -45,13 +46,18 @@ export default function RollDetailScreen({ route, navigation }) {
   React.useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <IconButton icon="refresh" onPress={() => {
-          setLoading(true);
-          axios.get(`${baseUrl}/api/rolls/${rollId}/photos`).then(res => setPhotos(res.data)).finally(() => setLoading(false));
-        }} />
+        <TouchableOpacity 
+          style={{ marginRight: 16, padding: 4 }}
+          onPress={() => {
+            setLoading(true);
+            axios.get(`${baseUrl}/api/rolls/${rollId}/photos`).then(res => setPhotos(res.data)).finally(() => setLoading(false));
+          }}
+        >
+          <Icon name="refresh-cw" size={20} color={theme.colors.primary} />
+        </TouchableOpacity>
       )
     });
-  }, [navigation, baseUrl, rollId]);
+  }, [navigation, baseUrl, rollId, theme]);
 
   const hasNegatives = photos.some(p => p.negative_rel_path);
 
@@ -74,13 +80,17 @@ export default function RollDetailScreen({ route, navigation }) {
                         />
                     </View>
                 )}
-                <IconButton
-                icon={expanded ? 'chevron-up' : 'chevron-down'}
-                size={24}
-                onPress={() => setExpanded(prev => !prev)}
-                accessibilityLabel={expanded ? 'Collapse details' : 'Expand details'}
-                color={colors.textSecondary}
-                />
+                <TouchableOpacity
+                  style={{ padding: 8 }}
+                  onPress={() => setExpanded(prev => !prev)}
+                  accessibilityLabel={expanded ? 'Collapse details' : 'Expand details'}
+                >
+                  <Icon
+                    name={expanded ? 'chevron-up' : 'chevron-down'}
+                    size={24}
+                    color={colors.textSecondary}
+                  />
+                </TouchableOpacity>
             </View>
           </View>
 
@@ -158,7 +168,7 @@ export default function RollDetailScreen({ route, navigation }) {
         />
         {item.rating === 1 && (
           <View style={styles.favoriteBadge}>
-            <MaterialCommunityIcons name="heart" size={12} color="#fff" />
+            <Icon name="heart" size={12} color="#fff" fill="#fff" />
           </View>
         )}
       </TouchableOpacity>

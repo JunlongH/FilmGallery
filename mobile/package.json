@@ -4,6 +4,8 @@
   "main": "node_modules/expo/AppEntry.js",
   "scripts": {
     "start": "expo start",
+    "wifi": "expo start --host lan",
+    "wifi:clear": "expo start --host lan --clear",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
@@ -24,6 +26,7 @@
     "axios": "^1.6.2",
     "date-fns": "^2.30.0",
     "expo": "~54.0.25",
+    "expo-asset": "^12.0.12",
     "expo-build-properties": "^1.0.9",
     "expo-file-system": "~19.0.19",
     "expo-image": "~3.0.10",

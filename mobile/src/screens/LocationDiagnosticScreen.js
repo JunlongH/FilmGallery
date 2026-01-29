@@ -3,9 +3,11 @@
  * For debugging location issues on HyperOS/MIUI devices
  */
 
-import React, { useState } from 'react';
-import { View, ScrollView, StyleSheet } from 'react-native';
+import React, { useState, useRef, useCallback } from 'react';
+import { View, ScrollView, StyleSheet, Animated } from 'react-native';
 import { Text, Button, Card, Divider, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
+import { Icon } from '../components/ui';
 import locationService from '../services/locationService.native';
 
 export default function LocationDiagnosticScreen() {
@@ -14,6 +16,21 @@ export default function LocationDiagnosticScreen() {
   const [locationResult, setLocationResult] = useState(null);
   const [testing, setTesting] = useState(false);
   const [log, setLog] = useState([]);
+  
+  // Animation refs
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      slideAnim.setValue(20);
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
+    }, [])
+  );
   
   const runDiagnostics = async () => {
     setTesting(true);

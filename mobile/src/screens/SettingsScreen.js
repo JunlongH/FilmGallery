@@ -1,8 +1,10 @@
-import React, { useContext, useState } from 'react';
-import { View, StyleSheet, Alert, ActivityIndicator, ScrollView } from 'react-native';
+import React, { useContext, useState, useRef, useCallback } from 'react';
+import { View, StyleSheet, Alert, ActivityIndicator, ScrollView, Animated } from 'react-native';
 import { TextInput, Button, Text, Switch, useTheme, Chip, SegmentedButtons } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ApiContext } from '../context/ApiContext';
+import { Icon } from '../components/ui';
 import { 
   discoverPort, 
   discoverServices, 
@@ -24,6 +26,16 @@ export default function SettingsScreen({ navigation }) {
   const [discoveredServices, setDiscoveredServices] = useState([]);
   const [discoveryMode, setDiscoveryMode] = useState('auto');
   const [discoveryStatus, setDiscoveryStatus] = useState('');
+
+  // Animation
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  
+  useFocusEffect(
+    useCallback(() => {
+      fadeAnim.setValue(0);
+      Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+    }, [])
+  );
 
   const cleanUrlString = (input) => {
     let clean = input.trim();

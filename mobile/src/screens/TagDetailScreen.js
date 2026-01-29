@@ -1,9 +1,11 @@
-import React, { useContext, useEffect, useState } from 'react';
-import { View, FlatList, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
-import { ActivityIndicator } from 'react-native-paper';
+import React, { useContext, useEffect, useState, useRef, useCallback } from 'react';
+import { View, FlatList, StyleSheet, TouchableOpacity, Dimensions, Animated } from 'react-native';
+import { ActivityIndicator, useTheme } from 'react-native-paper';
+import { useFocusEffect } from '@react-navigation/native';
 import { ApiContext } from '../context/ApiContext';
 import axios from 'axios';
 import CachedImage from '../components/CachedImage';
+import { Icon } from '../components/ui';
 
 const numColumns = 3;
 const screenWidth = Dimensions.get('window').width;

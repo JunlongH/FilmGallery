@@ -103,26 +103,34 @@ export const getEquipmentSuggestions = async () => {
  * Get rolls that use a specific piece of equipment.
  * For fixed-lens cameras (type='camera'), this also matches rolls with the camera's implicit lens.
  * @param {string} type - 'camera' | 'lens' | 'flash' | 'film'
- * @param {number} id - Equipment ID
+ * @param {number|string} idOrName - Equipment ID or name (for cameras without ID)
  * @returns {Promise<Array>} List of rolls with display_camera and display_lens fields
  */
-export const getRollsByEquipment = async (type, id) => {
+export const getRollsByEquipment = async (type, idOrName) => {
   // Use the rolls endpoint with appropriate filter
   let param;
   switch (type) {
     case 'camera':
-      // For cameras, the server will include rolls where camera_equip_id matches
-      // display_camera and display_lens are computed dynamically
-      param = `camera_equip_id=${id}`;
+      // Support both ID (number) and name (string) filtering
+      if (typeof idOrName === 'number' && idOrName > 0) {
+        param = `camera_equip_id=${idOrName}`;
+      } else {
+        // Filter by camera name (text)
+        param = `camera=${encodeURIComponent(idOrName)}`;
+      }
       break;
     case 'lens':
-      param = `lens_equip_id=${id}`;
+      if (typeof idOrName === 'number' && idOrName > 0) {
+        param = `lens_equip_id=${idOrName}`;
+      } else {
+        param = `lens=${encodeURIComponent(idOrName)}`;
+      }
       break;
     case 'flash':
-      param = `flash_equip_id=${id}`;
+      param = `flash_equip_id=${idOrName}`;
       break;
     case 'film':
-      param = `film_id=${id}`;
+      param = `film_id=${idOrName}`;
       break;
     default:
       throw new Error(`Unknown equipment type: ${type}`);

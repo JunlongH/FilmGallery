@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Modal, Portal, Text, TextInput, Chip, Button, IconButton } from 'react-native-paper';
+import { Modal, Portal, Text, TextInput, Chip, Button } from 'react-native-paper';
 import axios from 'axios';
 import { ApiContext } from '../context/ApiContext';
+import { Icon } from './ui';
 
 export default function TagEditModal({ visible, onDismiss, photo, onSave }) {
   const { baseUrl } = useContext(ApiContext);
@@ -102,15 +103,20 @@ export default function TagEditModal({ visible, onDismiss, photo, onSave }) {
             style={[styles.input, { flex: 1 }]}
             activeOutlineColor="#5a4632"
           />
-          <IconButton 
-            icon="plus" 
-            mode="contained" 
-            containerColor="#5a4632" 
-            iconColor="#fff"
-            size={24}
+          <TouchableOpacity 
             onPress={() => addTag(input)}
-            style={{ marginLeft: 8, marginTop: 0 }}
-          />
+            style={{ 
+              marginLeft: 8, 
+              width: 40, 
+              height: 40, 
+              borderRadius: 20, 
+              backgroundColor: '#0097A7', 
+              justifyContent: 'center', 
+              alignItems: 'center' 
+            }}
+          >
+            <Icon name="plus" size={20} color="#fff" />
+          </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitle}>Choose from existing</Text>
