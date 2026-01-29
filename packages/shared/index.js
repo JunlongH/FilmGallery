@@ -21,6 +21,9 @@ const helpers = require('./filmLabHelpers');
 const sourcePathResolver = require('./sourcePathResolver');
 const rawUtils = require('./rawUtils');
 
+// GLSL 着色器模块 (Phase 3)
+const shaders = require('./shaders');
+
 // 统一导出
 module.exports = {
   // ============================================================================
@@ -352,4 +355,20 @@ module.exports = {
   
   /** 检查是否需要服务器解码 */
   requiresServerDecode: rawUtils.requiresServerDecode,
+  
+  // ============================================================================
+  // GLSL 着色器库 (Phase 3)
+  // ============================================================================
+  
+  /** 完整着色器模块 */
+  shaders,
+  
+  /** 构建片元着色器 */
+  buildFragmentShader: shaders.buildFragmentShader,
+  
+  /** 顶点着色器 */
+  VERTEX_SHADER: shaders.VERTEX_SHADER,
+  
+  /** 着色器版本 */
+  SHADER_VERSION: shaders.SHADER_VERSION,
 };
