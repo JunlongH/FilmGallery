@@ -436,6 +436,37 @@ export default function RollDetail() {
               <button className="primary-btn" style={{ background: multiSelect ? '#1d4ed8' : '#334155' }} onClick={() => { setMultiSelect(!multiSelect); if (!multiSelect) setSelectedPhotos([]); }}>
                 {multiSelect ? 'Multi-Select: ON' : 'Multi-Select'}
               </button>
+              {multiSelect && (
+                <>
+                  <button 
+                    className="primary-btn" 
+                    style={{ background: '#475569' }} 
+                    onClick={() => setSelectedPhotos([...photos])}
+                    title="Select All"
+                  >
+                    Select All
+                  </button>
+                  <button 
+                    className="primary-btn" 
+                    style={{ background: '#475569' }} 
+                    onClick={() => setSelectedPhotos([])}
+                    title="Deselect All"
+                  >
+                    Deselect All
+                  </button>
+                  <button 
+                    className="primary-btn" 
+                    style={{ background: '#475569' }} 
+                    onClick={() => {
+                      const selectedIds = new Set(selectedPhotos.map(p => p.id));
+                      setSelectedPhotos(photos.filter(p => !selectedIds.has(p.id)));
+                    }}
+                    title="Invert Selection"
+                  >
+                    Invert
+                  </button>
+                </>
+              )}
               {multiSelect && selectedPhotos.length > 0 && (
                 <button className="primary-btn" style={{ background:'#2563eb' }} onClick={() => setShowBatchSidebar(true)}>Edit Selected ({selectedPhotos.length})</button>
               )}
