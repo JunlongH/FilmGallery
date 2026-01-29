@@ -32,6 +32,88 @@ function toGrayscale(data, width, height, channels = 4) {
 }
 
 /**
+ * 增强型灰度转换 - 对彩色边框更敏感
+ * 
+ * 彩色负片的边框通常是亮青色/蓝色（片基颜色），
+ * 标准灰度转换可能会降低边框与画面的对比度。
+ * 此函数使用多种灰度转换策略并选择对比度最高的结果。
+ * 
+ * @param {Uint8Array|Uint8ClampedArray} data - 图像像素数据
+ * @param {number} width - 图像宽度
+ * @param {number} height - 图像高度
+ * @param {number} channels - 通道数 (3=RGB, 4=RGBA)
+ * @returns {Float32Array} 灰度图像数据 (0-255)
+ */
+function toGrayscaleEnhanced(data, width, height, channels = 4) {
+  const size = width * height;
+  
+  // 策略1: 标准 BT.601
+  const gray1 = new Float32Array(size);
+  // 策略2: 最大通道 (对彩色边框更敏感)
+  const gray2 = new Float32Array(size);
+  // 策略3: 饱和度增强 (色彩饱和区域会更亮)
+  const gray3 = new Float32Array(size);
+  
+  for (let i = 0; i < size; i++) {
+    const idx = i * channels;
+    const r = data[idx];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    
+    // 策略1: 标准灰度
+    gray1[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    
+    // 策略2: 最大通道值
+    gray2[i] = Math.max(r, g, b);
+    
+    // 策略3: 饱和度增强
+    // 高饱和度区域（如蓝色边框）会更亮
+    const maxC = Math.max(r, g, b);
+    const minC = Math.min(r, g, b);
+    const saturation = maxC > 0 ? (maxC - minC) / maxC : 0;
+    gray3[i] = gray1[i] + saturation * 50; // 增加饱和度贡献
+  }
+  
+  // 计算每种策略的边缘对比度
+  const contrast1 = computeEdgeContrast(gray1, width, height);
+  const contrast2 = computeEdgeContrast(gray2, width, height);
+  const contrast3 = computeEdgeContrast(gray3, width, height);
+  
+  // 选择对比度最高的策略
+  if (contrast2 > contrast1 && contrast2 > contrast3) {
+    return gray2;
+  } else if (contrast3 > contrast1) {
+    return gray3;
+  }
+  return gray1;
+}
+
+/**
+ * 计算边缘对比度 - 用于选择最佳灰度转换策略
+ * 
+ * @param {Float32Array} gray - 灰度图像
+ * @param {number} width - 宽度
+ * @param {number} height - 高度
+ * @returns {number} 边缘对比度分数
+ */
+function computeEdgeContrast(gray, width, height) {
+  let edgeSum = 0;
+  const step = 4; // 采样步长以提高速度
+  
+  for (let y = 1; y < height - 1; y += step) {
+    for (let x = 1; x < width - 1; x += step) {
+      const idx = y * width + x;
+      // Sobel 近似
+      const gx = Math.abs(gray[idx + 1] - gray[idx - 1]);
+      const gy = Math.abs(gray[idx + width] - gray[idx - width]);
+      edgeSum += gx + gy;
+    }
+  }
+  
+  return edgeSum;
+}
+
+/**
  * 1D 高斯核
  * 
  * @param {number} sigma - 标准差
@@ -300,6 +382,8 @@ function pointToLineDistance(point, line) {
 
 module.exports = {
   toGrayscale,
+  toGrayscaleEnhanced,
+  computeEdgeContrast,
   createGaussianKernel,
   gaussianBlur,
   convolve3x3,

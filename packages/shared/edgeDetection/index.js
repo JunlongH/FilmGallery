@@ -9,7 +9,7 @@
 const cannyEdge = require('./cannyEdge');
 const houghTransform = require('./houghTransform');
 const rectangleFinder = require('./rectangleFinder');
-const { gaussianBlur, toGrayscale, normalizeRect } = require('./utils');
+const { gaussianBlur, toGrayscale, toGrayscaleEnhanced, normalizeRect } = require('./utils');
 
 /**
  * 边缘检测配置选项
@@ -88,8 +88,9 @@ function detectEdges(imageData, options = {}) {
   
   const { data, width, height, channels } = imageData;
   
-  // 1. 转换为灰度图
-  const grayscale = toGrayscale(data, width, height, channels);
+  // 1. 转换为灰度图 - 使用增强版本以更好地检测彩色边框
+  // 彩色负片的边框通常是亮青色/蓝色，标准灰度转换可能降低对比度
+  const grayscale = toGrayscaleEnhanced(data, width, height, channels);
   
   // 2. 高斯模糊降噪
   const blurred = gaussianBlur(grayscale, width, height, 1.4);
@@ -99,10 +100,13 @@ function detectEdges(imageData, options = {}) {
   const edges = cannyEdge.detect(blurred, width, height, thresholds.low, thresholds.high);
   
   // 4. Hough 变换检测直线
-  const houghThreshold = Math.round(Math.min(width, height) * 0.15); // 动态阈值
+  // 降低阈值以检测更多直线（尤其是彩色边框可能产生较弱的边缘）
+  // 原来是 0.15，改为 0.10，并根据灵敏度进一步调整
+  const sensitivityFactor = 1 - (opts.sensitivity / 100) * 0.5; // 0.5 ~ 1.0
+  const houghThreshold = Math.round(Math.min(width, height) * 0.10 * sensitivityFactor);
   const lines = houghTransform.detect(edges, width, height, houghThreshold);
   
-  console.log(`🔍 Edge detection: Found ${lines.length} lines (threshold: ${houghThreshold})`);
+  console.log(`🔍 Edge detection: Found ${lines.length} lines (threshold: ${houghThreshold}, sensitivity: ${opts.sensitivity})`);
   
   // 5. 从直线中找到最佳矩形
   const aspectRatioRange = getExpectedAspectRatio(opts.filmFormat);
