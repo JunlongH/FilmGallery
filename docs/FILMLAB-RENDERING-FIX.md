@@ -18,14 +18,15 @@
 
 ## 2. Refactoring Plan
 
-### Phase 1: Immediate Fix - Histogram Area (Target: v1.9.x)
+### Phase 1: Immediate Fix - Histogram Area (Target: v1.9.x) ✅ COMPLETED
 **Goal**: Make the histogram update correctly during crop dragging.
 
-1.  **Modify `FilmLab.jsx`**:
-    -   Locate the histogram calculation loop (CPU side).
-    -   Introduce `scanArea` logic: If `isCropping` is true, calculate the pixel bounds `[x1, y1, x2, y2]` based on `cropRect` and `canvas.width/height`.
+1.  **Modify `FilmLab.jsx`**: ✅ Done
+    -   Located the histogram calculation loop (CPU side, lines ~1126-1160).
+    -   Introduced `scanArea` logic with `scanStartX`, `scanStartY`, `scanEndX`, `scanEndY`.
+    -   When `isCropping` is true, map `cropRect` (normalized 0-1) to pixel bounds.
     -   Restrict the histogram sampling loop to these bounds.
-    -   **Note**: This effectively simulates "What if we only saw the crop" without needing a separate render pass.
+    -   **Result**: Histogram now reflects only the cropped area during crop dragging.
 
 ### Phase 2: Unified Geometry & Performance (Target: v2.0)
 **Goal**: Align Client renderer with Server efficiency. Remove 2D Canvas pre-processing.
@@ -80,7 +81,7 @@ The user suspects RAW decoding is part of the problem.
 
 ## 4. Execution Steps
 
-1.  **Apply Phase 1** (Histogram Loop Fix) immediately.
+1.  **Apply Phase 1** (Histogram Loop Fix) ✅ COMPLETED 2026-01-29
 2.  **Verify** cropping behavior on RAWs.
 3.  **Start Phase 2** (Refactor `FilmLabWebGL.js`) in a parallel branch.
 

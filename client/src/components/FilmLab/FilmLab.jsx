@@ -1135,13 +1135,32 @@ export default function FilmLab({
     const width = canvas.width;
     const height = canvas.height;
 
+    // ========================================================================
+    // Histogram Scan Area Calculation
+    // ========================================================================
+    // When cropping, the canvas shows the FULL rotated image, but the histogram
+    // should only reflect the CROPPED area to give accurate feedback.
+    // We calculate the scan bounds based on the current cropRect.
+    // ========================================================================
+    let scanStartX = 0, scanStartY = 0;
+    let scanEndX = width, scanEndY = height;
+    
+    if (isCropping && cropRect && webglSuccess) {
+        // Map normalized cropRect (0-1) to canvas pixel coordinates
+        // cropRect is in "rotated image space", and canvas is showing the full rotated image
+        scanStartX = Math.max(0, Math.floor(cropRect.x * width));
+        scanStartY = Math.max(0, Math.floor(cropRect.y * height));
+        scanEndX = Math.min(width, Math.floor((cropRect.x + cropRect.w) * width));
+        scanEndY = Math.min(height, Math.floor((cropRect.y + cropRect.h) * height));
+    }
+
     // Optimization: Split paths for WebGL vs CPU to avoid checks inside the loop
     if (webglSuccess) {
         // WebGL Path: Image is already drawn. We only need histograms.
         // If rotating, skip histograms entirely to maintain 60fps.
         if (!isRotating && data) {
-             for (let y = 0; y < height; y += stride) {
-                for (let x = 0; x < width; x += stride) {
+             for (let y = scanStartY; y < scanEndY; y += stride) {
+                for (let x = scanStartX; x < scanEndX; x += stride) {
                     const idx = (y * width + x) * 4;
                     // Skip transparent pixels
                     if (data[idx + 3] === 0) continue;
