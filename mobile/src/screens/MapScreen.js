@@ -26,11 +26,11 @@ import {
   Platform,
 } from 'react-native';
 import { useTheme } from 'react-native-paper';
-import MapView, { Marker, UrlTile } from 'react-native-maps';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
 import { Icon, Badge } from '../components/ui';
 import { ApiContext } from '../context/ApiContext';
+import LeafletMap from '../components/map/LeafletMap';
 
 const { width, height } = Dimensions.get('window');
 
@@ -104,7 +104,7 @@ export default function MapScreen() {
             ...p,
             latitude: parseFloat(p.latitude),
             longitude: parseFloat(p.longitude),
-            thumbnail_url: thumbnailUrl,
+            thumbnailUrl: thumbnailUrl,
             // Generate location name from available fields
             location_name: p.detail_location || p.city || p.country || null,
           };
@@ -197,35 +197,15 @@ export default function MapScreen() {
       // Single photo - show details
       handleMarkerPress(cluster.representative);
     } else {
-      // Multiple photos - zoom in to expand the cluster
-      // Calculate zoom level needed to show individual markers
-      const currentDelta = mapRegion?.latitudeDelta || 1;
-      let newDelta;
-      
-      if (currentDelta > 2) {
-        newDelta = 0.5; // Very zoomed out -> zoom to region level
-      } else if (currentDelta > 0.5) {
-        newDelta = 0.1; // Region level -> zoom to city level
-      } else if (currentDelta > 0.1) {
-        newDelta = 0.02; // City level -> zoom to neighborhood
-      } else if (currentDelta > 0.02) {
-        newDelta = 0.005; // Neighborhood -> zoom to street level
-      } else {
-        // Already very zoomed in, show first photo
-        handleMarkerPress(cluster.representative);
-        return;
-      }
-      
-      if (mapRef.current) {
-        mapRef.current.animateToRegion({
-          latitude: cluster.latitude,
-          longitude: cluster.longitude,
-          latitudeDelta: newDelta,
-          longitudeDelta: newDelta,
-        }, 400);
-      }
+       // Set region to center on cluster
+      setMapRegion({
+        latitude: cluster.latitude,
+        longitude: cluster.longitude,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      });
     }
-  }, [handleMarkerPress, mapRegion?.latitudeDelta]);
+  }, [handleMarkerPress]);
 
   // Dynamic clustering based on zoom level
   const clusters = useMemo(() => {
@@ -595,82 +575,12 @@ export default function MapScreen() {
 
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
+      <LeafletMap 
+        photos={photos}
         region={mapRegion}
-        onRegionChangeComplete={setMapRegion}
-        mapType={Platform.OS === 'android' ? 'none' : 'standard'}
-        showsUserLocation
-        showsMyLocationButton={false}
-        onPress={() => selectedPhoto && closeSelectedCard()}
-        onMapReady={() => console.log('[MapScreen] Map ready')}
-        liteMode={false}
-      >
-        {/* Amap (高德) Tile Layer - works better in China */}
-        <UrlTile
-          urlTemplate="https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}"
-          maximumZ={19}
-          minimumZ={1}
-          flipY={false}
-          zIndex={-1}
-          tileSize={256}
-        />
-        {/* Photo markers/clusters */}
-        {clusters.map((cluster) => (
-          <Marker
-            key={cluster.id}
-            coordinate={{
-              latitude: cluster.latitude,
-              longitude: cluster.longitude,
-            }}
-            onPress={() => handleClusterPress(cluster)}
-          >
-            <View style={styles.markerContainer}>
-              {cluster.count === 1 ? (
-                // Single photo - large thumbnail
-                <View style={styles.singleMarker}>
-                  {cluster.representative.thumbnail_url ? (
-                    <Image
-                      source={{ uri: cluster.representative.thumbnail_url }}
-                      style={styles.markerImage}
-                      resizeMode="cover"
-                    />
-                  ) : (
-                    <View style={[styles.markerImage, { backgroundColor: theme.colors.surfaceVariant, justifyContent: 'center', alignItems: 'center' }]}>
-                      <Icon name="image" size={24} color={theme.colors.onSurfaceVariant} />
-                    </View>
-                  )}
-                </View>
-              ) : (
-                // Multiple photos - mosaic layout (2x2 grid)
-                <View style={styles.mosaicMarker}>
-                  {cluster.photos.slice(0, 4).map((photo, idx) => (
-                    <Image
-                      key={photo.id || idx}
-                      source={{ uri: photo.thumbnail_url }}
-                      style={styles.mosaicImage}
-                      resizeMode="cover"
-                    />
-                  ))}
-                  {/* Fill empty slots if less than 4 photos */}
-                  {cluster.photos.length < 4 && Array(4 - cluster.photos.length).fill(null).map((_, idx) => (
-                    <View 
-                      key={`empty-${idx}`} 
-                      style={[styles.mosaicImage, { backgroundColor: theme.colors.surfaceVariant }]} 
-                    />
-                  ))}
-                </View>
-              )}
-              {cluster.count > 1 && (
-                <View style={styles.clusterBadge}>
-                  <Text style={styles.clusterBadgeText}>{cluster.count}</Text>
-                </View>
-              )}
-            </View>
-          </Marker>
-        ))}
-      </MapView>
+        onMarkerPress={handleMarkerPress}
+        onMapReady={() => console.log('Leaflet Map Ready')}
+      />
 
       {/* Stats overlay */}
       <View style={styles.statsContainer}>
@@ -725,9 +635,9 @@ export default function MapScreen() {
             activeOpacity={0.9}
             style={{ flexDirection: 'row', flex: 1 }}
           >
-            {selectedPhoto.thumbnail_url && (
+            {selectedPhoto.thumbnailUrl && (
               <Image
-                source={{ uri: selectedPhoto.thumbnail_url }}
+                source={{ uri: selectedPhoto.thumbnailUrl }}
                 style={styles.selectedImage}
               />
             )}
@@ -780,7 +690,7 @@ export default function MapScreen() {
                 }}
               >
                 <Image
-                  source={{ uri: item.representative.thumbnail_url }}
+                  source={{ uri: item.representative.thumbnailUrl }}
                   style={styles.listItemImage}
                 />
                 <View style={styles.listItemInfo}>
