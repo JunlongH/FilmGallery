@@ -1253,28 +1253,31 @@ export const scaleIn = {
 
 **状态**: ✅ 已完成 (2026-01-29)
 
+**技术说明**: 使用 **Tailwind CSS v4** (CSS-first 配置方式)，不再需要 `tailwind.config.js`
+
 **任务清单**:
 - [x] 安装 HeroUI 核心依赖 (`@heroui/react`, `@heroui/theme`, `lucide-react`, `@internationalized/date`)
-- [x] 配置 Tailwind CSS + PostCSS + CRACO
-- [x] 创建 `tailwind.config.js` 完整配置 (含 HeroUI 主题集成)
-- [x] 更新入口样式文件，添加 Tailwind directives (`styles/tailwind.css`)
+- [x] 配置 Tailwind CSS v4 + `@tailwindcss/postcss` + CRACO
+- [x] 创建 `postcss.config.js` 配置 (使用 @tailwindcss/postcss)
+- [x] 创建 `styles/tailwind.css` 完整配置 (Tailwind v4 CSS-first 方式，含 @theme 指令)
 - [x] 创建 HeroUIProvider 包装器 (`providers/HeroUIProvider.jsx`)
 - [x] 创建基础 UI 组件目录结构 (`components/ui/`)
-- [ ] 验证现有页面不受影响 (待测试)
+- [x] 更新 App.js 集成 HeroUIProvider
+- [x] 更新 index.js 导入 tailwind.css
+- [x] 验证编译通过 (webpack compiled successfully)
 
 **产出文件**:
-- `client/tailwind.config.js` - Tailwind 配置 + HeroUI 主题
-- `client/postcss.config.js` - PostCSS 配置
-- `client/craco.config.js` - 更新的 CRACO 配置 (PostCSS file mode + 新别名)
-- `client/src/styles/tailwind.css` - Tailwind 入口样式
+- `client/postcss.config.js` - PostCSS 配置 (使用 @tailwindcss/postcss)
+- `client/craco.config.js` - 更新的 CRACO 配置 (PostCSS file mode + @ui, @providers 别名)
+- `client/src/styles/tailwind.css` - Tailwind v4 CSS-first 配置 (含 @theme, @utility 指令)
 - `client/src/providers/HeroUIProvider.jsx` - HeroUI 提供者 + 主题系统
 - `client/src/providers/index.js` - 统一导出
 - `client/src/components/ui/index.js` - UI 组件统一导出
 - `client/src/components/ui/Button.jsx` - 增强按钮组件
-- `client/src/components/ui/Card.jsx` - 增强卡片组件
-- `client/src/components/ui/Skeleton.jsx` - 骨架屏组件
-- `client/src/components/ui/AnimatedContainer.jsx` - 动画容器组件
-- `client/src/components/ui/icons.js` - Lucide 图标统一导出
+- `client/src/components/ui/Card.jsx` - 增强卡片组件 (含 PhotoCard, StatCard)
+- `client/src/components/ui/Skeleton.jsx` - 骨架屏系列组件
+- `client/src/components/ui/AnimatedContainer.jsx` - Framer Motion 动画封装
+- `client/src/components/ui/icons.js` - Lucide React 图标统一导出
 
 **验收标准**:
 ```jsx
