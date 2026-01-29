@@ -2,6 +2,7 @@
  * Edge Detection Service
  * 
  * 服务端边缘检测服务，使用 Sharp 进行图像预处理
+ * 支持 RAW 文件格式（通过 raw-decoder 解码）
  * 
  * @module server/services/edge-detection-service
  */
@@ -10,6 +11,7 @@ const sharp = require('sharp');
 const path = require('path');
 const fs = require('fs').promises;
 const edgeDetection = require('../../packages/shared/edgeDetection');
+const rawDecoder = require('./raw-decoder');
 
 /**
  * 边缘检测服务类
@@ -62,7 +64,9 @@ class EdgeDetectionService {
             ...result.debugInfo,
             totalTimeMs: Date.now() - startTime,
             originalSize: imageData.originalSize,
-            processedSize: { width: imageData.width, height: imageData.height }
+            processedSize: { width: imageData.width, height: imageData.height },
+            isRaw: imageData.isRaw || false,
+            rawDecodeTimeMs: imageData.rawDecodeTime || 0
           }
         }
       };
@@ -106,23 +110,49 @@ class EdgeDetectionService {
 
   /**
    * 预处理图像：读取、缩放、转换为灰度
+   * 支持 RAW 文件格式（CR2, NEF, ARW 等）
    * 
    * @param {string} imagePath - 图像路径
    * @param {number} maxWidth - 最大宽度
-   * @returns {Promise<Object>} { data, width, height, channels, originalSize }
+   * @returns {Promise<Object>} { data, width, height, channels, originalSize, isRaw }
    */
   async preprocessImage(imagePath, maxWidth = 1200) {
-    // 读取原始图像元数据
-    const metadata = await sharp(imagePath).metadata();
+    let input = imagePath;
+    let isRaw = false;
+    let rawDecodeTime = 0;
+
+    // RAW 格式特殊处理：使用 raw-decoder 解码
+    if (rawDecoder.isRawFile(imagePath)) {
+      isRaw = true;
+      const decodeStart = Date.now();
+      
+      try {
+        // 使用 halfSize 快速解码，减少内存和时间
+        // outputFormat: 'jpeg' 兼容性最好，sharp 可直接读取
+        const buffer = await rawDecoder.decode(imagePath, { 
+          outputFormat: 'jpeg',
+          halfSize: true 
+        });
+        input = buffer;
+        rawDecodeTime = Date.now() - decodeStart;
+        console.log(`[EdgeDetection] RAW decode: ${path.basename(imagePath)} took ${rawDecodeTime}ms`);
+      } catch (error) {
+        console.error(`[EdgeDetection] RAW decode failed for ${path.basename(imagePath)}:`, error.message);
+        throw new Error(`RAW decode failed: ${error.message}`);
+      }
+    }
+
+    // 读取图像元数据 (input 可能是路径字符串，也可能是 Buffer)
+    const metadata = await sharp(input).metadata();
     const originalSize = { width: metadata.width, height: metadata.height };
 
-    // 计算缩放比例
+    // 计算缩放比例 (基于解码后的尺寸)
     const scale = metadata.width > maxWidth ? maxWidth / metadata.width : 1;
     const newWidth = Math.round(metadata.width * scale);
     const newHeight = Math.round(metadata.height * scale);
 
-    // 缩放并转换为 RGB
-    const { data, info } = await sharp(imagePath)
+    // 缩放并转换为 RGB (使用 input，可能是路径或 Buffer)
+    const { data, info } = await sharp(input)
       .resize(newWidth, newHeight, { fit: 'inside' })
       .removeAlpha()
       .raw()
@@ -133,7 +163,9 @@ class EdgeDetectionService {
       width: info.width,
       height: info.height,
       channels: info.channels,
-      originalSize
+      originalSize,
+      isRaw,
+      rawDecodeTime
     };
   }
 
@@ -156,6 +188,7 @@ class EdgeDetectionService {
 
   /**
    * 应用边缘检测结果到图像 (裁剪和旋转)
+   * 支持 RAW 文件格式
    * 
    * @param {string} inputPath - 输入图像路径
    * @param {string} outputPath - 输出图像路径
@@ -164,10 +197,29 @@ class EdgeDetectionService {
    * @returns {Promise<Object>} 处理结果
    */
   async applyDetectionResult(inputPath, outputPath, cropRect, rotation = 0) {
-    const metadata = await sharp(inputPath).metadata();
+    let input = inputPath;
+    
+    // RAW 文件需要先解码
+    if (rawDecoder.isRawFile(inputPath)) {
+      try {
+        // 对于应用裁剪结果，不使用 halfSize 以保持质量
+        const buffer = await rawDecoder.decode(inputPath, { 
+          outputFormat: 'jpeg',
+          quality: 95,
+          halfSize: false  // 保持全分辨率
+        });
+        input = buffer;
+        console.log(`[EdgeDetection] RAW decoded for apply: ${path.basename(inputPath)}`);
+      } catch (error) {
+        console.error(`[EdgeDetection] RAW decode failed for apply: ${error.message}`);
+        throw new Error(`RAW decode failed: ${error.message}`);
+      }
+    }
+    
+    const metadata = await sharp(input).metadata();
     const pixelRect = this.denormalizeRect(cropRect, metadata.width, metadata.height);
 
-    let pipeline = sharp(inputPath);
+    let pipeline = sharp(input);
 
     // 先旋转
     if (Math.abs(rotation) > 0.1) {
