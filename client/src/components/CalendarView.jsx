@@ -1,51 +1,58 @@
 import React, { useState } from 'react';
-import PhotoCalendar from './PhotoCalendar';
-import TimelineView from './TimelineView';
+import { Tabs, Tab } from '@heroui/react';
+import { Calendar, Clock } from 'lucide-react';
+import { LifeLogView } from './LifeLog';
+import { TimelineView } from './Timeline';
 
+/**
+ * CalendarView - Main view for Timeline and Life Log (Photo Calendar)
+ * Uses HeroUI Tabs for modern, accessible tab switching
+ */
 export default function CalendarView() {
-  const [viewMode, setViewMode] = useState('timeline'); // 'calendar' | 'timeline'
+  const [viewMode, setViewMode] = useState('timeline');
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '30px 20px 10px', display: 'flex', alignItems: 'center', gap: '20px' }}>
-        <div style={{ display: 'flex', background: 'var(--color-bg-alt)', padding: '4px', borderRadius: '8px', border: '1px solid var(--color-border)' }}>
-          <button 
-            onClick={() => setViewMode('timeline')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              background: viewMode === 'timeline' ? 'var(--color-primary)' : 'transparent',
-              color: viewMode === 'timeline' ? 'white' : 'var(--color-text-muted)',
-              fontWeight: 500,
-              cursor: 'pointer',
-              fontSize: '14px',
-              transition: 'all 0.2s'
-            }}
-          >
-            Timeline
-          </button>
-          <button 
-            onClick={() => setViewMode('calendar')}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '6px',
-              border: 'none',
-              background: viewMode === 'calendar' ? 'var(--color-primary)' : 'transparent',
-              color: viewMode === 'calendar' ? 'white' : 'var(--color-text-muted)',
-              fontWeight: 500,
-              cursor: 'pointer',
-              fontSize: '14px',
-              transition: 'all 0.2s'
-            }}
-          >
-            Life Log
-          </button>
-        </div>
+    <div className="h-full flex flex-col">
+      {/* Header with Tab Switcher */}
+      <div className="px-6 pt-8 pb-4">
+        <Tabs 
+          selectedKey={viewMode}
+          onSelectionChange={setViewMode}
+          variant="solid"
+          color="primary"
+          size="md"
+          classNames={{
+            base: "w-fit",
+            tabList: "gap-2 bg-default-100 p-1 rounded-lg",
+            cursor: "bg-primary shadow-sm",
+            tab: "px-4 py-2 data-[selected=true]:text-primary-foreground",
+            tabContent: "group-data-[selected=true]:text-primary-foreground font-medium"
+          }}
+        >
+          <Tab 
+            key="timeline" 
+            title={
+              <div className="flex items-center gap-2">
+                <Clock size={16} />
+                <span>Timeline</span>
+              </div>
+            }
+          />
+          <Tab 
+            key="calendar" 
+            title={
+              <div className="flex items-center gap-2">
+                <Calendar size={16} />
+                <span>Life Log</span>
+              </div>
+            }
+          />
+        </Tabs>
       </div>
       
-      <div style={{ flex: 1, overflow: 'auto' }}>
-        {viewMode === 'calendar' ? <PhotoCalendar /> : <TimelineView />}
+      {/* Content Area */}
+      <div className="flex-1 overflow-auto">
+        {viewMode === 'calendar' ? <LifeLogView /> : <TimelineView />}
       </div>
     </div>
   );

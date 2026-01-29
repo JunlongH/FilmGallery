@@ -1237,13 +1237,13 @@ export const scaleIn = {
 
 ### 📍 里程碑概览
 
-| 阶段 | 时间 | 核心目标 | 关键产出 |
-|-----|------|---------|---------|
-| **Phase 0** | Week 1 | 基础设施搭建 | Tailwind + HeroUI 配置完成 |
-| **Phase 1** | Week 2-3 | 核心页面改造 | Timeline + Life Log + Sidebar |
-| **Phase 2** | Week 4-5 | 主要功能改造 | Overview + RollDetail |
-| **Phase 3** | Week 6-7 | 剩余页面改造 | FilmLibrary + Settings + Statistics |
-| **Phase 4** | Week 8 | 优化与收尾 | 深色模式 + 动画 + 测试 |
+| 阶段 | 时间 | 核心目标 | 关键产出 | 状态 |
+|-----|------|---------|---------|------|
+| **Phase 0** | Week 1 | 基础设施搭建 | Tailwind v4 + HeroUI 配置完成 | ✅ 完成 |
+| **Phase 1** | Week 2-3 | 核心页面改造 | Timeline + Life Log + Sidebar | ✅ 完成 |
+| **Phase 2** | Week 4-5 | 主要功能改造 | Overview + RollDetail | 🔲 待开始 |
+| **Phase 3** | Week 6-7 | 剩余页面改造 | FilmLibrary + Settings + Statistics | 🔲 待开始 |
+| **Phase 4** | Week 8 | 优化与收尾 | 深色模式 + 动画 + 测试 | 🔲 待开始 |
 
 ---
 
@@ -1293,40 +1293,70 @@ import { Button } from "@heroui/button";
 
 **目标**: 改造用户最常用的 Timeline、Life Log 和全局 Sidebar
 
+**状态**: ✅ 已完成 (2026-01-29)
+
 #### Week 2: Sidebar + CalendarView 切换器
 
-- [ ] **Sidebar 现代化**
-  - [ ] 使用 HeroUI Listbox 替换导航列表
-  - [ ] 添加 Avatar 组件显示应用图标
-  - [ ] 添加 Tooltip 显示快捷键
-  - [ ] 添加 Divider 分隔区域
-  - [ ] 实现折叠/展开动画 (Framer Motion)
+- [x] **Sidebar 现代化** ✅
+  - [x] 创建模块化 Sidebar 组件 (`components/Sidebar/`)
+  - [x] SidebarContext 管理折叠状态 (localStorage 持久化)
+  - [x] SidebarItem 使用 HeroUI Button + Tooltip
+  - [x] SidebarSection 使用 HeroUI Divider
+  - [x] 添加 Avatar 组件显示应用图标
+  - [x] 添加主题切换 (日/夜模式)
+  - [x] 实现折叠/展开动画 (Framer Motion)
+  - [x] 使用 Lucide React 图标库
   
-- [ ] **CalendarView 切换器**
-  - [ ] 使用 HeroUI Tabs 替换自定义按钮
-  - [ ] 添加切换动画
+- [x] **CalendarView 切换器** ✅
+  - [x] 使用 HeroUI Tabs 替换自定义按钮
+  - [x] 添加 Timeline / Life Log 切换图标
+  - [x] 添加切换动画
 
 #### Week 3: Timeline + PhotoCalendar
 
-- [ ] **TimelineView 重构**
-  - [ ] 创建 `components/Timeline/` 目录
-  - [ ] 使用 Accordion 实现年份折叠
-  - [ ] 使用 Card 实现月份网格
-  - [ ] 添加 Chip 显示统计数据
-  - [ ] 添加 Progress 显示月度对比
-  - [ ] 实现 stagger 动画效果
+- [x] **TimelineView 重构** ✅
+  - [x] 创建 `components/Timeline/` 目录结构
+  - [x] TimelineContext 管理状态 (年月选择、rolls 数据、颜色调色板)
+  - [x] TimelineFilters 使用 HeroUI Button + Chip 实现年月过滤
+  - [x] TimelineMonthGrid 使用 Card 实现月份时间线视图
+  - [x] TimelineCalendarGrid 实现日历网格视图
+  - [x] TimelineRollGrid 使用 Card 实现照片卡片网格
+  - [x] 添加 stagger 动画效果 (Framer Motion)
 
-- [ ] **PhotoCalendar (Life Log) 重构**
-  - [ ] 集成 HeroUI Calendar 组件
-  - [ ] 自定义 CalendarCell 显示照片缩略图
-  - [ ] 使用 Badge 显示照片数量
-  - [ ] 使用 Modal 显示选中日期的照片
-  - [ ] 添加 "This Day in History" 功能
+- [x] **PhotoCalendar (Life Log) 重构** ✅
+  - [x] 创建 `components/LifeLog/` 目录结构
+  - [x] LifeLogContext 管理状态 (日期导航、照片数据、封面偏好)
+  - [x] LifeLogMonthGrid 实现月份日历网格
+  - [x] LifeLogYearGrid 使用 Card 实现年度总览
+  - [x] LifeLogDayModal 使用 HeroUI Modal 显示当日照片
+  - [x] 支持月视图/年视图切换
+  - [x] 添加封面照片切换功能
+
+**产出文件**:
+- `client/src/components/Sidebar/index.js` - 模块导出
+- `client/src/components/Sidebar/SidebarContext.jsx` - 状态管理
+- `client/src/components/Sidebar/SidebarItem.jsx` - 导航项组件
+- `client/src/components/Sidebar/SidebarSection.jsx` - 分组组件
+- `client/src/components/Sidebar/Sidebar.jsx` - 主组件
+- `client/src/components/Timeline/index.js` - 模块导出
+- `client/src/components/Timeline/TimelineContext.jsx` - 状态管理
+- `client/src/components/Timeline/TimelineFilters.jsx` - 年月过滤器
+- `client/src/components/Timeline/TimelineMonthGrid.jsx` - 月份时间线
+- `client/src/components/Timeline/TimelineCalendarGrid.jsx` - 日历网格
+- `client/src/components/Timeline/TimelineRollGrid.jsx` - 照片卡片网格
+- `client/src/components/Timeline/TimelineView.jsx` - 主视图
+- `client/src/components/LifeLog/index.js` - 模块导出
+- `client/src/components/LifeLog/LifeLogContext.jsx` - 状态管理
+- `client/src/components/LifeLog/LifeLogMonthGrid.jsx` - 月份日历
+- `client/src/components/LifeLog/LifeLogYearGrid.jsx` - 年度总览
+- `client/src/components/LifeLog/LifeLogDayModal.jsx` - 日期详情弹窗
+- `client/src/components/LifeLog/LifeLogView.jsx` - 主视图
+- `client/src/components/CalendarView.jsx` - 更新使用新组件
 
 **产出**:
-- 全新 Timeline 视图
-- 全新 Life Log 视图
-- 现代化 Sidebar
+- 全新 Timeline 视图 (模块化、HeroUI组件)
+- 全新 Life Log 视图 (模块化、HeroUI组件)
+- 现代化 Sidebar (HeroUI + Framer Motion)
 - 流畅动画效果
 
 ---
