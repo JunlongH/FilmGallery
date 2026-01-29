@@ -5,7 +5,7 @@
  * 此模块检测服务器能力并智能路由请求。
  */
 
-import { API_BASE, getApiBase } from '../api';
+import { getApiBase } from '../api';
 
 // 缓存服务器能力
 let serverCapabilities = null;

@@ -2,7 +2,7 @@
  * LUT (Look-Up Table) API
  */
 
-import { API_BASE, getApiBase } from './core';
+import { getApiBase } from './core';
 
 /**
  * Get LUT list

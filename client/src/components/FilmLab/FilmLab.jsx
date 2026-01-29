@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { setRollPreset, listPresets, createPreset, updatePreset, deletePreset as deletePresetApi, getFilmCurveProfiles } from '../../api';
-import { smartFilmlabPreview, smartRenderPositive, smartExportPositive, processAndUpload, isHybridMode, isComputeAvailable } from '../../services';
+import { smartFilmlabPreview, smartRenderPositive, smartExportPositive } from '../../services';
 import { getCurveLUT, parseCubeLUT, getMaxSafeRect, getPresetRatio, getExifOrientation } from './utils';
 import FilmLabControls from './FilmLabControls';
 import FilmLabCanvas from './FilmLabCanvas';
@@ -18,22 +18,9 @@ import {
   DEFAULT_SPLIT_TONE_PARAMS,
   getEffectiveInverted,
   buildCombinedLUT,
-  // RAW 文件工具
   isRawFile,
   requiresServerDecode,
-  // packLUT3DForWebGL - used in FilmLabWebGL.js, not here
 } from '@filmgallery/shared';
-
-// ============================================================================
-// Configuration Constants (imported from shared module)
-// ============================================================================
-
-// PREVIEW_MAX_WIDTH_SERVER, PREVIEW_MAX_WIDTH_CLIENT, EXPORT_MAX_WIDTH
-// are now imported from packages/shared
-
-// Calculate the maximum inscribed rectangle (no black corners) after rotation
-
-// buildCombinedLUT 从 shared 模块导入，packLUT3DForWebGL 在 FilmLabWebGL.js 中使用
 
 export default function FilmLab({ 
   imageUrl, 
@@ -693,7 +680,7 @@ export default function FilmLab({
     // Determine the natural aspect ratio of the rotated image to guide the safe rect calculation.
     // If rotated 90/270, the "safe" area should be portrait-oriented (if original was landscape).
     // We use the rotated bounding box aspect ratio as a proxy for the "visual" aspect ratio.
-    const totalRot = rotation + orientation;
+    const totalRot = rotation + orientation + rotationOffset;
     const rad = (totalRot * Math.PI) / 180;
     const sin = Math.abs(Math.sin(rad));
     const cos = Math.abs(Math.cos(rad));
@@ -770,7 +757,7 @@ export default function FilmLab({
       
       return { x, y, w, h };
     });
-  }, [isCropping, ratioMode, ratioSwap, rotation, orientation, image]);
+  }, [isCropping, ratioMode, ratioSwap, rotation, orientation, rotationOffset, image]);
 
 
   const handleCanvasClick = (e) => {
@@ -799,7 +786,7 @@ export default function FilmLab({
     // 使用客户端预览宽度（服务器预览已移除）
     const maxWidth = PREVIEW_MAX_WIDTH_CLIENT;
     const scale = Math.min(1, maxWidth / image.width);
-    const totalRotation = rotation + orientation;
+    const totalRotation = rotation + orientation + rotationOffset;
     const rad = (totalRotation * Math.PI) / 180;
     const sin = Math.abs(Math.sin(rad));
     const cos = Math.abs(Math.cos(rad));
@@ -1038,7 +1025,7 @@ export default function FilmLab({
               }
               
               // Pass rotation and crop parameters to WebGL for correct geometry
-              const totalRotation = rotation + orientation;
+              const totalRotation = rotation + orientation + rotationOffset;
               const cropRect = isCropping ? null : committedCrop;
               
               // Get Film Curve profile parameters
@@ -1272,7 +1259,7 @@ export default function FilmLab({
 
     const maxWidth = 1200;
     const scale = Math.min(1, maxWidth / image.width);
-    const totalRotation = rotation + orientation;
+    const totalRotation = rotation + orientation + rotationOffset;
     const rad = (totalRotation * Math.PI) / 180;
     const sin = Math.abs(Math.sin(rad));
     const cos = Math.abs(Math.cos(rad));
@@ -1536,7 +1523,7 @@ export default function FilmLab({
     // High-res rotate first
     const maxSaveWidth = EXPORT_MAX_WIDTH;
     const scale = Math.min(1, maxSaveWidth / image.width);
-    const totalRotation = rotation + orientation;
+    const totalRotation = rotation + orientation + rotationOffset;
     const rad = (totalRotation * Math.PI) / 180;
 
     const sin = Math.abs(Math.sin(rad));
@@ -1896,7 +1883,7 @@ export default function FilmLab({
         // Apply rotation + crop on CPU from GPU result
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
-        const totalRotation = rotation + orientation;
+        const totalRotation = rotation + orientation + rotationOffset;
         const rad = (totalRotation * Math.PI) / 180;
         const sin = Math.abs(Math.sin(rad));
         const cos = Math.abs(Math.cos(rad));
@@ -1937,7 +1924,7 @@ export default function FilmLab({
     const maxSaveWidth = 4000; 
     const scale = Math.min(1, maxSaveWidth / image.width);
     
-    const totalRotation = rotation + orientation;
+    const totalRotation = rotation + orientation + rotationOffset;
     const rad = (totalRotation * Math.PI) / 180;
     const sin = Math.abs(Math.sin(rad));
     const cos = Math.abs(Math.cos(rad));
@@ -2018,15 +2005,44 @@ export default function FilmLab({
     if (!image) return;
     pushToHistory();
 
-    // Create temp canvas to read raw pixels
-    const canvas = document.createElement('canvas');
-    const size = 256;
-    const scale = Math.min(1, size / image.width);
-    canvas.width = Math.round(image.width * scale);
-    canvas.height = Math.round(image.height * scale);
+    // Calculate rotation and crop geometry
+    const totalRotation = (rotation || 0) + (orientation || 0) + (rotationOffset || 0);
+    const rad = (totalRotation * Math.PI) / 180;
+    const sin = Math.abs(Math.sin(rad));
+    const cos = Math.abs(Math.cos(rad));
     
+    // Use a reasonable size for analysis
+    const analysisSize = 256;
+    const scale = Math.min(1, analysisSize / Math.max(image.width, image.height));
+    const scaledW = image.width * scale;
+    const scaledH = image.height * scale;
+    const rotatedW = Math.round(scaledW * cos + scaledH * sin);
+    const rotatedH = Math.round(scaledW * sin + scaledH * cos);
+
+    // Create rotated canvas
+    const rotCanvas = document.createElement('canvas');
+    rotCanvas.width = rotatedW;
+    rotCanvas.height = rotatedH;
+    const rotCtx = rotCanvas.getContext('2d');
+    rotCtx.save();
+    rotCtx.translate(rotatedW / 2, rotatedH / 2);
+    rotCtx.rotate(rad);
+    rotCtx.drawImage(image, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
+    rotCtx.restore();
+    
+    // Apply crop - use committedCrop for confirmed crop area
+    const crop = committedCrop || { x: 0, y: 0, w: 1, h: 1 };
+    const cropX = Math.round(crop.x * rotCanvas.width);
+    const cropY = Math.round(crop.y * rotCanvas.height);
+    const cropW = Math.max(1, Math.round(crop.w * rotCanvas.width));
+    const cropH = Math.max(1, Math.round(crop.h * rotCanvas.height));
+
+    // Create final cropped canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = cropW;
+    canvas.height = cropH;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(rotCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
     
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
@@ -2104,20 +2120,50 @@ export default function FilmLab({
   /**
    * 计算密度域直方图并自动检测色阶范围
    * 在 Base Correction 之后、Inversion 之前的密度域进行
+   * 注意：必须考虑裁剪区域，只分析裁剪后的图像
    */
   const handleDensityAutoLevels = () => {
     if (!image) return;
     pushToHistory();
 
-    // Create temp canvas to read raw pixels
-    const canvas = document.createElement('canvas');
-    const size = 512; // Higher resolution for better accuracy
-    const scale = Math.min(1, size / image.width);
-    canvas.width = Math.round(image.width * scale);
-    canvas.height = Math.round(image.height * scale);
+    // Calculate rotation and crop geometry
+    const totalRotation = (rotation || 0) + (orientation || 0) + (rotationOffset || 0);
+    const rad = (totalRotation * Math.PI) / 180;
+    const sin = Math.abs(Math.sin(rad));
+    const cos = Math.abs(Math.cos(rad));
     
+    // Use a reasonable size for analysis
+    const analysisSize = 512;
+    const scale = Math.min(1, analysisSize / Math.max(image.width, image.height));
+    const scaledW = image.width * scale;
+    const scaledH = image.height * scale;
+    const rotatedW = Math.round(scaledW * cos + scaledH * sin);
+    const rotatedH = Math.round(scaledW * sin + scaledH * cos);
+
+    // Create rotated canvas
+    const rotCanvas = document.createElement('canvas');
+    rotCanvas.width = rotatedW;
+    rotCanvas.height = rotatedH;
+    const rotCtx = rotCanvas.getContext('2d');
+    rotCtx.save();
+    rotCtx.translate(rotatedW / 2, rotatedH / 2);
+    rotCtx.rotate(rad);
+    rotCtx.drawImage(image, -scaledW / 2, -scaledH / 2, scaledW, scaledH);
+    rotCtx.restore();
+    
+    // Apply crop - use committedCrop for confirmed crop area
+    const crop = committedCrop || { x: 0, y: 0, w: 1, h: 1 };
+    const cropX = Math.round(crop.x * rotCanvas.width);
+    const cropY = Math.round(crop.y * rotCanvas.height);
+    const cropW = Math.max(1, Math.round(crop.w * rotCanvas.width));
+    const cropH = Math.max(1, Math.round(crop.h * rotCanvas.height));
+
+    // Create final cropped canvas
+    const canvas = document.createElement('canvas');
+    canvas.width = cropW;
+    canvas.height = cropH;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(rotCanvas, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
     
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imageData.data;
@@ -2167,6 +2213,7 @@ export default function FilmLab({
     }
 
     // Find density levels (0.5% threshold)
+    // This detects the [Dmin, Dmax] range for each channel independently
     const findDensityRange = (hist) => {
       const total = hist.reduce((a, b) => a + b, 0);
       const threshold = 0.005; // 0.5%
@@ -2191,10 +2238,14 @@ export default function FilmLab({
         }
       }
 
-      // Ensure valid range
+      // Ensure valid range (at least 0.1 density units)
       if (max <= min) {
         max = min + 0.1;
       }
+
+      // Add small safety margin to avoid edge clipping
+      min = Math.max(0, min - 0.02);
+      max = Math.min(3.0, max + 0.02);
 
       return { min: Math.round(min * 100) / 100, max: Math.round(max * 100) / 100 };
     };

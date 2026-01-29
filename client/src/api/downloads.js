@@ -2,7 +2,7 @@
  * Batch Download & Import API
  */
 
-import { API_BASE, getApiBase, jsonFetch, postJson } from './core';
+import { getApiBase, jsonFetch, postJson } from './core';
 
 // ========================================
 // BATCH DOWNLOAD

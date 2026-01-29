@@ -2,7 +2,7 @@
  * Films API - Film stock and film item management
  */
 
-import { API_BASE, getApiBase, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
+import { getApiBase, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
 
 // ========================================
 // FILM STOCKS
@@ -133,17 +133,17 @@ export async function exportShotLogsCsv(id) {
 // ========================================
 
 export async function getFilmCurveProfiles() {
-  return jsonFetch('/api/filmlab/film-curves');
+  return jsonFetch('/api/presets/film-curves');
 }
 
 export async function createFilmCurveProfile({ name, gamma, dMin, dMax, category = 'custom' }) {
-  return postJson('/api/filmlab/film-curves', { name, gamma, dMin, dMax, category });
+  return postJson('/api/presets/film-curves', { name, gamma, dMin, dMax, category });
 }
 
 export async function updateFilmCurveProfile(id, { name, gamma, dMin, dMax, category }) {
-  return putJson(`/api/filmlab/film-curves/${id}`, { name, gamma, dMin, dMax, category });
+  return putJson(`/api/presets/film-curves/${id}`, { name, gamma, dMin, dMax, category });
 }
 
 export async function deleteFilmCurveProfile(id) {
-  return deleteRequest(`/api/filmlab/film-curves/${id}`);
+  return deleteRequest(`/api/presets/film-curves/${id}`);
 }

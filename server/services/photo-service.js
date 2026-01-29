@@ -164,7 +164,7 @@ async function insertPhoto(photoData) {
     positive_thumb_rel_path, negative_thumb_rel_path,
     is_negative_source, caption, taken_at, rating,
     camera, lens, photographer,
-    source_make, source_model, source_software
+    source_make, source_model, source_software, source_lens
   } = photoData;
   
   const sql = `INSERT INTO photos (
@@ -174,8 +174,8 @@ async function insertPhoto(photoData) {
     positive_thumb_rel_path, negative_thumb_rel_path,
     is_negative_source, caption, taken_at, rating,
     camera, lens, photographer,
-    source_make, source_model, source_software
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+    source_make, source_model, source_software, source_lens
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
   
   const result = await runAsync(sql, [
     roll_id, frame_number, filename,
@@ -184,7 +184,7 @@ async function insertPhoto(photoData) {
     positive_thumb_rel_path, negative_thumb_rel_path,
     is_negative_source || 0, caption, taken_at, rating,
     camera, lens, photographer,
-    source_make, source_model, source_software
+    source_make, source_model, source_software, source_lens
   ]);
   
   return { id: result?.lastID };

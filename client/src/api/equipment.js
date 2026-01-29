@@ -2,7 +2,7 @@
  * Equipment API - Cameras, Lenses, Flashes, Scanners, Film Backs
  */
 
-import { API_BASE, getApiBase, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
+import { getApiBase, jsonFetch, postJson, putJson, deleteRequest, buildQueryString } from './core';
 
 // ========================================
 // CONSTANTS & SUGGESTIONS

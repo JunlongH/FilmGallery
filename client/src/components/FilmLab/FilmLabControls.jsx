@@ -946,10 +946,11 @@ export default function FilmLabControls({
                    console.log('🎯 Updating cropRect from', cropRect, 'to', result.cropRect);
                    setCropRect(result.cropRect);
                  }
-                 // 应用旋转角度
+                 // 应用旋转角度 - 注意：边缘检测的旋转是相对于原始图像的绝对角度，
+                 // 不是增量，所以应该替换而不是累加
                  if (result && Math.abs(result.rotation) > 0.1) {
-                   console.log('🔄 Applying rotation:', result.rotation);
-                   setRotation(prev => prev + result.rotation);
+                   console.log('🔄 Setting rotation to:', result.rotation, '(replacing, not adding)');
+                   setRotation(result.rotation);
                  }
                  // 回调父组件
                  if (onAutoEdgeDetection) {

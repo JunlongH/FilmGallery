@@ -654,24 +654,34 @@ vec3 applySplitTone(vec3 color, float highlightHue, float highlightSat,
 
     const minT = 0.001;
     const log10 = Math.log(10);
-    const targetRange = 2.2; // 输出密度范围，匹配 8 位动态范围 (~2.4)
+
+    // 计算三个通道的输入范围
+    const rangeR = levels.red.max - levels.red.min;
+    const rangeG = levels.green.max - levels.green.min;
+    const rangeB = levels.blue.max - levels.blue.min;
+    
+    // 使用平均范围作为输出范围，保持整体对比度
+    let avgRange = (rangeR + rangeG + rangeB) / 3;
+    avgRange = Math.max(0.5, Math.min(2.5, avgRange)); // 限制在合理范围内
 
     // 处理每个通道
-    // 将检测到的 [Dmin, Dmax] 映射到标准输出范围 [0, targetRange]
-    const processChannel = (value, channelLevels) => {
+    // 将每个通道的 [Dmin, Dmax] 归一化到共同的输出范围 [0, avgRange]
+    // 这"拉平"了 RGB 通道，补偿：
+    // 1. 彩色负片的橙色遮罩
+    // 2. 每层染料的不同特性
+    // 3. 扫描仪/光源的色彩不平衡
+    const processChannel = (value, channelLevels, inputRange) => {
       // 转换到透射率 (0-1)
       const T = Math.max(value / 255, minT);
       
       // 转换到密度域
       const D = -Math.log(T) / log10;
       
-      // 计算输入范围
-      const range = channelLevels.max - channelLevels.min;
-      if (range <= 0.001) return value; // 避免除零
+      if (inputRange <= 0.001) return value; // 避免除零
       
-      // 归一化到 [0, 1]，然后映射到目标范围 [0, targetRange]
-      const normalized = Math.max(0, Math.min(1, (D - channelLevels.min) / range));
-      const Dnew = normalized * targetRange;
+      // 归一化到 [0, 1]，然后缩放到 avgRange
+      const normalized = Math.max(0, Math.min(1, (D - channelLevels.min) / inputRange));
+      const Dnew = normalized * avgRange;
       
       // 转回透射率
       const Tnew = Math.pow(10, -Dnew);
@@ -681,9 +691,9 @@ vec3 applySplitTone(vec3 color, float highlightHue, float highlightSat,
     };
 
     return [
-      processChannel(r, levels.red),
-      processChannel(g, levels.green),
-      processChannel(b, levels.blue)
+      processChannel(r, levels.red, rangeR),
+      processChannel(g, levels.green, rangeG),
+      processChannel(b, levels.blue, rangeB)
     ];
   }
 

@@ -2,7 +2,7 @@
  * Photos API - Photo management and processing
  */
 
-import { API_BASE, getApiBase, jsonFetch, putJson, deleteRequest, uploadWithProgress, buildQueryString } from './core';
+import { getApiBase, jsonFetch, putJson, deleteRequest, uploadWithProgress, buildQueryString } from './core';
 
 // ========================================
 // PHOTO CRUD

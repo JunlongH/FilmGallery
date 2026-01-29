@@ -283,20 +283,25 @@ async function processFileForRoll({
   // Resolve metadata
   const meta = resolveFileMetadata(fileMetadata, [file.originalName, file.tmpName, `${baseName}.jpg`]);
 
-  // Apply RAW metadata supplements
-  if (rawMetadata) {
-    if (!meta.lens && rawMetadata.lens) meta.lens = rawMetadata.lens;
-    if (!meta.aperture && rawMetadata.aperture) meta.aperture = rawMetadata.aperture;
-    if (!meta.shutter_speed && rawMetadata.shutterSpeed) meta.shutter_speed = rawMetadata.shutterSpeed;
-  }
+  // NOTE: RAW metadata (rawMetadata.camera, rawMetadata.lens, etc.) is from the
+  // digitization device (scanner or DSLR used for scanning), NOT the film camera.
+  // These should go to scanner fields, NOT to camera/lens/aperture/shutter_speed.
+  // The film camera metadata should come from:
+  // 1. User input (fileMetadata)
+  // 2. Roll defaults
+  // 3. CSV import with shot logs
 
   // Compute final metadata values
   const dateTaken = meta.date || null;
   const takenAt = dateTaken ? `${dateTaken}T12:00:00` : null;
 
+  // Film camera/lens - only from user input or roll defaults, NOT from EXIF
   const lensForPhoto = meta.lens || rollDefaults.lens || null;
-  const cameraForPhoto = rawMetadata?.camera || rollDefaults.camera || null;
+  const cameraForPhoto = rollDefaults.camera || null;  // Film camera, not digitization device
   const photographerForPhoto = rollDefaults.photographer || null;
+  
+  // Exposure data - only from user input (shot logs), NOT from EXIF
+  // EXIF aperture/shutter are from the scanning device, not the film exposure
   const apertureForPhoto = meta.aperture !== undefined && meta.aperture !== null && meta.aperture !== '' 
     ? Number(meta.aperture) : null;
   const shutterForPhoto = meta.shutter_speed || null;
@@ -322,8 +327,21 @@ async function processFileForRoll({
   const longitudeForPhoto = meta.longitude !== undefined && meta.longitude !== null && meta.longitude !== '' 
     ? Number(meta.longitude) : null;
 
-  // Scanner info (EXIF priority, fall back to roll defaults)
+  // Scanner info (EXIF priority, then RAW metadata, then roll defaults)
+  // RAW metadata provides digitization device info (camera used for scanning)
   const scanDbInfo = scannerInfo ? scanExifService.formatForDatabase(scannerInfo) : {};
+  
+  // If no scanner info from EXIF but we have RAW metadata, use that as source info
+  // This handles DSLR scanning where the camera is the digitization device
+  if (rawMetadata && !scanDbInfo.source_make) {
+    scanDbInfo.source_make = rawMetadata.make || null;
+    scanDbInfo.source_model = rawMetadata.camera || null;
+    scanDbInfo.source_software = rawMetadata.software || null;
+    // Also capture the lens used for scanning
+    if (rawMetadata.lens) {
+      scanDbInfo.source_lens = rawMetadata.lens;
+    }
+  }
 
   const photoData = {
     frameNumber,
@@ -352,7 +370,8 @@ async function processFileForRoll({
     scanBitDepth: scanDbInfo.scan_bit_depth || null,
     sourceMake: scanDbInfo.source_make || null,
     sourceModel: scanDbInfo.source_model || null,
-    sourceSoftware: scanDbInfo.source_software || null
+    sourceSoftware: scanDbInfo.source_software || null,
+    sourceLens: scanDbInfo.source_lens || null
   };
 
   return { stagedOps, stagedTempArtifacts, photoData };
@@ -484,22 +503,23 @@ async function uploadSinglePhoto({ rollId, file, options = {} }) {
   const finalLens = photoLens || rollMeta.lens || null;
   const finalPhotographer = photoPhotographer || rollMeta.photographer || null;
 
-  // RAW source info
+  // RAW source info (digitization device, not film camera)
   const sourceMake = isRawFile ? (rawMetadata?.make || null) : null;
   const sourceModel = isRawFile ? (rawMetadata?.camera || null) : null;
   const sourceSoftware = isRawFile ? (rawMetadata?.software || null) : null;
+  const sourceLens = isRawFile ? (rawMetadata?.lens || null) : null;
 
   // Insert photo
   const sql = `INSERT INTO photos (
     roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path,
     caption, taken_at, rating, camera, lens, photographer,
-    source_make, source_model, source_software
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+    source_make, source_model, source_software, source_lens
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
   const result = await runAsync(sql, [
     rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath,
     caption, taken_at, rating, finalCamera, finalLens, finalPhotographer,
-    sourceMake, sourceModel, sourceSoftware
+    sourceMake, sourceModel, sourceSoftware, sourceLens
   ]);
 
   return {

@@ -281,8 +281,8 @@ router.post('/', (req, res) => {
           camera, lens, photographer, aperture, shutter_speed, iso, focal_length,
           latitude, longitude,
           scanner_equip_id, scan_resolution, scan_software, scan_date, scan_bit_depth,
-          source_make, source_model, source_software
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+          source_make, source_model, source_software, source_lens
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         stmtToFinalize = stmt;
         
         const runInsert = (params) => new Promise((resolve, reject) => {
@@ -407,7 +407,8 @@ router.post('/', (req, res) => {
             p.scanBitDepth,
             p.sourceMake,
             p.sourceModel,
-            p.sourceSoftware
+            p.sourceSoftware,
+            p.sourceLens
           ]);
           inserted.push({
             filename: p.finalName,

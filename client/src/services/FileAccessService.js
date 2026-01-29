@@ -7,7 +7,7 @@
  * 3. 临时文件下载缓存（带 LRU 淘汰和持久化支持）
  */
 
-import { API_BASE, buildUploadUrl } from '../api';
+import { buildUploadUrl } from '../api';
 
 // ========================================
 // Phase 4.1: 增强文件缓存机制
@@ -430,7 +430,6 @@ function evictIfNeeded() {
  * 清理过期缓存
  */
 function cleanExpiredCache() {
-  const now = Date.now();
   for (const [key, entry] of fileCache.entries()) {
     if (entry.isExpired()) {
       totalCacheBytes -= entry.size;
@@ -485,7 +484,7 @@ export async function loadCacheIndex() {
   }
 }
 
-export default {
+const FileAccessService = {
   // 核心访问
   getFileUrl,
   hasLocalFileAccess,
@@ -510,3 +509,5 @@ export default {
   saveCacheIndex,
   loadCacheIndex
 };
+
+export default FileAccessService;

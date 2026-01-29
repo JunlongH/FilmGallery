@@ -18,9 +18,6 @@ export {
   DEFAULT_CROP,
 } from './useFilmLabState';
 
-// 图像加载
-export { useImageSource } from './useImageSource';
-
 // 渲染器
 export { useFilmLabRenderer } from './useFilmLabRenderer';
 

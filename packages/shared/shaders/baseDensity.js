@@ -52,47 +52,57 @@ vec3 applyBaseDensityCorrection(vec3 col) {
 }
 
 // ============================================================================
-// Density Levels (Log Domain Auto-Levels)
+// Density Levels (Log Domain Per-Channel Normalization)
 // ============================================================================
 
-// Map detected [Dmin, Dmax] to standard output range
-// targetRange = 2.2 balances 8-bit output capability (~2.4) with typical film range
+// Normalize each channel's [Dmin, Dmax] to a common output range.
+// This "flattens" the RGB channels, compensating for:
+// 1. Orange mask in color negative film
+// 2. Different dye characteristics per layer
+// 3. Scanner/light source color imbalance
+//
+// The output range is set to the average of the three input ranges,
+// which preserves overall contrast while normalizing channel balance.
 //
 vec3 applyDensityLevels(vec3 col) {
   if (u_densityLevelsEnabled == 0) return col;
   
   float minT = 0.001;
   float log10 = log(10.0);
-  float targetRange = 2.2; // Output density range (matches 8-bit dynamic range)
+  
+  // Calculate average range across channels for output scaling
+  float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+  float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+  float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+  float avgRange = (rangeR + rangeG + rangeB) / 3.0;
+  // Clamp average range to reasonable bounds
+  avgRange = max(avgRange, 0.5);  // Minimum 0.5 to avoid extreme compression
+  avgRange = min(avgRange, 2.5);  // Maximum 2.5 to avoid extreme expansion
   
   // Red channel
   float Tr = max(col.r, minT);
   float Dr = -log(Tr) / log10;
-  float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
   if (rangeR > 0.001) {
-    // Map [Dmin, Dmax] -> [0, targetRange]
     float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
-    float DrNew = normR * targetRange;
+    float DrNew = normR * avgRange;
     col.r = pow(10.0, -DrNew);
   }
   
   // Green channel
   float Tg = max(col.g, minT);
   float Dg = -log(Tg) / log10;
-  float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
   if (rangeG > 0.001) {
     float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
-    float DgNew = normG * targetRange;
+    float DgNew = normG * avgRange;
     col.g = pow(10.0, -DgNew);
   }
   
   // Blue channel
   float Tb = max(col.b, minT);
   float Db = -log(Tb) / log10;
-  float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
   if (rangeB > 0.001) {
     float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
-    float DbNew = normB * targetRange;
+    float DbNew = normB * avgRange;
     col.b = pow(10.0, -DbNew);
   }
   

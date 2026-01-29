@@ -420,6 +420,7 @@ function runEquipmentMigration() {
       await safeAddColumn('photos', 'source_make', 'TEXT');
       await safeAddColumn('photos', 'source_model', 'TEXT');
       await safeAddColumn('photos', 'source_software', 'TEXT');
+      await safeAddColumn('photos', 'source_lens', 'TEXT');  // Lens used for DSLR scanning
       
       log('Scanner columns added to rolls and photos');
 

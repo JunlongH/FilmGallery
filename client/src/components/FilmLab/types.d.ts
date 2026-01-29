@@ -440,20 +440,6 @@ export interface UseHistogramReturn {
 }
 
 /**
- * useImageSource Hook 返回类型
- */
-export interface UseImageSourceReturn {
-  image: HTMLImageElement | null;
-  loading: boolean;
-  error: Error | null;
-  isRAW: boolean;
-  isTIFF: boolean;
-  needsServerDecode: boolean;
-  loadImage: (url: string | File) => Promise<void>;
-  clearImage: () => void;
-}
-
-/**
  * useFilmLabRenderer Hook 返回类型
  */
 export interface UseFilmLabRendererReturn {

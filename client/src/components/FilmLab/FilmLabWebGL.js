@@ -128,7 +128,6 @@ export function processImageWebGL(canvas, image, params = {}) {
   // This approach matches gpu-renderer.js for consistency and better performance
   // ============================================================================
   
-  const srcImage = image;
   const srcW = image.width;
   const srcH = image.height;
   const scale = (typeof params.scale === 'number' && params.scale > 0) ? params.scale : 1;
@@ -169,6 +168,9 @@ export function processImageWebGL(canvas, image, params = {}) {
   
   // Helper to map UV from Rotated+Cropped Space (0..1) to Source Space (0..1)
   // This is the core of the pure WebGL geometry approach (ported from gpu-renderer.js)
+  // IMPORTANT: FilmLabWebGL uses UNPACK_FLIP_Y_WEBGL=true, so texture V=0 is at BOTTOM
+  // But our coordinate system assumes V=0 is at TOP (standard image coords)
+  // We compensate by flipping v_rot input: use (1 - v_rot) in the calculation
   const mapUV = (u_rot, v_rot) => {
     // 1. Convert normalized crop UV to full rotated space UV
     const u_full = cropX + u_rot * cropW;
@@ -191,9 +193,10 @@ export function processImageWebGL(canvas, image, params = {}) {
     const y_src = dy_src + scaledH / 2;
     
     // 6. Normalize to Source UV (0-1)
-    // Note: Since we sample from the original image (not scaled), divide by scaledW/H
-    // but the texture is in original coords, so we use srcW/H
-    return [x_src / scaledW, y_src / scaledH];
+    // Note: Flip Y for UNPACK_FLIP_Y_WEBGL=true compatibility
+    const u_src = x_src / scaledW;
+    const v_src = 1.0 - (y_src / scaledH);  // Flip Y to compensate for UNPACK_FLIP_Y_WEBGL=true
+    return [u_src, v_src];
   };
   
   // Calculate UVs for the 4 corners of the output quad
@@ -669,42 +672,59 @@ export function processImageWebGL(canvas, image, params = {}) {
         col = clamp(col, 0.0, 1.0);
       }
 
-      // ②.5 Density Levels (Log domain auto-levels)
-      // Maps detected [Dmin, Dmax] to standard output range [0, targetRange]
-      // targetRange = 2.2 balances 8-bit output capability (~2.4) with typical film range
+      // ②.5 Density Levels (Log domain per-channel normalization)
+      // 
+      // Physical background:
+      // Color negative film has an orange mask and each dye layer has different
+      // characteristics. This means R, G, B channels have different [Dmin, Dmax] ranges.
+      // To properly invert the negative, we need to normalize each channel's density
+      // range to a common output range, effectively "flattening" the channels.
+      //
+      // Algorithm:
+      // 1. Convert transmittance to density: D = -log10(T)
+      // 2. Normalize each channel's [Dmin, Dmax] to [0, 1]
+      // 3. Scale to output range that preserves the AVERAGE density range
+      //    (this prevents extreme contrast boost while still normalizing channels)
+      //
       if (u_densityLevelsEnabled == 1) {
         float minT = 0.001;
         float log10 = log(10.0);
-        float targetRange = 2.2; // Output density range (matches 8-bit dynamic range)
+        
+        // Calculate average range across channels for output scaling
+        // This preserves overall contrast while normalizing channel balance
+        float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+        float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+        float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+        float avgRange = (rangeR + rangeG + rangeB) / 3.0;
+        // Clamp average range to reasonable bounds
+        avgRange = max(avgRange, 0.5);  // Minimum 0.5 to avoid extreme compression
+        avgRange = min(avgRange, 2.5);  // Maximum 2.5 to avoid extreme expansion
         
         // Red channel
         float Tr = max(col.r, minT);
         float Dr = -log(Tr) / log10;
-        float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
         if (rangeR > 0.001) {
-          // Map [Dmin, Dmax] -> [0, targetRange]
+          // Normalize to [0, 1], then scale to avgRange
           float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
-          float DrNew = normR * targetRange;
+          float DrNew = normR * avgRange;
           col.r = pow(10.0, -DrNew);
         }
         
         // Green channel
         float Tg = max(col.g, minT);
         float Dg = -log(Tg) / log10;
-        float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
         if (rangeG > 0.001) {
           float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
-          float DgNew = normG * targetRange;
+          float DgNew = normG * avgRange;
           col.g = pow(10.0, -DgNew);
         }
         
         // Blue channel
         float Tb = max(col.b, minT);
         float Db = -log(Tb) / log10;
-        float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
         if (rangeB > 0.001) {
           float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
-          float DbNew = normB * targetRange;
+          float DbNew = normB * avgRange;
           col.b = pow(10.0, -DbNew);
         }
         
