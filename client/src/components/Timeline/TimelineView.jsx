@@ -14,20 +14,15 @@ import { Card, CardBody, Spinner } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { TimelineProvider, useTimeline } from './TimelineContext';
 import TimelineFilters from './TimelineFilters';
-import TimelineCalendarGrid from './TimelineCalendarGrid';
 import TimelineMonthGrid from './TimelineMonthGrid';
 import TimelineRollGrid from './TimelineRollGrid';
 
 function TimelineContent() {
   const { selectedYear, selectedMonth, isLoading, error } = useTimeline();
 
-  // Determine which grid to show
-  const showCalendarGrid = selectedYear && selectedMonth && selectedMonth !== 'All';
-  const showMonthGrid = !showCalendarGrid;
-
   if (error) {
     return (
-      <Card className="bg-danger-50 border border-danger-200">
+      <Card className="bg-danger-50">
         <CardBody className="p-6 text-center text-danger">
           Failed to load timeline data: {error.message}
         </CardBody>
@@ -43,6 +38,9 @@ function TimelineContent() {
     );
   }
 
+  // Show month grid only when viewing year or recent (not specific month)
+  const showMonthGrid = !selectedMonth || selectedMonth === 'All';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -50,14 +48,12 @@ function TimelineContent() {
       transition={{ duration: 0.3 }}
       className="space-y-6"
     >
-      {/* Timeline Grid */}
-      <div>
-        {showCalendarGrid ? (
-          <TimelineCalendarGrid />
-        ) : (
+      {/* Timeline Grid - only show for year/recent views */}
+      {showMonthGrid && (
+        <div>
           <TimelineMonthGrid />
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Roll Cards Grid */}
       <TimelineRollGrid />
@@ -70,7 +66,7 @@ export default function TimelineView() {
     <TimelineProvider>
       <div className="p-6 space-y-6">
         {/* Header with Filters */}
-        <Card className="bg-content1/60 backdrop-blur-md border border-divider shadow-sm">
+        <Card className="bg-content1/60 backdrop-blur-md shadow-sm">
           <CardBody className="p-4">
             <TimelineFilters />
           </CardBody>

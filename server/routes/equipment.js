@@ -52,7 +52,7 @@ router.get('/constants', (req, res) => {
     filmFormats: FILM_FORMATS,
     focusTypes: ['Manual', 'Auto', 'Hybrid'],
     conditions: ['Mint', 'Excellent', 'Good', 'Fair', 'Poor'],
-    statuses: ['Owned', 'Sold', 'Wishlist', 'Borrowed'],
+    statuses: ['Owned', 'Sold', 'Wishlist', 'Borrowed', 'Lab'],
     meterTypes: ['None', 'Match-Needle', 'Center-Weighted', 'Matrix', 'Spot', 'Evaluative'],
     shutterTypes: ['Focal-Plane', 'Leaf', 'Electronic', 'Hybrid'],
     magnificationRatios: ['1:1', '1:2', '1:3', '1:4', '1:5', '1:10'],
@@ -181,6 +181,14 @@ router.get('/compatible-lenses/:cameraId', asyncHandler(async (req, res) => {
     return res.status(404).json({ error: 'Camera not found' });
   }
   res.json(result);
+}));
+
+// Get rolls related to equipment (via photos or roll assignment)
+router.get('/related-rolls/:type/:id', asyncHandler(async (req, res) => {
+  const { type, id } = req.params;
+  const limit = parseInt(req.query.limit) || 20;
+  const rolls = await equipmentService.getRelatedRolls(type, parseInt(id), limit);
+  res.json(rolls);
 }));
 
 module.exports = router;

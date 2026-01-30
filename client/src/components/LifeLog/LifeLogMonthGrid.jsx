@@ -1,9 +1,11 @@
 /**
  * LifeLogMonthGrid - Month view calendar grid
  * Shows a calendar with photo thumbnails for each day
+ * 
+ * Uses HTML table for guaranteed equal column widths
  */
-import React from 'react';
-import { format, isSameMonth, isSameDay } from 'date-fns';
+import React, { useMemo } from 'react';
+import { format, isSameMonth, isSameDay, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval } from 'date-fns';
 import { Card, CardBody } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
@@ -16,7 +18,6 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export default function LifeLogMonthGrid() {
   const { 
     currentDate, 
-    calendarDays, 
     photosByDay, 
     setSelectedDay, 
     getPhotoUrl,
@@ -24,119 +25,157 @@ export default function LifeLogMonthGrid() {
     saveCoverPref
   } = useLifeLog();
 
+  // Calculate calendar days properly - split into weeks
+  const weeks = useMemo(() => {
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+    const calendarStart = startOfWeek(monthStart, { weekStartsOn: 0 }); // Sunday
+    const calendarEnd = endOfWeek(monthEnd, { weekStartsOn: 0 });
+    
+    const days = eachDayOfInterval({ start: calendarStart, end: calendarEnd });
+    
+    // Split into weeks (7 days each)
+    const result = [];
+    for (let i = 0; i < days.length; i += 7) {
+      result.push(days.slice(i, i + 7));
+    }
+    return result;
+  }, [currentDate]);
+
   return (
-    <Card className="bg-content1/60 backdrop-blur-md border border-divider shadow-lg h-full">
-      <CardBody className="p-0 h-full flex flex-col">
-        {/* Weekday Headers */}
-        <div className="grid grid-cols-7 border-b border-divider">
-          {WEEKDAYS.map(day => (
-            <div 
-              key={day}
-              className="py-3 text-center text-xs font-semibold text-default-500 uppercase tracking-wider"
-            >
-              {day}
-            </div>
-          ))}
-        </div>
+    <Card className="bg-content1/60 backdrop-blur-md shadow-lg overflow-hidden border border-divider">
+      <CardBody className="p-0">
+        <table className="w-full border-collapse table-fixed">
+          {/* Weekday Headers */}
+          <thead>
+            <tr className="bg-content2/50 border-b border-divider">
+              {WEEKDAYS.map((day, idx) => (
+                <th 
+                  key={day}
+                  className={`
+                    py-3 text-center text-xs font-semibold uppercase tracking-wide
+                    ${idx === 0 || idx === 6 ? 'text-primary' : 'text-default-500'}
+                  `}
+                  style={{ width: '14.2857%' }}
+                >
+                  {day}
+                </th>
+              ))}
+            </tr>
+          </thead>
 
-        {/* Calendar Grid */}
-        <div className="grid grid-cols-7 flex-1 gap-px bg-divider">
-          {calendarDays.map(day => {
-            const dateKey = format(day, 'yyyy-MM-dd');
-            const dayPhotos = photosByDay.get(dateKey) || [];
-            const isCurrentMonth = isSameMonth(day, currentDate);
-            const hasPhotos = dayPhotos.length > 0;
-            const isToday = isSameDay(day, new Date());
-            
-            // Determine cover photo
-            const prefIndex = coverPrefs[dateKey] || 0;
-            const coverIndex = hasPhotos ? Math.abs(prefIndex % dayPhotos.length) : 0;
-            const cover = hasPhotos ? dayPhotos[coverIndex] : null;
+          {/* Calendar Weeks */}
+          <tbody>
+            {weeks.map((week, weekIndex) => (
+              <tr key={weekIndex} className="border-b border-divider/50 last:border-b-0">
+                {week.map((day, dayIndex) => {
+                  const dateKey = format(day, 'yyyy-MM-dd');
+                  const dayPhotos = photosByDay.get(dateKey) || [];
+                  const isCurrentMonth = isSameMonth(day, currentDate);
+                  const hasPhotos = dayPhotos.length > 0;
+                  const isToday = isSameDay(day, new Date());
+                  
+                  // Determine cover photo
+                  const prefIndex = coverPrefs[dateKey] || 0;
+                  const coverIndex = hasPhotos ? Math.abs(prefIndex % dayPhotos.length) : 0;
+                  const cover = hasPhotos ? dayPhotos[coverIndex] : null;
 
-            return (
-              <motion.div
-                key={day.toString()}
-                whileHover={{ scale: hasPhotos ? 1.02 : 1, zIndex: hasPhotos ? 10 : 1 }}
-                className={`
-                  relative aspect-square cursor-pointer overflow-hidden group
-                  ${isCurrentMonth ? 'bg-content1' : 'bg-default-50'}
-                  ${!isCurrentMonth ? 'opacity-50' : ''}
-                  transition-all duration-200
-                `}
-                onClick={() => hasPhotos && setSelectedDay(day)}
-              >
-                {/* Day Number */}
-                <div className={`
-                  absolute top-2 left-2 z-20 flex items-center justify-center
-                  font-semibold text-sm
-                  ${cover ? 'text-white drop-shadow-lg' : ''}
-                  ${isToday && !cover ? 'w-7 h-7 rounded-full bg-primary text-primary-foreground' : ''}
-                  ${!isToday && !cover ? 'text-default-500' : ''}
-                `}>
-                  {format(day, 'd')}
-                </div>
-
-                {/* Photo Cover */}
-                {cover && (
-                  <>
-                    <LazyLoadImage
-                      src={getPhotoUrl(cover)}
-                      alt=""
-                      effect="opacity"
-                      className="w-full h-full object-cover"
-                      wrapperClassName="w-full h-full"
-                    />
-                    
-                    {/* Gradient Overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent" />
-
-                    {/* Photo Switcher (visible on hover) */}
-                    {dayPhotos.length > 1 && (
-                      <div className="absolute inset-0 flex items-center justify-between px-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            saveCoverPref(dateKey, prefIndex - 1);
-                          }}
-                          className="w-6 h-6 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
-                        >
-                          <ChevronLeft size={14} />
-                        </motion.button>
-                        <motion.button
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            saveCoverPref(dateKey, prefIndex + 1);
-                          }}
-                          className="w-6 h-6 rounded-full bg-black/50 backdrop-blur-sm flex items-center justify-center text-white"
-                        >
-                          <ChevronRight size={14} />
-                        </motion.button>
+                  return (
+                    <td
+                      key={day.toString()}
+                      className={`
+                        relative p-0 align-top
+                        border-r border-divider/50 last:border-r-0
+                        ${isCurrentMonth ? 'bg-content1' : 'bg-content2/30'}
+                        ${hasPhotos ? 'cursor-pointer hover:ring-2 hover:ring-primary hover:ring-inset' : ''}
+                        transition-all duration-200 group
+                      `}
+                      onClick={() => hasPhotos && setSelectedDay(day)}
+                    >
+                      {/* 1:1 aspect ratio wrapper */}
+                      <div className="relative w-full" style={{ paddingBottom: '100%' }}>
+                        <div className="absolute inset-0">
+                      {/* Day Number */}
+                      <div className={`
+                        absolute top-1.5 left-2 z-20
+                        text-xs font-medium
+                        ${!isCurrentMonth ? 'opacity-40' : ''}
+                        ${cover ? 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]' : ''}
+                        ${isToday ? 'bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center' : ''}
+                        ${!isToday && !cover ? 'text-default-500' : ''}
+                      `}>
+                        {format(day, 'd')}
                       </div>
-                    )}
 
-                    {/* Location Overlay (slides up on hover) */}
-                    {(cover.city_name || cover.country_name || cover.detail_location) && (
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/30 backdrop-blur-sm text-white text-xs py-1.5 px-2 translate-y-full group-hover:translate-y-0 transition-transform truncate">
-                        {cover.city_name || cover.country_name || cover.detail_location}
-                      </div>
-                    )}
+                      {/* Photo Cover */}
+                      {cover && isCurrentMonth && (
+                        <div className="absolute inset-0 overflow-hidden">
+                          <LazyLoadImage
+                            src={getPhotoUrl(cover)}
+                            alt=""
+                            effect="opacity"
+                            className="w-full h-full object-cover"
+                            wrapperClassName="w-full h-full block"
+                          />
+                          
+                          {/* Gradient Overlay for text readability */}
+                          <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/20" />
 
-                    {/* Photo Count Badge */}
-                    {dayPhotos.length > 1 && (
-                      <div className="absolute bottom-1.5 right-1.5 bg-black/60 backdrop-blur-sm text-white text-xs font-bold px-1.5 py-0.5 rounded-full">
-                        {dayPhotos.length}
+                          {/* Photo Switcher (visible on hover) */}
+                          {dayPhotos.length > 1 && (
+                            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between px-1 py-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/60 to-transparent">
+                              <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  saveCoverPref(dateKey, prefIndex - 1);
+                                }}
+                                className="w-5 h-5 rounded-full bg-white/80 flex items-center justify-center text-black"
+                              >
+                                <ChevronLeft size={12} />
+                              </motion.button>
+                              <span className="text-white text-xs font-medium">
+                                {dayPhotos.length}
+                              </span>
+                              <motion.button
+                                whileHover={{ scale: 1.1 }}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  saveCoverPref(dateKey, prefIndex + 1);
+                                }}
+                                className="w-5 h-5 rounded-full bg-white/80 flex items-center justify-center text-black"
+                              >
+                                <ChevronRight size={12} />
+                              </motion.button>
+                            </div>
+                          )}
+
+                          {/* Single photo count badge */}
+                          {dayPhotos.length === 1 && (
+                            <div className="absolute bottom-1 right-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded">
+                              1
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Location info on hover */}
+                      {cover && (cover.city_name || cover.country_name) && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity truncate z-10">
+                          📍 {cover.city_name || cover.country_name}
+                        </div>
+                      )}
+                        </div>
                       </div>
-                    )}
-                  </>
-                )}
-              </motion.div>
-            );
-          })}
-        </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </CardBody>
     </Card>
   );

@@ -74,7 +74,7 @@ async function recomputeRollSequence() {
 function buildRollFilters(filters) {
   const {
     camera, lens, photographer, location_id, year, month, ym, film,
-    camera_equip_id, lens_equip_id, flash_equip_id, film_id
+    camera_equip_id, lens_equip_id, flash_equip_id, film_id, q
   } = filters;
   
   const toArray = (v) => {
@@ -95,6 +95,22 @@ function buildRollFilters(filters) {
   
   const conditions = [];
   const params = [];
+  
+  // Full-text search (q parameter)
+  if (q && typeof q === 'string' && q.trim()) {
+    const searchTerm = `%${q.trim()}%`;
+    conditions.push(`(
+      rolls.title LIKE ? 
+      OR rolls.notes LIKE ?
+      OR rolls.camera LIKE ?
+      OR rolls.lens LIKE ?
+      OR rolls.photographer LIKE ?
+      OR films.name LIKE ?
+      OR cam.brand LIKE ?
+      OR cam.model LIKE ?
+    )`);
+    params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+  }
   
   // Equipment ID filters
   if (camera_equip_id) {

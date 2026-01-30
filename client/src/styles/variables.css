@@ -23,18 +23,23 @@
 }
 
 [data-theme="dark"] {
-  --color-bg: #0f172a;
-  --color-bg-alt: #1e293b;
-  --color-border: #334155;
-  --color-text: #f1f5f9;
-  --color-text-muted: #94a3b8;
+  --color-bg: #000000;
+  --color-bg-alt: #18181b;
+  --color-border: #27272a;
+  --color-text: #ECEDEE;
+  --color-text-muted: #a1a1aa;
   --color-primary: #3b82f6;
   --color-primary-hover: #2563eb;
   --color-accent: #14b8a6;
-  --color-danger: #f87171;
-  --shadow-sm: 0 2px 4px rgba(0,0,0,0.5);
-  --shadow-md: 0 6px 18px rgba(0,0,0,0.55);
-  --shadow-lg: 0 10px 28px rgba(0,0,0,0.6);
+  --color-danger: #f31260;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  
+  /* HeroUI Specific overrides */
+  --heroui-background: #000000;
+  --heroui-content1: #18181b;
+  --heroui-divider: #27272a;
 }
 
 .fade-slide-enter {

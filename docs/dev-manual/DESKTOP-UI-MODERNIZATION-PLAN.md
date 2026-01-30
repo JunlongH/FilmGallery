@@ -1241,9 +1241,9 @@ export const scaleIn = {
 |-----|------|---------|---------|------|
 | **Phase 0** | Week 1 | 基础设施搭建 | Tailwind v4 + HeroUI 配置完成 | ✅ 完成 |
 | **Phase 1** | Week 2-3 | 核心页面改造 | Timeline + Life Log + Sidebar | ✅ 完成 |
-| **Phase 2** | Week 4-5 | 主要功能改造 | Overview + RollDetail | 🔲 待开始 |
-| **Phase 3** | Week 6-7 | 剩余页面改造 | FilmLibrary + Settings + Statistics | 🔲 待开始 |
-| **Phase 4** | Week 8 | 优化与收尾 | 深色模式 + 动画 + 测试 | 🔲 待开始 |
+| **Phase 2** | Week 4-5 | 主要功能改造 | Overview + RollDetail | ✅ 完成 |
+| **Phase 3** | Week 6-7 | 剩余页面改造 | FilmLibrary + Settings + Statistics | 🔄 部分完成 (仅 Statistics 组件化) |
+| **Phase 4** | Week 8+ | 优化与收尾 | 深色模式 + 动画 + 全页面改造 | 🔲 待开始 |
 
 ---
 
@@ -1367,37 +1367,79 @@ import { Button } from "@heroui/button";
 
 #### Week 4: Overview 改造
 
-- [ ] **Hero Section**
-  - [ ] 使用 Card + Image 实现照片轮播
-  - [ ] 添加渐变遮罩和文字叠加
+**状态**: ✅ 已完成 (2026-01-29)
+
+- [x] **Hero Section**
+  - [x] 使用 Card + Image 实现照片轮播 (HeroCarousel)
+  - [x] 添加渐变遮罩和文字叠加
+  - [x] 自动轮播 + 手动导航
+  - [x] 刷新/全屏按钮
   
-- [ ] **Quick Stats**
-  - [ ] 使用 Card 实现统计卡片
-  - [ ] 添加 hover 动画效果
+- [x] **Quick Stats**
+  - [x] 使用 Card 实现统计卡片 (QuickStats)
+  - [x] 显示 Rolls/Photos/Favorites/Locations/Films 数量
+  - [x] 添加 hover 动画效果
+  - [x] 骨架屏加载状态
   
-- [ ] **Browse Section**
-  - [ ] 使用 Tabs 替换 Rolls/Photos 切换
-  - [ ] 使用 Input 实现搜索框
-  - [ ] 使用 Drawer 实现过滤器侧边栏
+- [x] **Browse Section**
+  - [x] 使用 Tabs 替换 Rolls/Photos 切换 (BrowseSection)
+  - [x] 使用 Input 实现搜索框
+  - [x] 使用 Modal 实现过滤器侧边栏 (FilterDrawer)
+  - [x] 活动过滤器 Chip 展示
+  - [x] 清除过滤器功能
+
+**产出文件**:
+- `client/src/components/Overview/index.js` - 模块导出
+- `client/src/components/Overview/OverviewView.jsx` - 主视图容器
+- `client/src/components/Overview/HeroCarousel.jsx` - 照片轮播组件
+- `client/src/components/Overview/QuickStats.jsx` - 统计卡片组件
+- `client/src/components/Overview/BrowseSection.jsx` - 浏览区域组件
+- `client/src/components/Overview/FilterDrawer.jsx` - 过滤器弹窗组件
 
 #### Week 5: RollDetail 改造
 
-- [ ] **Roll Header**
-  - [ ] 使用 Card 包装头部信息
-  - [ ] 使用 Chip 显示标签信息
-  - [ ] 使用 Avatar 显示相机图标
-  
-- [ ] **Photo Grid**
-  - [ ] 使用 Card + Image 实现照片卡片
-  - [ ] 保持 react-window 虚拟滚动
-  - [ ] 添加 hover 效果和操作按钮
-  
-- [ ] **Sidebar**
-  - [ ] 使用 HeroUI 组件替换表单元素
-  - [ ] 改进照片详情展示
+**状态**: ✅ 已完成 (2026-01-29)
 
-**产出**:
-- 现代化 Dashboard 首页
+- [x] **Roll Header**
+  - [x] 创建 `components/RollDetail/` 目录结构
+  - [x] 使用 Card 包装头部信息 (RollHeader)
+  - [x] 使用 Chip 显示标签信息 (roll number, format)
+  - [x] 使用图标+文字显示 Date/Film/Camera/Lens/Photographer
+  - [x] Locations 使用 Chip 展示
+  - [x] Notes 区域样式优化
+  
+- [x] **Roll Toolbar**
+  - [x] 创建 RollToolbar 组件
+  - [x] View mode 切换 (Positive/Negative)
+  - [x] Multi-select 按钮
+  - [x] Upload 按钮
+  - [x] Batch 下拉菜单 (Render/Download/Contact Sheet)
+  - [x] Import 下拉菜单 (Positives/RAW)
+
+- [x] **Photo Grid**
+  - [x] 创建 RollPhotoGrid 组件
+  - [x] 使用 Card + Image 实现照片卡片
+  - [x] 添加 hover 效果和操作按钮 (favorite, cover, delete, tags)
+  - [x] 选择模式支持 (Checkbox)
+  - [x] Lazy loading 懒加载
+  - [x] 骨架屏加载状态
+  - [x] 空状态展示
+  
+- [x] **Edit Drawer (Sidebar)**
+  - [x] 创建 RollEditDrawer 组件
+  - [x] 使用 Modal 作为右侧滑入抽屉
+  - [x] 使用 Accordion 分组表单 (Basic Info, Locations, Development, Scanning)
+  - [x] 使用 HeroUI 组件替换表单元素 (Input, Select, Textarea)
+  - [x] 集成 EquipmentSelector 和 LocationSelect
+
+**产出文件**:
+- `client/src/components/RollDetail/index.js` - 模块导出
+- `client/src/components/RollDetail/RollHeader.jsx` - 头部信息卡片
+- `client/src/components/RollDetail/RollToolbar.jsx` - 工具栏组件
+- `client/src/components/RollDetail/RollPhotoGrid.jsx` - 照片网格组件
+- `client/src/components/RollDetail/RollEditDrawer.jsx` - 编辑抽屉组件
+
+**注意**: RollDetail 组件较大（895行），采用渐进式迁移策略，新组件可独立使用
 - 优化的胶卷详情页
 
 ---
@@ -1406,64 +1448,124 @@ import { Button } from "@heroui/button";
 
 **目标**: 完成所有页面迁移
 
-#### Week 6: FilmLibrary + EquipmentManager
+**当前状态**: 🔄 部分完成 (2026-01-30)
 
-- [ ] **FilmLibrary**
-  - [ ] 使用 Tabs 实现状态过滤
-  - [ ] 使用 Card 实现库存卡片
-  - [ ] 使用 Modal 实现编辑弹窗
-  
-- [ ] **EquipmentManager**
-  - [ ] 使用 Tabs 分类展示
-  - [ ] 使用 Card 实现设备卡片
+#### 已完成项 ✅
 
-#### Week 7: Statistics + Settings + Favorites
+- [x] **Statistics 组件化**
+  - [x] 创建 `components/Statistics/` 模块
+  - [x] StatCard.jsx - 统计卡片组件
+  - [x] ChartCard.jsx - 图表卡片包装
+  - [x] StatsModeToggle.jsx - 模式切换组件
+  - [x] 保留 recharts 图表
+  - [x] 使用 Lucide React 图标
 
-- [ ] **Statistics**
-  - [ ] 保留 recharts 图表
-  - [ ] 使用 Card 包装图表容器
-  - [ ] 优化 StatCard 组件
+#### 待完成项 🔲
+
+**Week 6: FilmLibrary + EquipmentManager**
+
+- [ ] **FilmLibrary 改造**
+  - [ ] 创建 `components/FilmLibrary/` 模块
+  - [ ] 使用 Tabs 实现状态过滤 (all/in-stock/loaded/used)
+  - [ ] 使用 Card 实现库存卡片 (FilmItemCard)
+  - [ ] 使用 Modal 实现批量添加/编辑弹窗
+  - [ ] 删除 `FilmInventory.css`, `FilmButtons.css`
   
-- [ ] **Settings**
-  - [ ] 使用 Tabs 分类设置项
-  - [ ] 使用 Input/Select/Switch 替换表单
+- [ ] **EquipmentManager 模块化拆分**
+  - [ ] 拆分 1076 行巨型组件为 10+ 子组件
+  - [ ] 创建 `components/EquipmentManager/` 模块
+  - [ ] 使用 Tabs 分类展示 (Cameras/Lenses/Flashes/Film Backs/Scanners/Films)
+  - [ ] 使用 Card 实现设备卡片 (EquipmentCard 通用组件)
+  - [ ] 使用 Drawer 展示关联胶卷 (RelatedRollsDrawer)
+  - [ ] 删除 `EquipmentManager.css`
+
+**Week 7: Settings + Favorites + TagGallery**
+
+- [ ] **Settings 改造**
+  - [ ] 升级 SettingsTabs 为 HeroUI Tabs
+  - [ ] 新增 AppearanceSettings 页面 (主题、颜色、布局)
+  - [ ] 使用 Input/Select/Switch 替换表单 (HeroUI 组件)
   
-- [ ] **Favorites / TagGallery / Themes**
-  - [ ] 统一使用 Card + Image 样式
+- [ ] **Favorites 改造**
+  - [ ] 创建 FavoriteGrid 组件
+  - [ ] 使用 Card + Image 样式
+  - [ ] 添加动画效果 (AnimatedContainer)
+  
+- [ ] **TagGallery 改造**
+  - [ ] 创建 TagCloud 组件 (使用 Chip)
+  - [ ] 照片网格使用 Card
+  - [ ] 添加动画效果
 
 **产出**:
-- 全站统一 UI
+- 全站统一 UI (延期到 Phase 4 完成)
 
 ---
 
-### Week 8: Phase 4 - 优化与收尾 (Polish)
+### Week 8+: Phase 4 - 优化与收尾 (Polish)
 
-**目标**: 深色模式、动画优化、测试
+**目标**: 深色模式、动画优化、全页面改造、性能测试
 
-- [ ] **深色模式**
-  - [ ] 在 Settings 中添加主题切换器
-  - [ ] 使用 localStorage 持久化偏好
+**扩展任务** (基于 UI-IMPROVEMENT-RECOMMENDATIONS.md):
+
+- [ ] **深色模式全局优化**
+  - [ ] 在 Settings 中添加主题切换器 (已有 ThemeToggle，需集成到 AppearanceSettings)
+  - [ ] Recharts 图表深色模式适配 (ChartWrapper)
+  - [ ] 图片在深色模式下的优化 (DarkModeImage)
+  - [ ] 地图组件深色模式 (MapPage)
   - [ ] 测试所有页面的深色模式表现
   
-- [ ] **动画优化**
-  - [ ] 统一页面切换动画
-  - [ ] 优化加载状态 (Skeleton)
-  - [ ] 添加微交互反馈
+- [ ] **动画系统统一**
+  - [ ] 扩展动画库 (animations.js - fadeIn, scaleIn, slideIn, staggerContainer)
+  - [ ] 创建高阶动画组件 (AnimatedList, AnimatedCard, PageTransition)
+  - [ ] 添加微交互 (RippleButton, LoadingSpinner, Toast)
+  - [ ] 应用 PageTransition 到路由切换
+  
+- [ ] **组件库扩展**
+  - [ ] Breadcrumbs (面包屑导航)
+  - [ ] EmptyState (空状态占位)
+  - [ ] Pagination (分页器)
+  - [ ] ContextMenu (右键菜单)
+  - [ ] OptimizedImage (图片优化组件)
+  - [ ] VirtualGrid (虚拟滚动网格)
+  - [ ] 更新 `components/ui/index.js` 统一导出
+  
+- [ ] **性能优化**
+  - [ ] 路由懒加载优化 (React.lazy + Suspense)
+  - [ ] 图片懒加载与渐进式加载
+  - [ ] 虚拟滚动应用到所有大列表
+  - [ ] 代码分割与打包优化
+  
+- [ ] **CSS 清理**
+  - [ ] 删除 `sidebar.css`, `roll-detail-card.css` (已被组件替代)
+  - [ ] 迁移 `forms.css` 到 Tailwind utilities
+  - [ ] 整合 `equipment-selector.css`, `FilmInventory.css`, `FilmButtons.css`
+  - [ ] 保留必要的 `map.css`, `styles.css` (简化版)
+  
+- [ ] **渐进增强功能 (可选)**
+  - [ ] 快捷键系统 (useKeyboardShortcuts hook)
+  - [ ] 拖拽排序 (SortableList with @dnd-kit)
+  - [ ] 搜索高亮 (HighlightText component)
   
 - [ ] **测试与修复**
   - [ ] 全功能回归测试
   - [ ] 响应式测试 (不同分辨率)
-  - [ ] 性能测试 (大量照片场景)
+  - [ ] 深色模式全页面测试
+  - [ ] 性能基准测试 (首次加载、页面切换、滚动 FPS)
   - [ ] Bug 修复
 
 - [ ] **文档更新**
+  - [ ] 更新 UI-IMPROVEMENT-RECOMMENDATIONS.md
   - [ ] 更新开发者文档
   - [ ] 记录组件使用方式
 
 **产出**:
 - 完整的深色模式
 - 流畅的动画系统
+- 扩展的组件库
+- 优化的性能
 - 稳定的生产版本
+
+**参考文档**: 详细改进方案见 [UI-IMPROVEMENT-RECOMMENDATIONS.md](./UI-IMPROVEMENT-RECOMMENDATIONS.md)
 
 ---
 

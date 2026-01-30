@@ -1,0 +1,217 @@
+/**
+ * HeroCarousel - Random photos showcase with auto-rotation
+ * 
+ * Features:
+ * - Auto-advances every 6 seconds
+ * - Manual navigation with arrows
+ * - Click to open full viewer
+ * - Smooth crossfade transitions
+ */
+import React, { useEffect, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Card, CardBody, Button, Spinner } from '@heroui/react';
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { buildUploadUrl, getApiBase } from '../../api';
+
+
+export default function HeroCarousel({ onPhotoClick }) {
+  const [photos, setPhotos] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadRandom = useCallback(async () => {
+    try {
+      setIsRefreshing(true);
+      const apiBase = getApiBase();
+      const r = await fetch(`${apiBase}/api/photos/random?limit=8`);
+      const data = await r.json();
+      if (Array.isArray(data)) {
+        // Filter out photos with no path
+        const validPhotos = data.filter(p => p.positive_rel_path || p.full_rel_path);
+        setPhotos(validPhotos);
+        setCurrentIndex(0);
+      }
+    } catch (e) {
+      console.error('Failed to load random photos:', e);
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadRandom();
+  }, [loadRandom]);
+
+  useEffect(() => {
+    if (photos.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentIndex(prev => (prev + 1) % photos.length);
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [photos.length]);
+
+  const goToPrev = (e) => {
+    setCurrentIndex(prev => (prev - 1 + photos.length) % photos.length);
+  };
+
+  const goToNext = (e) => {
+    setCurrentIndex(prev => (prev + 1) % photos.length);
+  };
+
+  const getPhotoUrl = (photo) => {
+    if (!photo) return '';
+    return buildUploadUrl(photo.positive_rel_path || photo.full_rel_path);
+  };
+
+  if (isLoading) {
+    return (
+      <Card className="w-full aspect-[3/2] max-h-[75vh] mb-8 bg-default-100 border-none">
+        <CardBody className="flex items-center justify-center">
+          <Spinner size="lg" color="primary" />
+        </CardBody>
+      </Card>
+    );
+  }
+
+  if (photos.length === 0) {
+    return (
+      <Card className="w-full aspect-[3/2] max-h-[75vh] mb-8 bg-default-100 border-none">
+        <CardBody className="flex flex-col items-center justify-center gap-4 text-default-400">
+          <p>No photos available</p>
+          <Button 
+            variant="flat" 
+            color="primary" 
+            onPress={loadRandom}
+            startContent={<RefreshCw size={16} />}
+          >
+            Retry
+          </Button>
+        </CardBody>
+      </Card>
+    );
+  }
+
+  const current = photos[currentIndex];
+
+  return (
+    <Card 
+      className="w-full aspect-[3/2] max-h-[75vh] mb-8 overflow-hidden group shadow-2xl border-none bg-black relative isolate"
+    >
+      <CardBody className="p-0 relative w-full h-full overflow-hidden">
+        {/* Main Click Area - Replaces isPressable to avoid button nesting issues */}
+        <div 
+           className="absolute inset-0 z-30 cursor-pointer"
+           onClick={() => onPhotoClick?.(current, photos)}
+           role="button"
+           aria-label="View photo details"
+        />
+
+        {/* Photo */}
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.img
+            key={current.id}
+            src={getPhotoUrl(current)}
+            alt={current.caption || current.roll_title || ''}
+            initial={{ opacity: 0, scale: 1.05 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.8, ease: 'easeInOut' }}
+            className="absolute inset-0 w-full h-full object-cover z-0"
+            draggable={false}
+          />
+        </AnimatePresence>
+
+        {/* Cinematic Gradient Overlay - Always Visible */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 z-0 pointer-events-none" />
+
+        {/* Photo Info (bottom) */}
+        <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12 z-20 pointer-events-none">
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            key={current.id}
+            transition={{ delay: 0.2 }}
+          >
+            <h2 className="text-white text-3xl md:text-4xl font-bold mb-2 tracking-tight drop-shadow-lg">
+              {current.roll_title || current.caption || 'Untitled'}
+            </h2>
+            <div className="flex flex-wrap gap-3 text-white/90 text-sm md:text-base font-medium drop-shadow-md">
+              {current.film_name && (
+                <span className="bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/20">
+                  {current.film_name}
+                </span>
+              )}
+              {current.camera_name && (
+                <span className="bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/20">
+                  {current.camera_name}
+                </span>
+              )}
+              {current.date && (
+                 <span className="opacity-80 flex items-center">
+                   {new Date(current.date).toLocaleDateString()}
+                 </span>
+              )}
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Navigation Arrows - Show on Hover - High Z-index */}
+        {photos.length > 1 && (
+          <>
+            <Button
+              isIconOnly
+              variant="flat"
+              radius="full"
+              className="absolute left-6 top-1/2 -translate-y-1/2 bg-black/30 text-white opacity-0 group-hover:opacity-100 transition-all hover:bg-black/50 backdrop-blur-sm z-50"
+              onPress={goToPrev}
+            >
+              <ChevronLeft size={28} />
+            </Button>
+            <Button
+              isIconOnly
+              variant="flat"
+              radius="full"
+              className="absolute right-6 top-1/2 -translate-y-1/2 bg-black/30 text-white opacity-0 group-hover:opacity-100 transition-all hover:bg-black/50 backdrop-blur-sm z-50"
+              onPress={goToNext}
+            >
+              <ChevronRight size={28} />
+            </Button>
+          </>
+        )}
+
+        {/* Top Right Actions - High Z-index to capture clicks */}
+        <div className="absolute top-6 right-6 flex gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300 z-50">
+          <Button
+            isIconOnly
+            variant="flat"
+            radius="full"
+            className="bg-black/40 text-white backdrop-blur-md hover:bg-black/60"
+            isLoading={isRefreshing}
+            onPress={loadRandom}
+          >
+            <RefreshCw size={18} />
+          </Button>
+        </div>
+
+        {/* Dots Indicator - High Z-index */}
+        {photos.length > 1 && (
+          <div className="absolute bottom-6 right-1/2 translate-x-1/2 md:right-12 md:translate-x-0 flex gap-2 z-50">
+            {photos.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={(e) => { e.stopPropagation(); setCurrentIndex(idx); }}
+                className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${
+                  idx === currentIndex 
+                    ? 'bg-white w-8 opacity-100' 
+                    : 'bg-white/40 w-2 hover:bg-white/60'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+      </CardBody>
+    </Card>
+  );
+}

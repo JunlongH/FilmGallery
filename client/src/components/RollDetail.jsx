@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRoll, getPhotos, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions } from '../api';
 import { useParams } from 'react-router-dom';
 import ImageViewer from './ImageViewer';
+import RollHeader from './RollDetail/RollHeader';
+import RollToolbar from './RollDetail/RollToolbar';
 import PhotoItem from './PhotoItem';
 import TagEditModal from './TagEditModal';
 import ModalDialog from './ModalDialog';
@@ -291,18 +293,8 @@ export default function RollDetail() {
     return String(d);
   }
 
-  const rawStart = roll.start_date ?? null;
-  const rawEnd = roll.end_date ?? null;
-  const dateStr = (() => {
-    const s = formatDate(rawStart);
-    const e = formatDate(rawEnd);
-    if (!s && !e) return '';
-    if (s && e) return s === e ? s : `${s} — ${e}`;
-    return s || e || '';
-  })();
-
   return (
-    <div className="roll-detail-page">
+    <div className="roll-detail-page flex flex-col min-h-full bg-background text-foreground">
       <ModalDialog 
         isOpen={dialog.isOpen} 
         type={dialog.type} 
@@ -319,231 +311,49 @@ export default function RollDetail() {
         onUploadComplete={handleUploadComplete}
       />
       
-      <div className="roll-card" style={{ position: 'relative', zIndex: 20 }}>
-        <div className="roll-info-column">
-          <div className="roll-header-section">
-            <div className="roll-title-block">
-              <span className="roll-id">#{(roll && roll.display_seq) ? roll.display_seq : id}</span>
-              <h1 className="roll-title">{roll.title || 'Untitled Roll'}</h1>
-            </div>
-            <button className="roll-action-btn" onClick={handleEditClick}>Edit Info</button>
-          </div>
-
-          <div className="roll-meta-grid">
-            <div className="meta-group">
-              <span className="meta-label">Date</span>
-              <span className="meta-value-text date-inline">{dateStr || '—'}</span>
-            </div>
-            <div className="meta-group">
-              <span className="meta-label">Film</span>
-              <span className="meta-value-text">{filmName || '—'}</span>
-            </div>
-            
-            {/* Locations - Moved to first row */}
-            {Array.isArray(roll?.locations) && roll.locations.length > 0 && (
-              <div className="meta-group">
-                <span className="meta-label">Locations</span>
-                <div className="tags-list">
-                  {roll.locations.map(l => (
-                    <span key={l.location_id} className="tag-pill">{l.city_name}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Collapsible Gear Details */}
-            <details className="roll-collapsible" style={{ gridColumn: '1 / -1', marginTop: 8 }}>
-              <summary>
-                <span className="meta-label">Gear & Crew</span>
-                <svg className="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-              </summary>
-              <div className="roll-collapsible-content" style={{ paddingTop: 20 }}>
-                <div className="roll-meta-grid" style={{ gap: '24px' }}>
-                  
-                  {/* Cameras - display_camera includes: Equipment Name → Legacy Text */}
-                  <div className="meta-group">
-                    <span className="meta-label">Cameras</span>
-                    <div className="tags-list">
-                      {(roll.gear?.cameras?.length ? roll.gear.cameras : (roll.display_camera ? [roll.display_camera] : [])).map((v, i) => (
-                        <span key={i} className="tag-pill">{v}</span>
-                      ))}
-                      {!(roll.gear?.cameras?.length || roll.display_camera) && <span className="meta-value-text" style={{opacity:0.5, fontSize:13}}>—</span>}
-                    </div>
-                  </div>
-
-                  {/* Lenses - display_lens includes: Explicit Lens → Fixed Lens → Legacy Text */}
-                  <div className="meta-group">
-                    <span className="meta-label">Lenses</span>
-                    <div className="tags-list">
-                      {(roll.gear?.lenses?.length ? roll.gear.lenses : (roll.display_lens ? [roll.display_lens] : [])).map((v, i) => (
-                        <span key={i} className="tag-pill">{v}</span>
-                      ))}
-                      {!(roll.gear?.lenses?.length || roll.display_lens) && <span className="meta-value-text" style={{opacity:0.5, fontSize:13}}>—</span>}
-                    </div>
-                  </div>
-
-                  {/* Photographers */}
-                  <div className="meta-group">
-                    <span className="meta-label">Photographers</span>
-                    <div className="tags-list">
-                      {(roll.gear?.photographers?.length ? roll.gear.photographers : (roll.photographer ? [roll.photographer] : [])).map((v, i) => (
-                        <span key={i} className="tag-pill">{v}</span>
-                      ))}
-                      {!(roll.gear?.photographers?.length || roll.photographer) && <span className="meta-value-text" style={{opacity:0.5, fontSize:13}}>—</span>}
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            </details>
-
-            {roll.notes && (
-              <div className="meta-group" style={{ gridColumn: '1 / -1', marginTop: 8 }}>
-                <span className="meta-label">Notes</span>
-                <span className="meta-value-text" style={{ fontSize: 14, color: 'var(--color-text-muted)' }}>{roll.notes}</span>
-              </div>
-            )}
-          </div>
-
-          <div className="roll-actions-bar" style={{ marginTop: 'auto', paddingTop: 24 }}>
-            <div className="segmented-control">
-              <button 
-                className={`segment-btn ${viewMode === 'positive' ? 'active' : ''}`}
-                onClick={() => !multiSelect && setViewMode('positive')}
-                disabled={multiSelect}
-              >
-                Positive
-              </button>
-              <button 
-                className={`segment-btn ${viewMode === 'negative' ? 'active' : ''}`}
-                onClick={() => !multiSelect && setViewMode('negative')}
-                disabled={multiSelect}
-              >
-                Negative
-              </button>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-              {/* Upload Button - Opens Modal */}
-              <button 
-                className="primary-btn" 
-                onClick={() => setShowUploadModal(true)} 
-                disabled={multiSelect}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                Upload Photos
-              </button>
-
-              <button className="primary-btn" style={{ background: multiSelect ? '#1d4ed8' : '#334155' }} onClick={() => { setMultiSelect(!multiSelect); if (!multiSelect) setSelectedPhotos([]); }}>
-                {multiSelect ? 'Multi-Select: ON' : 'Multi-Select'}
-              </button>
-              {multiSelect && (
-                <>
-                  <button 
-                    className="primary-btn" 
-                    style={{ background: '#475569' }} 
-                    onClick={() => setSelectedPhotos([...photos])}
-                    title="Select All"
-                  >
-                    Select All
-                  </button>
-                  <button 
-                    className="primary-btn" 
-                    style={{ background: '#475569' }} 
-                    onClick={() => setSelectedPhotos([])}
-                    title="Deselect All"
-                  >
-                    Deselect All
-                  </button>
-                  <button 
-                    className="primary-btn" 
-                    style={{ background: '#475569' }} 
-                    onClick={() => {
-                      const selectedIds = new Set(selectedPhotos.map(p => p.id));
-                      setSelectedPhotos(photos.filter(p => !selectedIds.has(p.id)));
-                    }}
-                    title="Invert Selection"
-                  >
-                    Invert
-                  </button>
-                </>
-              )}
-              {multiSelect && selectedPhotos.length > 0 && (
-                <button className="primary-btn" style={{ background:'#2563eb' }} onClick={() => setShowBatchSidebar(true)}>Edit Selected ({selectedPhotos.length})</button>
-              )}
-              {/* 新增: 批量渲染按钮 */}
-              {photos.length > 0 && (
-                <button 
-                  className="primary-btn" 
-                  style={{ background: '#2196F3' }} 
-                  onClick={handleBatchRender}
-                  title="批量 FilmLab 渲染"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}>
-                    <polygon points="5 3 19 12 5 21 5 3"/>
-                  </svg>
-                  Batch Render
-                </button>
-              )}
-              {/* 新增: 批量下载按钮 */}
-              {photos.length > 0 && (
-                <button 
-                  className="primary-btn" 
-                  style={{ background: '#4CAF50' }} 
-                  onClick={handleBatchDownload}
-                  title="批量下载照片"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}>
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="7 10 12 15 17 10"/>
-                    <line x1="12" y1="15" x2="12" y2="3"/>
-                  </svg>
-                  Batch Download
-                </button>
-              )}
-              {/* 新增: 导入外部正片按钮 */}
-              {photos.length > 0 && (
-                <button 
-                  className="primary-btn" 
-                  style={{ background: '#9C27B0' }} 
-                  onClick={() => setShowImportPositiveModal(true)}
-                  title="导入外部处理的正片（如 Lightroom、NLP）"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}>
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                    <polyline points="17 8 12 3 7 8"/>
-                    <line x1="12" y1="3" x2="12" y2="15"/>
-                  </svg>
-                  Import Positive
-                </button>
-              )}
-              {!multiSelect && photos.length > 0 && (
-                <button className="primary-btn" style={{ background:'#059669' }} onClick={() => setShowContactSheet(true)}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6}}><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
-                  Contact Sheet
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="roll-visual-column">
-          <div className="roll-cover-frame">
-            {(() => {
-               const cover = roll.coverPath || roll.cover_photo;
-               if (cover) {
-                 return <img src={buildUploadUrl(cover)} alt="Cover" className="roll-cover-img" loading="lazy" decoding="async" />;
-               }
-               // Fallback to first photo
-               const first = photos.find(p => p.positive_rel_path || p.full_rel_path || p.negative_rel_path);
-               if (first) {
+      {/* 
+          MODERNIZED ROLL HEADER & TOOLBAR 
+          Replaces the old .roll-card structure
+      */}
+      <RollHeader 
+         roll={roll} 
+         onEdit={handleEditClick}
+         coverUrl={(() => {
+             const cover = roll.coverPath || roll.cover_photo;
+             if (cover) return buildUploadUrl(cover);
+             const first = photos.find(p => p.positive_rel_path || p.full_rel_path || p.negative_rel_path);
+             if (first) {
                  const path = first.positive_rel_path || first.full_rel_path || first.negative_rel_path;
-                 return <img src={buildUploadUrl(path)} alt="Cover (Auto)" className="roll-cover-img" loading="lazy" decoding="async" />;
-               }
-               return <div className="empty-cover-placeholder">No Cover Image</div>;
-            })()}
-          </div>
-        </div>
-      </div>
+                 return buildUploadUrl(path);
+             }
+             return null;
+         })()} 
+      />
+      
+      <RollToolbar 
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        multiSelect={multiSelect}
+        onMultiSelectChange={(val) => {
+          setMultiSelect(val);
+          if (!val) setSelectedPhotos([]);
+        }}
+        selectedCount={selectedPhotos.length}
+        totalCount={photos ? photos.length : 0}
+        onUpload={() => setShowUploadModal(true)}
+        onBatchRender={handleBatchRender}
+        onBatchDownload={handleBatchDownload}
+        onImportPositive={() => setShowImportPositiveModal(true)}
+        onContactSheet={() => setShowContactSheet(true)}
+        onEditSelected={() => setShowBatchSidebar(true)}
+        onSelectAll={() => setSelectedPhotos([...(photos || [])])}
+        onDeselectAll={() => setSelectedPhotos([])}
+        onInvertSelection={() => {
+          if (!photos) return;
+          const selectedIds = new Set(selectedPhotos.map(p => p.id));
+          setSelectedPhotos(photos.filter(p => !selectedIds.has(p.id)));
+        }}
+      />
 
         {isEditing && (
           <div style={{ marginTop: 12, marginBottom: 20 }}>

@@ -407,6 +407,100 @@ async function getLensesByCamera(cameraId, lenses) {
   return lenses;
 }
 
+/**
+ * Get rolls related to equipment
+ * Searches both roll assignments AND photos with the equipment
+ */
+async function getRelatedRolls(type, equipId, limit = 20) {
+  try {
+    let rollIds = new Set();
+
+    // Map type to field names (support both singular and plural forms)
+    // rolls table fields: camera_equip_id, lens_equip_id, flash_equip_id, film_back_equip_id, scanner_equip_id, filmId
+    // photos table fields: camera_equip_id, lens_equip_id, flash_equip_id, scanner_equip_id
+    const fieldMap = {
+      camera: { rollField: 'camera_equip_id', photoField: 'camera_equip_id' },
+      cameras: { rollField: 'camera_equip_id', photoField: 'camera_equip_id' },
+      lens: { rollField: 'lens_equip_id', photoField: 'lens_equip_id' },
+      lenses: { rollField: 'lens_equip_id', photoField: 'lens_equip_id' },
+      film: { rollField: 'filmId', photoField: null },
+      films: { rollField: 'filmId', photoField: null },
+      scanner: { rollField: 'scanner_equip_id', photoField: 'scanner_equip_id' },
+      scanners: { rollField: 'scanner_equip_id', photoField: 'scanner_equip_id' },
+      flash: { rollField: 'flash_equip_id', photoField: 'flash_equip_id' },
+      flashes: { rollField: 'flash_equip_id', photoField: 'flash_equip_id' },
+      'film-back': { rollField: 'film_back_equip_id', photoField: null },
+      'film-backs': { rollField: 'film_back_equip_id', photoField: null }
+    };
+
+    const fields = fieldMap[type];
+    if (!fields) {
+      console.warn(`[getRelatedRolls] Unknown equipment type: ${type}`);
+      return [];
+    }
+
+    // 1. Get rolls directly assigned to this equipment
+    if (fields.rollField) {
+      try {
+        const directRolls = await allAsync(
+          `SELECT id FROM rolls WHERE ${fields.rollField} = ?`,
+          [equipId]
+        );
+        if (Array.isArray(directRolls)) {
+          directRolls.forEach(r => rollIds.add(r.id));
+        }
+      } catch (err) {
+        console.warn(`[getRelatedRolls] Error querying rolls.${fields.rollField}:`, err.message);
+      }
+    }
+
+    // 2. Get rolls containing photos with this equipment
+    if (fields.photoField) {
+      try {
+        const photoRolls = await allAsync(
+          `SELECT DISTINCT roll_id FROM photos WHERE ${fields.photoField} = ? AND roll_id IS NOT NULL`,
+          [equipId]
+        );
+        if (Array.isArray(photoRolls)) {
+          photoRolls.forEach(r => {
+            if (r.roll_id) rollIds.add(r.roll_id);
+          });
+        }
+      } catch (err) {
+        console.warn(`[getRelatedRolls] Error querying photos.${fields.photoField}:`, err.message);
+      }
+    }
+
+    if (rollIds.size === 0) return [];
+
+    // 3. Fetch roll details with cover photo
+    const idsArray = Array.from(rollIds);
+    const placeholders = idsArray.map(() => '?').join(',');
+    
+    const rolls = await allAsync(`
+      SELECT 
+        r.id, 
+        r.title, 
+        r.start_date, 
+        r.end_date, 
+        r.coverPath, 
+        r.cover_photo,
+        f.name as film_name, 
+        f.thumbPath as film_thumb
+      FROM rolls r
+      LEFT JOIN films f ON r.filmId = f.id
+      WHERE r.id IN (${placeholders})
+      ORDER BY r.start_date DESC
+      LIMIT ?
+    `, [...idsArray, limit]);
+
+    return Array.isArray(rolls) ? rolls : [];
+  } catch (err) {
+    console.error('[getRelatedRolls] Unexpected error:', err);
+    return [];
+  }
+}
+
 module.exports = {
   EQUIPMENT_CONFIG,
   listEquipment,
@@ -417,5 +511,6 @@ module.exports = {
   updateEquipmentImage,
   getEquipmentSuggestions,
   getCompatibleLenses,
-  getLensesByCamera
+  getLensesByCamera,
+  getRelatedRolls
 };

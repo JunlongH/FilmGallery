@@ -87,7 +87,7 @@ function buildCurveLUT(points) {
 
 // Get all photos with optional filtering
 router.get('/', async (req, res) => {
-  const { camera, lens, photographer, location_id, film, year, month, ym } = req.query;
+  const { camera, lens, photographer, location_id, film, year, month, ym, q } = req.query;
 
   const toArray = (v) => {
     if (v === undefined || v === null) return [];
@@ -141,6 +141,22 @@ router.get('/', async (req, res) => {
     WHERE 1=1
   `;
   const params = [];
+
+  // Full-text search (q parameter)
+  if (q && typeof q === 'string' && q.trim()) {
+    const searchTerm = `%${q.trim()}%`;
+    sql += ` AND (
+      p.caption LIKE ? 
+      OR p.notes LIKE ?
+      OR r.title LIKE ?
+      OR p.camera LIKE ?
+      OR p.lens LIKE ?
+      OR f.name LIKE ?
+      OR cam.brand LIKE ?
+      OR cam.model LIKE ?
+    )`;
+    params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
+  }
 
   if (cameras.length) {
     const cs = cameras.map(() => `p.camera = ?`).join(' OR ');

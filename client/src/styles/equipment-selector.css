@@ -10,9 +10,9 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--heroui-divider, #d1d5db);
   border-radius: 6px;
-  background: white;
+  background: var(--heroui-content1, white);
   cursor: pointer;
   min-height: 42px;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -28,30 +28,30 @@
 }
 
 .equip-trigger.disabled {
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
   cursor: not-allowed;
   opacity: 0.7;
 }
 
 .equip-placeholder {
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
   flex: 1;
 }
 
 .equip-loading {
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   font-style: italic;
 }
 
 .equip-arrow {
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   font-size: 10px;
 }
 
 .equip-clear {
   background: none;
   border: none;
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
   font-size: 18px;
   cursor: pointer;
   padding: 0 4px;
@@ -67,8 +67,8 @@
   top: 100%;
   left: 0;
   right: 0;
-  background: white;
-  border: 1px solid #d1d5db;
+  background: var(--heroui-content1, white);
+  border: 1px solid var(--heroui-divider, #d1d5db);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 100;
@@ -79,13 +79,20 @@
   flex-direction: column;
 }
 
+:root.dark .equip-dropdown,
+[data-theme="dark"] .equip-dropdown {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
 .equip-search {
   padding: 10px 12px;
   border: none;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--heroui-divider, #e5e7eb);
   font-size: 14px;
   outline: none;
   flex-shrink: 0;
+  background: var(--heroui-content1, white);
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .equip-list {
@@ -103,17 +110,17 @@
 }
 
 .equip-option:hover {
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
 }
 
 .equip-option.selected {
-  background: #eff6ff;
+  background: var(--heroui-primary-50, #eff6ff);
 }
 
 .equip-empty {
   padding: 20px;
   text-align: center;
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
 }
 
 .equip-item {
@@ -144,7 +151,7 @@
   max-height: 32px;
   object-fit: cover;
   border-radius: 4px;
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
   flex-shrink: 0;
 }
 
@@ -167,7 +174,7 @@
 .equip-name {
   font-weight: 500;
   font-size: 14px;
-  color: #1f2937;
+  color: var(--heroui-foreground, #1f2937);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -175,7 +182,7 @@
 
 .equip-brand {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -183,16 +190,16 @@
 
 .equip-spec {
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .equip-add-section {
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--heroui-divider, #e5e7eb);
   padding: 8px 12px;
-  background: #f9fafb;
+  background: var(--heroui-default-100, #f9fafb);
   flex-shrink: 0;
 }
 
@@ -200,9 +207,9 @@
   width: 100%;
   padding: 8px;
   background: none;
-  border: 1px dashed #d1d5db;
+  border: 1px dashed var(--heroui-divider, #d1d5db);
   border-radius: 4px;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   cursor: pointer;
   font-size: 13px;
   transition: all 0.15s;
@@ -221,10 +228,12 @@
 .equip-add-input {
   flex: 1;
   padding: 6px 10px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--heroui-divider, #d1d5db);
   border-radius: 4px;
   font-size: 13px;
   min-width: 0;
+  background: var(--heroui-content1, white);
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .equip-add-btn {
@@ -246,7 +255,7 @@
   padding: 6px 8px;
   background: none;
   border: none;
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
   cursor: pointer;
   font-size: 16px;
   flex-shrink: 0;
@@ -257,10 +266,10 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  background: #f0fdf4;
-  border: 1px solid #86efac;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.4);
   border-radius: 6px;
-  color: #166534;
+  color: #10b981;
   font-size: 14px;
 }
 
@@ -269,8 +278,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: #fefce8;
-  border-bottom: 1px solid #fde047;
+  background: rgba(250, 204, 21, 0.1);
+  border-bottom: 1px solid rgba(250, 204, 21, 0.5);
   font-size: 12px;
   flex-shrink: 0;
 }
@@ -280,7 +289,7 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  color: #854d0e;
+  color: #ca8a04;
 }
 
 .equip-adapter-label input[type="checkbox"] {
@@ -288,18 +297,18 @@
 }
 
 .equip-mount-info {
-  color: #a16207;
+  color: #ca8a04;
   font-size: 11px;
 }
 
 .equip-option.adapted {
-  background: #fffbeb;
+  background: rgba(250, 204, 21, 0.1);
 }
 
 .equip-adapter-badge {
   font-size: 10px;
-  background: #fef3c7;
-  color: #92400e;
+  background: rgba(250, 204, 21, 0.2);
+  color: #ca8a04;
   padding: 2px 6px;
   border-radius: 4px;
   margin-left: auto;

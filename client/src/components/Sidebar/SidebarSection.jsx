@@ -24,14 +24,14 @@ export function SidebarSection({ title, divider = false, children }) {
       {/* 分隔线 */}
       {divider && (
         <div className="py-2">
-          <Divider className="bg-slate-200 dark:bg-slate-700" />
+          <Divider />
         </div>
       )}
       
       {/* 标题 */}
       {title && !isCollapsed && (
         <div className="px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          <span className="text-xs font-semibold uppercase tracking-wider text-default-400">
             {title}
           </span>
         </div>

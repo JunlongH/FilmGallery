@@ -265,10 +265,8 @@ function HorizontalScroller({ children, height = 260, padding = 12, gap = 16, ba
       </div>
       {(showEdges && shouldLoop) && (
         <>
-          <div style={{ position:'absolute', left:0, top:0, bottom:0, width: 40, pointerEvents:'none',
-            background: 'linear-gradient(90deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 100%)', zIndex: 2 }} />
-          <div style={{ position:'absolute', right:0, top:0, bottom:0, width: 40, pointerEvents:'none',
-            background: 'linear-gradient(-90deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 100%)', zIndex: 2 }} />
+          <div className="absolute left-0 top-0 bottom-0 w-12 pointer-events-none z-10 bg-gradient-to-r from-background to-transparent" />
+          <div className="absolute right-0 top-0 bottom-0 w-12 pointer-events-none z-10 bg-gradient-to-l from-background to-transparent" />
         </>
       )}
     </div>

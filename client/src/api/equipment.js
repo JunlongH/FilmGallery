@@ -20,6 +20,14 @@ export async function getCompatibleLenses(cameraId) {
   return jsonFetch(`/api/equipment/compatible-lenses/${cameraId}`);
 }
 
+/**
+ * Get rolls related to an equipment item
+ * Includes rolls with photos shot using this equipment
+ */
+export async function getEquipmentRelatedRolls(type, id, limit = 20) {
+  return jsonFetch(`/api/equipment/related-rolls/${type}/${id}?limit=${limit}`);
+}
+
 // ========================================
 // FILM FORMATS
 // ========================================

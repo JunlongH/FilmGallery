@@ -6,8 +6,36 @@ body, html, #root {
   padding: 0;
   height: 100%;
   font-family: "Segoe UI", Arial, sans-serif;
-  background: #fdfdfd;
-  color: #333;
+  background: var(--heroui-background, #fdfdfd);
+  color: var(--heroui-foreground, #333);
+}
+
+/* Dark Mode Global Overrides */
+html.dark body, 
+html.dark #root,
+html.dark .app-shell {
+  background-color: var(--heroui-background, #000000);
+  color: var(--heroui-foreground, #ECEDEE);
+}
+html.dark .title-bar {
+  background-color: #18181b; /* Zinc 900 */
+  border-bottom: 1px solid #27272a;
+  color: #a1a1aa;
+}
+
+/* Recharts dark mode fixes */
+html.dark .recharts-legend-item-text {
+  color: #ECEDEE !important;
+}
+html.dark .recharts-cartesian-axis-tick-value {
+  fill: #a1a1aa !important;
+}
+html.dark .recharts-tooltip-wrapper .recharts-default-tooltip {
+  background-color: #18181b !important;
+  border-color: #27272a !important;
+}
+html.dark .recharts-tooltip-item {
+  color: #ECEDEE !important;
 }
 
 /* Safeguard: ensure inputs are always clickable even if drag region overlaps */
@@ -19,25 +47,26 @@ input, textarea, select, button {
 .app-shell {
   display: flex;
   flex-direction: column;
+  width: 100%;
   height: 100%;
   overflow: hidden;
 }
 
 .title-bar {
   height: 32px;
-  background: #f5f0e6; /* Match sidebar or slightly darker */
+  background: var(--heroui-content1, #f5f0e6);
   display: flex;
   justify-content: space-between;
   align-items: center;
   -webkit-app-region: drag; /* Allow dragging the window */
   user-select: none;
-  border-bottom: 1px solid #e0d8cc;
+  border-bottom: 1px solid var(--heroui-divider, #e0d8cc);
   padding-left: 12px;
 }
 
 .title-bar-title {
   font-size: 12px;
-  color: #5a4632;
+  color: var(--heroui-foreground, #5a4632);
   font-weight: 600;
   display: flex;
   align-items: center;
@@ -82,6 +111,8 @@ input, textarea, select, button {
 .app-body {
   display: flex;
   flex: 1;
+  width: 100%;
+  min-width: 0;
   overflow: hidden; /* Prevent body scroll from affecting layout */
 }
 
@@ -178,8 +209,15 @@ input, textarea, select, button {
 
 .main {
   flex: 1;
-  padding: 20px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
   overflow-y: auto;
+  background-color: var(--heroui-background, #fdfdfd);
+}
+
+html.dark .main {
+  background-color: #000000;
 }
 
 /* Roll cards */
@@ -198,16 +236,16 @@ input, textarea, select, button {
 .fg-tab {
   padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(255,255,255,0.8);
+  border: 1px solid var(--heroui-divider, rgba(0,0,0,0.08));
+  background: var(--heroui-content1, rgba(255,255,255,0.8));
   font-size: 13px;
   cursor: pointer;
-  color: #3c4a3c;
+  color: var(--heroui-foreground, #3c4a3c);
   transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .fg-tab:hover {
-  background: #fff;
+  background: var(--heroui-content2, #fff);
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
 }
 
@@ -232,7 +270,7 @@ input, textarea, select, button {
 }
 
 .fg-modal-panel {
-  background: #f8f8f5;
+  background: var(--heroui-content1, #f8f8f5);
   border-radius: 10px;
   padding: 16px 18px 14px;
   width: min(880px, 100% - 40px);
@@ -792,7 +830,7 @@ form button:hover {
 .page-header h3 { margin:0; font-size:20px; }
 
 .card-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:16px; }
-.card { background: #fff; border-radius:8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow:hidden; position:relative; cursor:pointer; border:1px solid rgba(0,0,0,0.04); transition:transform .12s ease, box-shadow .12s ease; }
+.card { background: #fff; border-radius:8px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow:hidden; position:relative; cursor:pointer; transition:transform .12s ease, box-shadow .12s ease; }
 .card:hover { transform: translateY(-4px); box-shadow: 0 6px 16px rgba(0,0,0,0.08); }
 .card-cover {
   /* make cover a responsive 1:1 square based on its rendered width */

@@ -13,14 +13,19 @@ export default function RollLibrary() {
     queryFn: () => getRolls()
   });
 
-  if (isLoading) return <div style={{ padding: 20 }}>Loading rolls...</div>;
+  if (isLoading) return <div className="p-10 text-center text-default-500">Loading rolls...</div>;
 
   return (
-    <div>
-      <div className="page-header">
-        <h3>Roll Library</h3>
+    <div className="flex flex-col min-h-full bg-background text-foreground p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-2xl font-bold">Roll Library</h3>
         <div>
-          <button className="btn btn-primary" onClick={() => nav('/rolls/new')}>New Roll</button>
+          <button 
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:opacity-90 transition-opacity font-medium" 
+            onClick={() => nav('/rolls/new')}
+          >
+            New Roll
+          </button>
         </div>
       </div>
       <RollGrid rolls={rolls} />

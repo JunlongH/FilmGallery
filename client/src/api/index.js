@@ -83,6 +83,7 @@ export {
   getEquipmentConstants,
   getEquipmentSuggestions,
   getCompatibleLenses,
+  getEquipmentRelatedRolls,
   getFilmFormats,
   createFilmFormat,
   getCameras,

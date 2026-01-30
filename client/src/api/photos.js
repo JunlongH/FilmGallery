@@ -20,7 +20,7 @@ export async function getPhotos(rollId) {
  */
 export async function searchPhotos(filters = {}) {
   const qs = buildQueryString(filters);
-  return jsonFetch(`/api/photos/search${qs}`);
+  return jsonFetch(`/api/photos${qs}`);
 }
 
 /**
@@ -41,7 +41,7 @@ export async function deletePhoto(id) {
  * Get favorite photos
  */
 export async function getFavoritePhotos() {
-  return jsonFetch('/api/photos?favorite=1');
+  return jsonFetch('/api/photos/favorites');
 }
 
 // ========================================

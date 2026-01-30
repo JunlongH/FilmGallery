@@ -15,6 +15,7 @@ import Settings from './components/Settings';
 import TitleBar from './components/TitleBar';
 import ConflictBanner from './components/ConflictBanner';
 import EquipmentManager from './components/EquipmentManager';
+import LutLibrary from './components/Settings/LutLibrary';
 import MapPage from './pages/MapPage';
 import { getTags } from './api';
 import FloatingRefreshButton from './components/FloatingRefreshButton';
@@ -102,6 +103,7 @@ function Layout() {
                 <Route path="/themes" element={<TagGallery />} />
                 <Route path="/themes/:tagId" element={<TagGallery />} />
                 <Route path="/equipment" element={<EquipmentManager />} />
+                <Route path="/luts" element={<LutLibrary />} />
                 <Route path="/settings" element={<Settings />} />
               </Routes>
             </main>

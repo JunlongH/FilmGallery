@@ -8,6 +8,14 @@
   --fg-border: #e5e7eb;
 }
 
+:root.dark, [data-theme="dark"] {
+  --fg-bg: var(--heroui-background, #0a0a0a);
+  --fg-card-bg: var(--heroui-content1, #18181b);
+  --fg-text: var(--heroui-foreground, #fafafa);
+  --fg-muted: var(--heroui-default-500, #71717a);
+  --fg-border: var(--heroui-divider, #27272a);
+}
+
 .fg-card {
   background: var(--fg-card-bg);
   border: 1px solid var(--fg-border);
@@ -15,6 +23,12 @@
   box-shadow: 0 8px 24px rgba(0,0,0,0.06);
   padding: 20px 18px;
 }
+
+:root.dark .fg-card,
+[data-theme="dark"] .fg-card {
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
 .fg-field {
   display: flex;
   flex-direction: column;
@@ -28,13 +42,42 @@
 }
 .fg-input, .fg-select, .fg-textarea {
   padding: 10px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--fg-border, #d1d5db);
   border-radius: 10px;
   outline: none;
-  background: #fff;
+  background: var(--fg-card-bg, #fff);
+  color: var(--fg-text, #1f2937);
   width: 100%;
   box-sizing: border-box;
   font-size: 14px;
+}
+
+/* Fix select dropdown options for dark mode */
+.fg-select option,
+select option {
+  background: var(--fg-card-bg, #fff);
+  color: var(--fg-text, #1f2937);
+}
+
+:root.dark .fg-select option,
+:root.dark select option,
+[data-theme="dark"] .fg-select option,
+[data-theme="dark"] select option {
+  background: #27272a;
+  color: #fafafa;
+}
+
+/* Global select dark mode fix */
+:root.dark select,
+[data-theme="dark"] select {
+  background-color: #18181b;
+  color: #fafafa;
+  border-color: #3f3f46;
+}
+
+:root.dark select:focus,
+[data-theme="dark"] select:focus {
+  border-color: #6366f1;
 }
 
 /* Chip style buttons for multi-select */
@@ -67,7 +110,14 @@
 }
 .fg-btn-primary { background: var(--fg-primary); color: #fff; }
 .fg-btn-secondary { background: #6b7280; color: #fff; }
-.fg-pill { border: 1px solid #d1d5db; border-radius: 999px; padding: 4px 12px; font-size: 12px; color: #374151; background: #f8fafc; }
+.fg-pill { 
+  border: 1px solid var(--fg-border, #d1d5db); 
+  border-radius: 999px; 
+  padding: 4px 12px; 
+  font-size: 12px; 
+  color: var(--fg-text, #374151); 
+  background: var(--fg-card-bg, #f8fafc); 
+}
 
 /* Roll header tweaks */
 .roll-meta-label { color: var(--fg-muted); font-size: 12px; }

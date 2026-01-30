@@ -1,8 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE } from '../../api';
+import { 
+  Laptop, 
+  Globe, 
+  Zap, 
+  Server, 
+  CheckCircle2, 
+  XCircle, 
+  Save, 
+  RotateCw, 
+  Info 
+} from 'lucide-react';
 
 /**
- * 服务器连接设置组件
+ * Server Connection Settings
+ * Modes: Local, Remote, Hybrid
  * 支持三种模式：
  * 1. 本地服务器 (Electron 内置)
  * 2. 远程服务器 (如 NAS Docker)
@@ -167,276 +179,212 @@ export default function ServerSettings() {
     }
   };
 
-  return (
-    <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-      <h3>🌐 服务器连接设置</h3>
-      <p style={{ color: '#555', marginBottom: 16 }}>
-        选择数据存储位置。可以使用本地服务器，或连接到远程 NAS 服务器。
-      </p>
-      
-      {/* Mode Selection */}
-      <div style={{ marginBottom: 16 }}>
-        <label style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 8, 
-          marginBottom: 8,
-          padding: '12px 16px',
-          background: serverMode === 'local' ? '#e8f5e9' : '#f5f5f5',
-          borderRadius: 8,
-          cursor: 'pointer',
-          border: serverMode === 'local' ? '2px solid #4caf50' : '1px solid #ddd'
-        }}>
-          <input 
-            type="radio" 
-            name="serverMode" 
-            value="local"
-            checked={serverMode === 'local'}
-            onChange={() => setServerMode('local')}
-          />
-          <div>
-            <div style={{ fontWeight: 600 }}>💻 本地服务器</div>
-            <div style={{ fontSize: 13, color: '#666' }}>
-              数据存储在本机，FilmLab 使用本地 GPU 处理
-            </div>
-          </div>
-        </label>
-        
-        <label style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 8,
-          marginBottom: 8,
-          padding: '12px 16px',
-          background: serverMode === 'remote' ? '#e3f2fd' : '#f5f5f5',
-          borderRadius: 8,
-          cursor: 'pointer',
-          border: serverMode === 'remote' ? '2px solid #2196f3' : '1px solid #ddd'
-        }}>
-          <input 
-            type="radio" 
-            name="serverMode" 
-            value="remote"
-            checked={serverMode === 'remote'}
-            onChange={() => setServerMode('remote')}
-          />
-          <div>
-            <div style={{ fontWeight: 600 }}>🌐 远程服务器</div>
-            <div style={{ fontSize: 13, color: '#666' }}>
-              连接到 NAS 或远程服务器，所有操作在远端执行
-            </div>
-          </div>
-        </label>
-        
-        <label style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: 8,
-          padding: '12px 16px',
-          background: serverMode === 'hybrid' ? '#fff3e0' : '#f5f5f5',
-          borderRadius: 8,
-          cursor: 'pointer',
-          border: serverMode === 'hybrid' ? '2px solid #ff9800' : '1px solid #ddd'
-        }}>
-          <input 
-            type="radio" 
-            name="serverMode" 
-            value="hybrid"
-            checked={serverMode === 'hybrid'}
-            onChange={() => setServerMode('hybrid')}
-          />
-          <div>
-            <div style={{ fontWeight: 600 }}>⚡ 混合模式 (推荐)</div>
-            <div style={{ fontSize: 13, color: '#666' }}>
-              数据存储在 NAS，FilmLab 使用本地 PC 的 GPU 处理
-            </div>
-          </div>
-        </label>
+
+  const ModeCard = ({ mode, icon: Icon, title, description }) => (
+    <div 
+      onClick={() => setServerMode(mode)}
+      className={`
+        cursor-pointer relative p-5 rounded-xl border-2 transition-all duration-200 h-full
+        ${serverMode === mode 
+          ? 'border-primary bg-primary/5' 
+          : 'border-divider hover:border-default-400 bg-card'}
+      `}
+    >
+      <div className="flex flex-col items-center text-center gap-3">
+        <div className={`p-3 rounded-lg ${serverMode === mode ? 'bg-primary text-primary-foreground' : 'bg-content2 text-default-500'}`}>
+          <Icon className="w-6 h-6" />
+        </div>
+        <div className="flex-1">
+          <h3 className={`font-semibold ${serverMode === mode ? 'text-primary' : 'text-foreground'}`}>
+            {title}
+          </h3>
+          <p className="text-sm text-default-500 mt-2 leading-relaxed">
+            {description}
+          </p>
+        </div>
       </div>
+      {serverMode === mode && (
+        <div className="absolute top-3 right-3 text-primary">
+          <CheckCircle2 className="w-5 h-5" />
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="space-y-8 w-full max-w-6xl mx-auto pb-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
-      {/* Remote URL Input */}
-      {(serverMode === 'remote' || serverMode === 'hybrid') && (
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: 'block', marginBottom: 8, fontWeight: 500 }}>
-            远程服务器地址
-          </label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              type="text"
-              value={remoteUrl}
-              onChange={(e) => setRemoteUrl(e.target.value)}
-              placeholder="http://192.168.1.100:4000"
-              style={{
-                flex: 1,
-                padding: '8px 12px',
-                border: '1px solid #ddd',
-                borderRadius: 4,
-                fontSize: 14
-              }}
-            />
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-2 bg-primary/10 rounded-lg">
+          <Server className="w-6 h-6 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-xl font-bold">Server Connection</h2>
+          <p className="text-default-500 text-sm">Configure where your data is stored and processed</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full auto-rows-fr">
+        <ModeCard 
+          mode="local" 
+          icon={Laptop} 
+          title="Local Server" 
+          description="Data stored on this computer. FilmLab uses local GPU for processing."
+        />
+        <ModeCard 
+          mode="remote" 
+          icon={Globe} 
+          title="Remote Server" 
+          description="Connect to NAS or remote server. All processing happens remotely."
+        />
+        <ModeCard 
+          mode="hybrid" 
+          icon={Zap} 
+          title="Hybrid Mode" 
+          description="Data on NAS, but uses this computer's GPU for faster processing. (Recommended)"
+        />
+      </div>
+
+      {serverMode !== 'local' && (
+        <div className="bg-card border border-divider rounded-xl p-6 space-y-4 animate-in fade-in zoom-in-95 w-full">
+          <label className="block text-sm font-medium mb-2">Remote Server URL</label>
+          <div className="flex flex-col sm:flex-row gap-2 w-full">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={remoteUrl}
+                onChange={(e) => setRemoteUrl(e.target.value)}
+                placeholder="http://192.168.1.100:4000"
+                className="w-full pl-10 pr-4 py-2 bg-content2 border border-divider rounded-lg focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+              />
+              <Globe className="w-4 h-4 text-default-400 absolute left-3 top-3" />
+            </div>
             <button 
               onClick={() => testConnection(remoteUrl)}
               disabled={!remoteUrl || testStatus === 'testing'}
-              style={{
-                padding: '8px 16px',
-                background: '#f0f0f0',
-                border: '1px solid #ddd',
-                borderRadius: 4,
-                cursor: 'pointer'
-              }}
+              className="px-4 py-2 bg-content2 border border-divider rounded-lg hover:bg-content3 transition-colors font-medium flex items-center gap-2 min-w-[120px] justify-center"
             >
-              {testStatus === 'testing' ? '测试中...' : '测试连接'}
+              {testStatus === 'testing' ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  Testing
+                </>
+              ) : (
+                'Test Connection'
+              )}
             </button>
           </div>
-          
-          {/* Test Result */}
+
+          {/* Test Status Feedback */}
           {testStatus === 'success' && (
-            <div style={{ 
-              marginTop: 8, 
-              padding: 8, 
-              background: '#e8f5e9', 
-              borderRadius: 4,
-              fontSize: 13,
-              color: '#2e7d32'
-            }}>
-              ✅ 连接成功！
+            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-500/10 p-3 rounded-lg border border-green-500/20">
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Connection successful!</span>
               {serverInfo && (
-                <span style={{ marginLeft: 8 }}>
-                  服务器版本: {serverInfo.version} | 模式: {serverInfo.mode || 'standalone'}
+                <span className="text-xs opacity-80">
+                  v{serverInfo.version} ({serverInfo.mode || 'standalone'})
                 </span>
               )}
             </div>
           )}
           {testStatus === 'error' && (
-            <div style={{ 
-              marginTop: 8, 
-              padding: 8, 
-              background: '#ffebee', 
-              borderRadius: 4,
-              fontSize: 13,
-              color: '#c62828'
-            }}>
-              ❌ 连接失败，请检查地址和网络
+            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+              <XCircle className="w-4 h-4" />
+              <span>Connection failed. Please check the URL and network.</span>
+            </div>
+          )}
+
+          {serverMode === 'hybrid' && (
+            <div className="flex gap-3 p-4 bg-orange-500/5 border border-orange-500/20 rounded-lg text-sm text-orange-700 dark:text-orange-400">
+              <Info className="w-5 h-5 flex-shrink-0" />
+              <ul className="list-disc list-inside space-y-1 opacity-90">
+                <li>Photos are stored on your NAS/Server</li>
+                <li>Image processing uses your Local GPU</li>
+                <li>Requires NAS and PC to be on the same network</li>
+              </ul>
             </div>
           )}
         </div>
       )}
-      
-      {/* Hybrid Mode Info */}
-      {serverMode === 'hybrid' && (
-        <div style={{ 
-          marginBottom: 16, 
-          padding: 12, 
-          background: '#fff8e1', 
-          borderRadius: 8,
-          border: '1px solid #ffe082'
-        }}>
-          <div style={{ fontWeight: 500, marginBottom: 8 }}>⚡ 混合模式说明</div>
-          <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: '#555' }}>
-            <li>相册数据存储在远程 NAS 服务器</li>
-            <li>FilmLab 图像处理使用本地 PC 的 GPU</li>
-            <li>Mobile/Watch 自动连接 NAS 服务器</li>
-            <li>需要 NAS 和 PC 处于同一网络</li>
-          </ul>
-        </div>
-      )}
-      
-      {/* Current Connection Status */}
-      <div style={{ 
-        marginBottom: 16, 
-        padding: 12, 
-        background: '#f5f5f5', 
-        borderRadius: 8 
-      }}>
-        <div style={{ fontWeight: 500, marginBottom: 8 }}>当前连接状态</div>
-        <div style={{ fontSize: 13, color: '#555' }}>
-          <div>
-            <strong>API 地址:</strong>{' '}
-            <code style={{ background: '#e0e0e0', padding: '2px 6px', borderRadius: 3 }}>
+
+      {/* Current Status Footer */}
+      <div className="bg-content2/50 rounded-xl p-6 border border-divider w-full">
+        <h3 className="font-semibold mb-4 flex items-center gap-2">
+          Current Status
+          {serverInfo ? (
+            <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-600 rounded-full">Connected</span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 bg-default-200 text-default-500 rounded-full">Unknown</span>
+          )}
+        </h3>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm w-full">
+          <div className="space-y-1">
+            <span className="text-default-500 block text-xs uppercase tracking-wider">API Endpoint</span>
+            <code className="bg-content1 px-2 py-1 rounded border border-divider text-xs font-mono break-all block w-full">
               {currentApiBase}
             </code>
           </div>
+          
           {serverInfo && (
             <>
-              <div style={{ marginTop: 4 }}>
-                <strong>服务器模式:</strong> {serverInfo.mode || 'standalone'}
+              <div className="space-y-1">
+                <span className="text-default-500 block text-xs uppercase tracking-wider">Version</span>
+                <span className="font-medium">{serverInfo.version}</span>
               </div>
-              <div style={{ marginTop: 4 }}>
-                <strong>版本:</strong> {serverInfo.version}
-              </div>
-              {serverInfo.capabilities && (
-                <div style={{ marginTop: 4 }}>
-                  <strong>功能:</strong>{' '}
-                  {serverInfo.capabilities.database && '📁 数据库 '}
-                  {serverInfo.capabilities.files && '📂 文件 '}
-                  {serverInfo.capabilities.compute && '⚡ 算力 '}
-                  {!serverInfo.capabilities.compute && '❌ 无算力'}
+              <div className="space-y-1 col-span-full">
+                <span className="text-default-500 block text-xs uppercase tracking-wider">Capabilities</span>
+                <div className="flex gap-2 mt-1">
+                  {serverInfo.capabilities?.database && (
+                    <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 rounded text-xs border border-blue-500/20">Database</span>
+                  )}
+                  {serverInfo.capabilities?.files && (
+                    <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-600 rounded text-xs border border-yellow-500/20">File Storage</span>
+                  )}
+                  {serverInfo.capabilities?.compute && (
+                    <span className="px-2 py-0.5 bg-purple-500/10 text-purple-600 rounded text-xs border border-purple-500/20">GPU Compute</span>
+                  )}
                 </div>
-              )}
+              </div>
             </>
           )}
         </div>
       </div>
-      
-      {/* Action Buttons */}
-      <div style={{ display: 'flex', gap: 8 }}>
-        {serverMode !== 'local' ? (
-          <>
-            <button
-              onClick={saveServerConfig}
-              disabled={saving || !remoteUrl}
-              style={{
-                padding: '10px 20px',
-                background: '#5a4632',
-                color: '#fff',
-                border: 'none',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontWeight: 500
-              }}
-            >
-              {saving ? '保存中...' : '保存设置'}
-            </button>
-            <button
-              onClick={switchToLocal}
-              style={{
-                padding: '10px 20px',
-                background: '#f0f0f0',
-                border: '1px solid #ddd',
-                borderRadius: 4,
-                cursor: 'pointer'
-              }}
-            >
-              切换回本地
-            </button>
-          </>
-        ) : (
+
+      {/* Actions */}
+      <div className="flex flex-col sm:flex-row justify-end gap-4 pt-4 border-t border-divider w-full">
+        {serverMode !== 'local' && (
           <button
-            onClick={saveServerConfig}
-            disabled={saving}
-            style={{
-              padding: '10px 20px',
-              background: '#5a4632',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 4,
-              cursor: 'pointer',
-              fontWeight: 500
-            }}
+            onClick={switchToLocal}
+            className="px-6 py-2.5 rounded-lg border border-divider hover:bg-content2 transition-colors font-medium text-sm flex items-center gap-2"
           >
-            {saving ? '保存中...' : '确认使用本地服务器'}
+            <RotateCw className="w-4 h-4" />
+            Reset to Local
           </button>
         )}
+        
+        <button
+          onClick={saveServerConfig}
+          disabled={saving || (serverMode !== 'local' && !remoteUrl)}
+          className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all font-medium text-sm flex items-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50 disabled:shadow-none"
+        >
+          {saving ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Saving...
+            </>
+          ) : (
+            <>
+              <Save className="w-4 h-4" />
+              Save Settings
+            </>
+          )}
+        </button>
       </div>
       
-      {/* Restart Notice */}
-      <div style={{ 
-        marginTop: 12, 
-        fontSize: 12, 
-        color: '#888' 
-      }}>
-        💡 更改服务器设置后需要重启应用才能生效
-      </div>
+      <p className="text-center text-xs text-default-500 mt-4">
+        Note: Application restart is required after changing server settings.
+      </p>
     </div>
   );
 }

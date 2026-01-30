@@ -202,7 +202,7 @@ export default function FilmLibrary() {
   }
 
   return (
-    <div>
+    <div className="bg-background min-h-screen">
       <ModalDialog 
         isOpen={dialog.isOpen} 
         type={dialog.type} 
@@ -212,7 +212,7 @@ export default function FilmLibrary() {
         onCancel={dialog.onCancel}
       />
       <div className="page-header">
-        <h3 style={{ margin:0 }}>Film Inventory</h3>
+        <h3 className="text-foreground" style={{ margin:0 }}>Film Inventory</h3>
       </div>
 
       {/* Inventory Tab Content */}
@@ -234,12 +234,11 @@ export default function FilmLibrary() {
             <select
               value={formatFilter}
               onChange={e => setFormatFilter(e.target.value)}
+              className="bg-content1 text-foreground border border-divider"
               style={{ 
                 fontSize: 12, 
                 padding: '4px 8px', 
-                borderRadius: 4, 
-                border: '1px solid #cbd5e1',
-                background: formatFilter ? '#e0f2fe' : 'white',
+                borderRadius: 4,
                 cursor: 'pointer'
               }}
             >

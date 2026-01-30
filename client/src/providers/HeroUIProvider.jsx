@@ -78,7 +78,7 @@ export function HeroUIProvider({ children }) {
     // 更新 meta theme-color（针对 Electron 标题栏）
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
-      metaThemeColor.setAttribute('content', theme === 'dark' ? '#0f172a' : '#f5f7fa');
+      metaThemeColor.setAttribute('content', theme === 'dark' ? '#000000' : '#f5f7fa');
     }
   }, [theme]);
   
@@ -112,7 +112,7 @@ export function HeroUIProvider({ children }) {
   return (
     <ThemeContext.Provider value={themeContextValue}>
       <BaseHeroUIProvider navigate={navigate}>
-        <div className="heroui-provider min-h-screen bg-background text-foreground">
+        <div className="heroui-provider h-full bg-background text-foreground">
           {children}
         </div>
       </BaseHeroUIProvider>

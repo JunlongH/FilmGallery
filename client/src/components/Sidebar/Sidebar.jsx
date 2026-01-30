@@ -51,9 +51,7 @@ export function Sidebar({ tags = [] }) {
     <motion.nav
       className={`
         flex flex-col h-full
-        bg-white/80 dark:bg-slate-900/80
-        backdrop-blur-xl
-        border-r border-slate-200/60 dark:border-slate-700/40
+        bg-content1/50 backdrop-blur-2xl
         overflow-hidden
       `}
       initial={false}
@@ -67,7 +65,7 @@ export function Sidebar({ tags = [] }) {
     >
       {/* Header */}
       <div className={`
-        flex items-center gap-3 p-4 border-b border-slate-200/60 dark:border-slate-700/40
+        flex items-center gap-3 p-4
         ${isCollapsed ? 'justify-center' : ''}
       `}>
         {/* Logo/Avatar */}
@@ -93,7 +91,7 @@ export function Sidebar({ tags = [] }) {
               transition={{ duration: 0.2 }}
               className="flex-1 min-w-0"
             >
-              <h1 className="text-base font-semibold text-slate-800 dark:text-slate-100 truncate">
+              <h1 className="text-base font-semibold text-foreground truncate">
                 Film Gallery
               </h1>
             </motion.div>
@@ -178,6 +176,11 @@ export function Sidebar({ tags = [] }) {
             shortcut="⌘9"
           />
           <SidebarItem
+            to="/luts"
+            icon={<Film className="w-5 h-5" />}
+            label="LUT Library"
+          />
+          <SidebarItem
             to="/settings"
             icon={<Settings className="w-5 h-5" />}
             label="Settings"
@@ -188,7 +191,7 @@ export function Sidebar({ tags = [] }) {
       
       {/* Footer */}
       <div className={`
-        p-3 border-t border-slate-200/60 dark:border-slate-700/40
+        p-3
         flex items-center gap-2
         ${isCollapsed ? 'flex-col' : ''}
       `}>

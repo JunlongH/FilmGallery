@@ -412,6 +412,7 @@ function createWindow() {
     minHeight: 600,
     show: false,
     frame: false,
+    backgroundColor: '#000000', // Ensure background matches dark theme to avoid blue flashes
     // titleBarStyle: 'hidden', // Removed to prevent conflict with frame: false on Windows
     webPreferences: {
       nodeIntegration: false,

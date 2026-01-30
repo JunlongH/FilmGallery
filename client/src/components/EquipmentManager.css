@@ -14,12 +14,12 @@
   margin: 0 0 8px 0;
   font-size: 28px;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .equip-header p {
   margin: 0;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
 }
 
 /* Tabs */
@@ -27,7 +27,7 @@
   display: flex;
   gap: 4px;
   margin-bottom: 24px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: 1px solid var(--heroui-divider, #e5e7eb);
   padding-bottom: 0;
 }
 
@@ -37,7 +37,7 @@
   background: none;
   font-size: 14px;
   font-weight: 500;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   cursor: pointer;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
@@ -45,7 +45,7 @@
 }
 
 .equip-tab:hover {
-  color: #1f2937;
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .equip-tab.active {
@@ -63,8 +63,8 @@
 
 /* List panel */
 .equip-list-panel {
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--heroui-content1, white);
+  border: 1px solid var(--heroui-divider, #e5e7eb);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -74,12 +74,12 @@
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
+  background: var(--heroui-default-100, #f9fafb);
+  border-bottom: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 .equip-list-header span {
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   font-size: 13px;
 }
 
@@ -93,17 +93,17 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--heroui-divider, #f3f4f6);
   cursor: pointer;
   transition: background 0.15s;
 }
 
 .equip-list-item:hover {
-  background: #f9fafb;
+  background: var(--heroui-default-100, #f9fafb);
 }
 
 .equip-list-item.selected {
-  background: #eff6ff;
+  background: var(--heroui-primary-50, #eff6ff);
   border-left: 3px solid #2563eb;
 }
 
@@ -112,7 +112,7 @@
   height: 48px;
   object-fit: cover;
   border-radius: 6px;
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
 }
 
 .equip-list-thumb-placeholder {
@@ -121,7 +121,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
   border-radius: 6px;
   font-size: 24px;
 }
@@ -133,7 +133,7 @@
 
 .equip-list-name {
   font-weight: 500;
-  color: #1f2937;
+  color: var(--heroui-foreground, #1f2937);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -141,25 +141,25 @@
 
 .equip-list-brand {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
 }
 
 .equip-empty-list {
   padding: 40px 20px;
   text-align: center;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
 }
 
 .equip-loading {
   padding: 40px;
   text-align: center;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
 }
 
 /* Detail panel */
 .equip-detail-panel {
-  background: white;
-  border: 1px solid #e5e7eb;
+  background: var(--heroui-content1, white);
+  border: 1px solid var(--heroui-divider, #e5e7eb);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -182,7 +182,7 @@
   aspect-ratio: 1;
   object-fit: cover;
   border-radius: 8px;
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
 }
 
 .equip-detail-image-placeholder {
@@ -191,27 +191,27 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
   border-radius: 8px;
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
   font-size: 14px;
 }
 
 .equip-upload-btn {
   padding: 8px 16px;
-  background: #f3f4f6;
-  border: 1px solid #d1d5db;
+  background: var(--heroui-default-100, #f3f4f6);
+  border: 1px solid var(--heroui-divider, #d1d5db);
   border-radius: 6px;
   text-align: center;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   cursor: pointer;
   font-size: 13px;
   transition: all 0.15s;
 }
 
 .equip-upload-btn:hover {
-  background: #e5e7eb;
-  color: #1f2937;
+  background: var(--heroui-default-200, #e5e7eb);
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .equip-detail-info {
@@ -224,7 +224,7 @@
   margin: 0;
   font-size: 24px;
   font-weight: 600;
-  color: #1f2937;
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .equip-detail-grid {
@@ -239,31 +239,31 @@
 }
 
 .equip-detail-label {
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   font-size: 13px;
 }
 
 .equip-detail-value {
-  color: #1f2937;
+  color: var(--heroui-foreground, #1f2937);
   font-weight: 500;
   font-size: 13px;
 }
 
 .equip-detail-notes {
   padding-top: 12px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 .equip-detail-notes label {
   display: block;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   font-size: 13px;
   margin-bottom: 8px;
 }
 
 .equip-detail-notes p {
   margin: 0;
-  color: #1f2937;
+  color: var(--heroui-foreground, #1f2937);
   font-size: 14px;
 }
 
@@ -271,7 +271,7 @@
   display: flex;
   gap: 12px;
   padding-top: 16px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 .equip-detail-empty {
@@ -280,7 +280,7 @@
   justify-content: center;
   height: 100%;
   min-height: 400px;
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
 }
 
 /* Edit Form */
@@ -292,6 +292,7 @@
   margin: 0 0 20px 0;
   font-size: 18px;
   font-weight: 600;
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .equip-form-fields {
@@ -312,16 +313,18 @@
 .form-row label {
   font-size: 13px;
   font-weight: 500;
-  color: #374151;
+  color: var(--heroui-default-600, #374151);
 }
 
 .form-row input,
 .form-row select,
 .form-row textarea {
   padding: 8px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--heroui-divider, #d1d5db);
   border-radius: 6px;
   font-size: 14px;
+  background: var(--heroui-content1, white);
+  color: var(--heroui-foreground, #1f2937);
 }
 
 .form-row input:focus,
@@ -347,10 +350,10 @@
 .form-section-header {
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--heroui-default-600, #374151);
   margin: 16px 0 8px 0;
   padding-top: 16px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 .checkbox-row {
@@ -375,7 +378,7 @@
   gap: 12px;
   margin-top: 24px;
   padding-top: 16px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 /* Add Modal */
@@ -389,6 +392,7 @@
   margin: 0 0 20px 0;
   font-size: 18px;
   font-weight: 600;
+  color: var(--heroui-foreground, #1f2937);
 }
 
 /* Buttons */
@@ -417,23 +421,23 @@
 }
 
 .btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background: var(--heroui-default-100, #f3f4f6);
+  color: var(--heroui-default-600, #374151);
+  border: 1px solid var(--heroui-divider, #d1d5db);
 }
 
 .btn-secondary:hover {
-  background: #e5e7eb;
+  background: var(--heroui-default-200, #e5e7eb);
 }
 
 .btn-danger {
-  background: #fef2f2;
+  background: rgba(239, 68, 68, 0.1);
   color: #dc2626;
-  border: 1px solid #fecaca;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .btn-danger:hover {
-  background: #fee2e2;
+  background: rgba(239, 68, 68, 0.2);
 }
 
 /* Modal overlay */
@@ -451,7 +455,7 @@
 }
 
 .modal-content {
-  background: white;
+  background: var(--heroui-content1, white);
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
@@ -477,14 +481,14 @@
 .equip-related-rolls {
   margin-top: 20px;
   padding-top: 16px;
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 .equip-related-rolls h3 {
   margin: 0 0 12px 0;
   font-size: 14px;
   font-weight: 600;
-  color: #374151;
+  color: var(--heroui-default-600, #374151);
 }
 
 .equip-rolls-grid {
@@ -506,7 +510,7 @@
 }
 
 .equip-roll-thumb:hover {
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
 }
 
 .equip-roll-thumb img {
@@ -514,7 +518,7 @@
   height: 64px;
   object-fit: cover;
   border-radius: 4px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 .equip-roll-placeholder {
@@ -523,16 +527,16 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f3f4f6;
+  background: var(--heroui-default-100, #f3f4f6);
   border-radius: 4px;
   font-size: 24px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--heroui-divider, #e5e7eb);
 }
 
 .equip-roll-title {
   margin-top: 4px;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--heroui-default-500, #6b7280);
   text-align: center;
   max-width: 80px;
   overflow: hidden;
@@ -543,7 +547,7 @@
 .equip-rolls-loading,
 .equip-rolls-empty {
   font-size: 13px;
-  color: #9ca3af;
+  color: var(--heroui-default-400, #9ca3af);
   text-align: center;
   padding: 20px;
 }

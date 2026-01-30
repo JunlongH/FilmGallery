@@ -60,8 +60,8 @@ export function SidebarItem({
           transition-all duration-200 ease-out
           group relative
           ${isActive 
-            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 font-medium' 
-            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+            ? 'bg-default-200/50 text-foreground font-semibold' 
+            : 'text-default-500 hover:text-default-900 hover:bg-default-100/50'
           }
           ${isCollapsed ? 'justify-center px-2' : ''}
         `}
@@ -70,7 +70,7 @@ export function SidebarItem({
         {isActive && (
           <motion.div
             layoutId="sidebar-active-indicator"
-            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-500 rounded-r-full"
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-foreground/80 rounded-r-full"
             initial={false}
             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
           />
@@ -79,7 +79,7 @@ export function SidebarItem({
         {/* 图标 */}
         <span className={`
           flex-shrink-0 w-5 h-5
-          ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300'}
+          ${isActive ? 'text-foreground' : 'text-default-400 group-hover:text-default-600'}
           transition-colors duration-200
         `}>
           {icon}
@@ -100,7 +100,7 @@ export function SidebarItem({
         
         {/* 徽章 */}
         {badge && !isCollapsed && (
-          <span className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
+          <span className="px-1.5 py-0.5 text-xs font-medium rounded-full bg-primary/20 text-primary">
             {badge}
           </span>
         )}
@@ -116,7 +116,7 @@ export function SidebarItem({
           <div className="flex items-center gap-2">
             <span>{label}</span>
             {shortcut && (
-              <kbd className="px-1.5 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded">
+              <kbd className="px-1.5 py-0.5 text-xs bg-default-200 rounded">
                 {shortcut}
               </kbd>
             )}
@@ -143,7 +143,12 @@ export function SidebarItem({
           animate={{ opacity: 1, height: 'auto' }}
           exit={{ opacity: 0, height: 0 }}
           transition={{ duration: 0.2 }}
-          className="ml-8 mt-1 space-y-0.5"
+          className="ml-3 mt-1"
+          style={{ 
+            display: 'grid', 
+            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', 
+            gap: '1px 2px'
+          }}
         >
           {children}
         </motion.div>
@@ -163,11 +168,11 @@ export function SidebarSubItem({ to, label }) {
     <Link
       to={to}
       className={`
-        block px-3 py-1.5 rounded-lg text-sm
+        block px-2 py-1 rounded-md text-xs truncate
         transition-colors duration-150
         ${isActive 
-          ? 'text-blue-600 dark:text-blue-400 font-medium' 
-          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+          ? 'text-primary font-medium' 
+          : 'text-default-500 hover:text-foreground'
         }
       `}
     >

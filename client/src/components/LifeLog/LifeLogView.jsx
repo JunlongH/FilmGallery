@@ -26,7 +26,7 @@ function LifeLogContent() {
 
   if (error) {
     return (
-      <Card className="bg-danger-50 border border-danger-200">
+      <Card className="bg-danger-50">
         <CardBody className="p-6 text-center text-danger">
           Failed to load photos: {error.message}
         </CardBody>
@@ -41,7 +41,7 @@ function LifeLogContent() {
         <h2 className="text-2xl font-bold text-foreground">Life Log</h2>
         
         {/* Navigation */}
-        <Card className="bg-content1/60 backdrop-blur-md border border-divider shadow-sm">
+        <Card className="bg-content1/60 backdrop-blur-md shadow-sm">
           <CardBody className="flex flex-row items-center gap-4 py-2 px-4">
             <Button
               isIconOnly
