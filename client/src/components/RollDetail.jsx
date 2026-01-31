@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRoll, getPhotos, getTags, setRollCover, deletePhoto, updateRoll, updatePhoto, buildUploadUrl, getFilms, getMetadataOptions } from '../api';
+import { getCacheStrategy } from '../lib';
 import { useParams } from 'react-router-dom';
 import ImageViewer from './ImageViewer';
 import RollHeader from './RollDetail/RollHeader';
@@ -69,17 +70,20 @@ export default function RollDetail() {
 
   const { data: roll } = useQuery({
     queryKey: ['roll', id],
-    queryFn: () => getRoll(id)
+    queryFn: () => getRoll(id),
+    ...getCacheStrategy('rolls'),
   });
 
   const { data: photos = [] } = useQuery({
     queryKey: ['rollPhotos', id],
-    queryFn: () => getPhotos(id)
+    queryFn: () => getPhotos(id),
+    ...getCacheStrategy('photos'),
   });
 
   const { data: allTags = [] } = useQuery({
     queryKey: ['tags'],
-    queryFn: getTags
+    queryFn: getTags,
+    ...getCacheStrategy('tags'),
   });
 
   // Locations now embedded in roll response (row.locations)
@@ -269,6 +273,7 @@ export default function RollDetail() {
 
   if (!roll) return <div>Loading...</div>;
 
+  // eslint-disable-next-line no-unused-vars
   function formatDate(d) {
     if (d === undefined || d === null || d === '') return '';
     let val = d;

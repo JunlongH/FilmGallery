@@ -18,7 +18,7 @@ import TimelineMonthGrid from './TimelineMonthGrid';
 import TimelineRollGrid from './TimelineRollGrid';
 
 function TimelineContent() {
-  const { selectedYear, selectedMonth, isLoading, error } = useTimeline();
+  const { selectedMonth, isLoading, error } = useTimeline();
 
   if (error) {
     return (
@@ -66,7 +66,7 @@ export default function TimelineView() {
     <TimelineProvider>
       <div className="p-6 space-y-6">
         {/* Header with Filters */}
-        <Card className="bg-content1/60 backdrop-blur-md shadow-sm">
+        <Card className="bg-content1 shadow-sm">
           <CardBody className="p-4">
             <TimelineFilters />
           </CardBody>

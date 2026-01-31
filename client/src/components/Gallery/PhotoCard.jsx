@@ -1,17 +1,16 @@
 /**
  * PhotoCard - 照片卡片组件
  * 
- * 使用 HeroUI Card + Image 展示单张照片
+ * 使用 HeroUI Card + LazyImage 展示单张照片
  * 支持 hover 效果、喜欢按钮、快捷操作
  */
 
-import React, { useState } from 'react';
-import { Card, Image, Button, Tooltip } from '@heroui/react';
+import React, { useState, memo } from 'react';
+import { Card, Button, Tooltip } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { Heart, Trash2, Tag, Eye, MoreHorizontal, Star } from 'lucide-react';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
+import LazyImage from '../common/LazyImage';
 import { buildUploadUrl } from '../../api';
-import 'react-lazy-load-image-component/src/effects/opacity.css';
 
 // Get best available image URL for a photo
 const getPhotoUrl = (photo, preferThumb = true) => {
@@ -32,7 +31,8 @@ const getPhotoUrl = (photo, preferThumb = true) => {
   return buildUploadUrl(candidate);
 };
 
-export default function PhotoCard({
+// 使用 memo 包装以避免不必要的重渲染
+const PhotoCard = memo(function PhotoCard({
   photo,
   onSelect,
   onToggleFavorite,
@@ -87,13 +87,15 @@ export default function PhotoCard({
         `}
       >
         <div className="relative" style={{ aspectRatio }}>
-          {/* Image */}
+          {/* Image - 使用 LazyImage 组件实现懒加载和渐进式加载 */}
           {imageUrl && !imageError ? (
-            <LazyLoadImage
+            <LazyImage
               src={imageUrl}
               alt={photo.title || `Photo ${photo.id}`}
-              effect="opacity"
-              className="w-full h-full object-cover"
+              aspectRatio={aspectRatio}
+              className="w-full h-full"
+              objectFit="cover"
+              fadeInDuration={0.3}
               onError={() => setImageError(true)}
             />
           ) : (
@@ -170,4 +172,6 @@ export default function PhotoCard({
       </Card>
     </motion.div>
   );
-}
+});
+
+export default PhotoCard;

@@ -93,7 +93,7 @@ export default function LifeLogYearGrid() {
             <Card
               isPressable
               onPress={() => switchToMonth(index)}
-              className="w-full h-full bg-content1/60 backdrop-blur-md hover:shadow-lg transition-all"
+              className="w-full h-full bg-content1 hover:shadow-lg transition-all"
             >
               <CardBody className="p-3 h-full flex flex-col">
                 {/* Month Header */}

@@ -154,10 +154,19 @@ export async function uploadTmpFiles(files, onProgress) {
 
 /**
  * Build query string from params object
+ * Filters out React Query context properties that may be passed when used as queryFn
  */
 export function buildQueryString(params) {
+  if (!params || typeof params !== 'object') return '';
+  
+  // React Query context properties to filter out
+  const REACT_QUERY_PROPS = new Set(['client', 'queryKey', 'signal', 'meta', 'pageParam', 'direction']);
+  
   const qs = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
+    // Skip React Query internal properties
+    if (REACT_QUERY_PROPS.has(key)) continue;
+    // Skip undefined/null/empty values
     if (value !== undefined && value !== null && value !== '') {
       qs.append(key, value);
     }

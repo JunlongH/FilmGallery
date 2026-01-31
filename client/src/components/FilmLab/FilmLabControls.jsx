@@ -625,8 +625,9 @@ export default function FilmLabControls({
   const currentSource = sourceLabels[sourceType] || sourceLabels.original;
   
   return (
-    <div className="iv-sidebar iv-scroll" style={{ width: 320, background: '#1e1e1e', padding: 24, color: '#eee', display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', borderLeft: '1px solid #333', boxShadow: '-5px 0 15px rgba(0,0,0,0.5)' }}>
+    <div className="iv-sidebar custom-scrollbar" style={{ width: 320, background: '#1e1e1e', padding: 24, color: '#eee', display: 'flex', flexDirection: 'column', gap: 20, overflowY: 'auto', borderLeft: '1px solid #333', boxShadow: '-5px 0 15px rgba(0,0,0,0.5)' }}>
         {/* Undo / Redo block will appear first, compare block moved just above it */}
+      {/* Row 1: Title + ORIG + Close */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <h3 style={{ margin: 0, color: '#fff', fontSize: 18, fontWeight: 600, letterSpacing: 0.5 }}>Film Lab</h3>
@@ -641,32 +642,32 @@ export default function FilmLabControls({
             {currentSource.icon} {currentSource.label}
           </span>
         </div>
-        
-        {/* Top Actions: Normal Mode vs Batch Mode */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {onFinishBatchParams ? (
-             <button 
-               className="iv-btn iv-btn-primary" 
-               onClick={() => onFinishBatchParams(currentParams)} 
-               style={{ padding: '6px 16px', background: '#2196F3', borderColor: '#1976D2', fontWeight: 600 }} 
-             >
-               ✓ FINISH PARAMETERS
-             </button>
-          ) : (
-            <>
-              <button className="iv-btn iv-btn-primary" onClick={handleSave} style={{ padding: '4px 12px' }} title="保存处理结果到正片库（始终写入JPEG）">SAVE</button>
-              <button className="iv-btn" onClick={onHighQualityExport} disabled={highQualityBusy} style={{ padding: '4px 12px', background: highQualityBusy ? '#555' : '#444', borderColor: highQualityBusy ? '#666' : '#555' }} title="服务器基于原始高位深扫描生成高质量正片">
-                {highQualityBusy ? 'EXPORTING…' : 'HQ EXPORT'}
+        <button className="iv-btn-icon" onClick={onClose} style={{ fontSize: 20 }}>×</button>
+      </div>
+
+      {/* Row 2: Action Buttons */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {onFinishBatchParams ? (
+           <button 
+             className="iv-btn iv-btn-primary" 
+             onClick={() => onFinishBatchParams(currentParams)} 
+             style={{ padding: '6px 12px', background: '#2196F3', borderColor: '#1976D2', fontWeight: 600, flex: '1 1 auto' }} 
+           >
+             ✓ FINISH PARAMETERS
+           </button>
+        ) : (
+          <>
+            <button className="iv-btn iv-btn-primary" onClick={handleSave} style={{ padding: '6px 12px', flex: '1 1 auto', minWidth: 60 }} title="保存处理结果到正片库（始终写入JPEG）">SAVE</button>
+            <button className="iv-btn" onClick={onHighQualityExport} disabled={highQualityBusy} style={{ padding: '6px 12px', background: highQualityBusy ? '#555' : '#444', borderColor: highQualityBusy ? '#666' : '#555', flex: '1 1 auto', minWidth: 80 }} title="服务器基于原始高位深扫描生成高质量正片">
+              {highQualityBusy ? 'EXPORTING…' : 'HQ EXPORT'}
+            </button>
+            {typeof window !== 'undefined' && window.__electron && (
+              <button className="iv-btn" onClick={onGpuExport} disabled={gpuBusy} style={{ padding: '6px 12px', flex: '1 1 auto', minWidth: 80 }} title="Electron+WebGL GPU 导出（离线工作窗口）">
+                {gpuBusy ? 'GPU…' : 'GPU EXPORT'}
               </button>
-              {typeof window !== 'undefined' && window.__electron && (
-                <button className="iv-btn" onClick={onGpuExport} disabled={gpuBusy} style={{ padding: '4px 12px' }} title="Electron+WebGL GPU 导出（离线工作窗口）">
-                  {gpuBusy ? 'GPU…' : 'GPU EXPORT'}
-                </button>
-              )}
-            </>
-          )}
-          <button className="iv-btn-icon" onClick={onClose} style={{ fontSize: 20 }}>×</button>
-        </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Save As (non-destructive) - HIDE IN BATCH MODE */}

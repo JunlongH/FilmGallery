@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Card, CardBody, Button, Input, Chip } from '@heroui/react';
 import { API_BASE } from '../../api';
 import { 
   Laptop, 
@@ -181,16 +182,17 @@ export default function ServerSettings() {
 
 
   const ModeCard = ({ mode, icon: Icon, title, description }) => (
-    <div 
-      onClick={() => setServerMode(mode)}
+    <Card 
+      isPressable
+      onPress={() => setServerMode(mode)}
       className={`
-        cursor-pointer relative p-5 rounded-xl border-2 transition-all duration-200 h-full
+        cursor-pointer relative h-full transition-all duration-200
         ${serverMode === mode 
-          ? 'border-primary bg-primary/5' 
-          : 'border-divider hover:border-default-400 bg-card'}
+          ? 'border-2 border-primary bg-primary/5' 
+          : 'border-2 border-transparent hover:border-default-300'}
       `}
     >
-      <div className="flex flex-col items-center text-center gap-3">
+      <CardBody className="flex flex-col items-center text-center gap-3 p-5">
         <div className={`p-3 rounded-lg ${serverMode === mode ? 'bg-primary text-primary-foreground' : 'bg-content2 text-default-500'}`}>
           <Icon className="w-6 h-6" />
         </div>
@@ -202,13 +204,13 @@ export default function ServerSettings() {
             {description}
           </p>
         </div>
-      </div>
-      {serverMode === mode && (
-        <div className="absolute top-3 right-3 text-primary">
-          <CheckCircle2 className="w-5 h-5" />
-        </div>
-      )}
-    </div>
+        {serverMode === mode && (
+          <div className="absolute top-3 right-3 text-primary">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+        )}
+      </CardBody>
+    </Card>
   );
 
   return (
@@ -246,140 +248,133 @@ export default function ServerSettings() {
       </div>
 
       {serverMode !== 'local' && (
-        <div className="bg-card border border-divider rounded-xl p-6 space-y-4 animate-in fade-in zoom-in-95 w-full">
-          <label className="block text-sm font-medium mb-2">Remote Server URL</label>
-          <div className="flex flex-col sm:flex-row gap-2 w-full">
-            <div className="relative flex-1">
-              <input
-                type="text"
+        <Card className="animate-in fade-in zoom-in-95 w-full">
+          <CardBody className="p-6 space-y-4">
+            <label className="block text-sm font-medium mb-2">Remote Server URL</label>
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <Input
                 value={remoteUrl}
-                onChange={(e) => setRemoteUrl(e.target.value)}
+                onValueChange={setRemoteUrl}
                 placeholder="http://192.168.1.100:4000"
-                className="w-full pl-10 pr-4 py-2 bg-content2 border border-divider rounded-lg focus:ring-2 focus:ring-primary/20 outline-none transition-all"
+                startContent={<Globe className="w-4 h-4 text-default-400" />}
+                variant="bordered"
+                classNames={{
+                  inputWrapper: "bg-default-100 dark:bg-default-50/10 border-default-300 dark:border-default-200",
+                  input: "text-foreground placeholder:text-default-400"
+                }}
               />
-              <Globe className="w-4 h-4 text-default-400 absolute left-3 top-3" />
+              <Button 
+                onPress={() => testConnection(remoteUrl)}
+                isDisabled={!remoteUrl || testStatus === 'testing'}
+                isLoading={testStatus === 'testing'}
+                variant="bordered"
+                className="min-w-[140px]"
+              >
+                {testStatus === 'testing' ? 'Testing...' : 'Test Connection'}
+              </Button>
             </div>
-            <button 
-              onClick={() => testConnection(remoteUrl)}
-              disabled={!remoteUrl || testStatus === 'testing'}
-              className="px-4 py-2 bg-content2 border border-divider rounded-lg hover:bg-content3 transition-colors font-medium flex items-center gap-2 min-w-[120px] justify-center"
-            >
-              {testStatus === 'testing' ? (
-                <>
-                  <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                  Testing
-                </>
-              ) : (
-                'Test Connection'
-              )}
-            </button>
-          </div>
 
-          {/* Test Status Feedback */}
-          {testStatus === 'success' && (
-            <div className="flex items-center gap-2 text-sm text-green-600 bg-green-500/10 p-3 rounded-lg border border-green-500/20">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Connection successful!</span>
-              {serverInfo && (
-                <span className="text-xs opacity-80">
-                  v{serverInfo.version} ({serverInfo.mode || 'standalone'})
-                </span>
-              )}
-            </div>
-          )}
-          {testStatus === 'error' && (
-            <div className="flex items-center gap-2 text-sm text-red-600 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
-              <XCircle className="w-4 h-4" />
-              <span>Connection failed. Please check the URL and network.</span>
-            </div>
-          )}
+            {/* Test Status Feedback */}
+            {testStatus === 'success' && (
+              <div className="flex items-center gap-2 text-sm text-green-600 bg-green-500/10 p-3 rounded-lg border border-green-500/20">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Connection successful!</span>
+                {serverInfo && (
+                  <span className="text-xs opacity-80">
+                    v{serverInfo.version} ({serverInfo.mode || 'standalone'})
+                  </span>
+                )}
+              </div>
+            )}
+            {testStatus === 'error' && (
+              <div className="flex items-center gap-2 text-sm text-red-600 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+                <XCircle className="w-4 h-4" />
+                <span>Connection failed. Please check the URL and network.</span>
+              </div>
+            )}
 
-          {serverMode === 'hybrid' && (
-            <div className="flex gap-3 p-4 bg-orange-500/5 border border-orange-500/20 rounded-lg text-sm text-orange-700 dark:text-orange-400">
-              <Info className="w-5 h-5 flex-shrink-0" />
-              <ul className="list-disc list-inside space-y-1 opacity-90">
-                <li>Photos are stored on your NAS/Server</li>
-                <li>Image processing uses your Local GPU</li>
-                <li>Requires NAS and PC to be on the same network</li>
-              </ul>
-            </div>
-          )}
-        </div>
+            {serverMode === 'hybrid' && (
+              <div className="flex gap-3 p-4 bg-orange-500/5 border border-orange-500/20 rounded-lg text-sm text-orange-700 dark:text-orange-400">
+                <Info className="w-5 h-5 flex-shrink-0" />
+                <ul className="list-disc list-inside space-y-1 opacity-90">
+                  <li>Photos are stored on your NAS/Server</li>
+                  <li>Image processing uses your Local GPU</li>
+                  <li>Requires NAS and PC to be on the same network</li>
+                </ul>
+              </div>
+            )}
+          </CardBody>
+        </Card>
       )}
 
       {/* Current Status Footer */}
-      <div className="bg-content2/50 rounded-xl p-6 border border-divider w-full">
-        <h3 className="font-semibold mb-4 flex items-center gap-2">
-          Current Status
-          {serverInfo ? (
-            <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-600 rounded-full">Connected</span>
-          ) : (
-            <span className="text-xs px-2 py-0.5 bg-default-200 text-default-500 rounded-full">Unknown</span>
-          )}
-        </h3>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm w-full">
-          <div className="space-y-1">
-            <span className="text-default-500 block text-xs uppercase tracking-wider">API Endpoint</span>
-            <code className="bg-content1 px-2 py-1 rounded border border-divider text-xs font-mono break-all block w-full">
-              {currentApiBase}
-            </code>
-          </div>
+      <Card className="w-full">
+        <CardBody className="p-6">
+          <h3 className="font-semibold mb-4 flex items-center gap-2">
+            Current Status
+            {serverInfo ? (
+              <Chip color="success" variant="flat" size="sm">Connected</Chip>
+            ) : (
+              <Chip variant="flat" size="sm">Unknown</Chip>
+            )}
+          </h3>
           
-          {serverInfo && (
-            <>
-              <div className="space-y-1">
-                <span className="text-default-500 block text-xs uppercase tracking-wider">Version</span>
-                <span className="font-medium">{serverInfo.version}</span>
-              </div>
-              <div className="space-y-1 col-span-full">
-                <span className="text-default-500 block text-xs uppercase tracking-wider">Capabilities</span>
-                <div className="flex gap-2 mt-1">
-                  {serverInfo.capabilities?.database && (
-                    <span className="px-2 py-0.5 bg-blue-500/10 text-blue-600 rounded text-xs border border-blue-500/20">Database</span>
-                  )}
-                  {serverInfo.capabilities?.files && (
-                    <span className="px-2 py-0.5 bg-yellow-500/10 text-yellow-600 rounded text-xs border border-yellow-500/20">File Storage</span>
-                  )}
-                  {serverInfo.capabilities?.compute && (
-                    <span className="px-2 py-0.5 bg-purple-500/10 text-purple-600 rounded text-xs border border-purple-500/20">GPU Compute</span>
-                  )}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm w-full">
+            <div className="space-y-1">
+              <span className="text-default-500 block text-xs uppercase tracking-wider">API Endpoint</span>
+              <code className="bg-content2 px-2 py-1 rounded border border-divider text-xs font-mono break-all block w-full">
+                {currentApiBase}
+              </code>
+            </div>
+            
+            {serverInfo && (
+              <>
+                <div className="space-y-1">
+                  <span className="text-default-500 block text-xs uppercase tracking-wider">Version</span>
+                  <span className="font-medium">{serverInfo.version}</span>
                 </div>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
+                <div className="space-y-1 col-span-full">
+                  <span className="text-default-500 block text-xs uppercase tracking-wider">Capabilities</span>
+                  <div className="flex gap-2 mt-1">
+                    {serverInfo.capabilities?.database && (
+                      <Chip color="primary" variant="flat" size="sm">Database</Chip>
+                    )}
+                    {serverInfo.capabilities?.files && (
+                      <Chip color="warning" variant="flat" size="sm">File Storage</Chip>
+                    )}
+                    {serverInfo.capabilities?.compute && (
+                      <Chip color="secondary" variant="flat" size="sm">GPU Compute</Chip>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </CardBody>
+      </Card>
 
       {/* Actions */}
       <div className="flex flex-col sm:flex-row justify-end gap-4 pt-4 border-t border-divider w-full">
         {serverMode !== 'local' && (
-          <button
-            onClick={switchToLocal}
-            className="px-6 py-2.5 rounded-lg border border-divider hover:bg-content2 transition-colors font-medium text-sm flex items-center gap-2"
+          <Button
+            onPress={switchToLocal}
+            variant="bordered"
+            startContent={<RotateCw className="w-4 h-4" />}
           >
-            <RotateCw className="w-4 h-4" />
             Reset to Local
-          </button>
+          </Button>
         )}
         
-        <button
-          onClick={saveServerConfig}
-          disabled={saving || (serverMode !== 'local' && !remoteUrl)}
-          className="px-6 py-2.5 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-all font-medium text-sm flex items-center gap-2 shadow-lg shadow-primary/20 disabled:opacity-50 disabled:shadow-none"
+        <Button
+          onPress={saveServerConfig}
+          isDisabled={saving || (serverMode !== 'local' && !remoteUrl)}
+          isLoading={saving}
+          color="primary"
+          startContent={!saving && <Save className="w-4 h-4" />}
+          className="shadow-lg shadow-primary/20"
         >
-          {saving ? (
-            <>
-              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="w-4 h-4" />
-              Save Settings
-            </>
-          )}
-        </button>
+          {saving ? 'Saving...' : 'Save Settings'}
+        </Button>
       </div>
       
       <p className="text-center text-xs text-default-500 mt-4">

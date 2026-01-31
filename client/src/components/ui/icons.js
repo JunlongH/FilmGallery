@@ -132,7 +132,7 @@ export {
 // 工具相关
 export {
   Sliders,
-  Tool,
+  Wrench,
   Palette,
   Pipette,
   Crop,

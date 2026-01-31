@@ -9,6 +9,7 @@ import React from 'react';
 import { Card, CardBody, Image, Chip } from '@heroui/react';
 import { Camera, Aperture, Zap, Box, Scan, Film } from 'lucide-react';
 import { buildUploadUrl } from '../../api';
+import { addCacheKey } from '../../utils/imageOptimization';
 
 // Icon mapping for equipment types
 const TYPE_ICONS = {
@@ -28,7 +29,7 @@ export default function EquipmentCard({
 }) {
   const Icon = TYPE_ICONS[type] || Camera;
   const imagePath = item.image_path || item.thumbPath || item.thumbnail_url;
-  const imageUrl = imagePath ? buildUploadUrl(imagePath) : null;
+  const imageUrl = imagePath ? addCacheKey(buildUploadUrl(imagePath), item.updated_at) : null;
 
   // Generate subtitle based on type
   const getSubtitle = () => {

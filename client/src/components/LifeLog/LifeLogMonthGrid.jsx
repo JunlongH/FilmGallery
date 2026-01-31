@@ -43,7 +43,7 @@ export default function LifeLogMonthGrid() {
   }, [currentDate]);
 
   return (
-    <Card className="bg-content1/60 backdrop-blur-md shadow-lg overflow-hidden border border-divider">
+    <Card className="bg-content1 shadow-lg overflow-hidden border border-divider">
       <CardBody className="p-0">
         <table className="w-full border-collapse table-fixed">
           {/* Weekday Headers */}
@@ -123,7 +123,7 @@ export default function LifeLogMonthGrid() {
 
                           {/* Photo Switcher (visible on hover) */}
                           {dayPhotos.length > 1 && (
-                            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between px-1 py-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/60 to-transparent">
+                            <div className="absolute inset-x-0 bottom-0 flex items-center justify-between px-1 py-1 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/60 to-transparent z-30">
                               <motion.button
                                 whileHover={{ scale: 1.1 }}
                                 whileTap={{ scale: 0.9 }}
@@ -163,7 +163,7 @@ export default function LifeLogMonthGrid() {
 
                       {/* Location info on hover */}
                       {cover && (cover.city_name || cover.country_name) && (
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity truncate z-10">
+                        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[10px] py-1 px-2 opacity-0 group-hover:opacity-100 transition-opacity truncate z-20 pointer-events-none">
                           📍 {cover.city_name || cover.country_name}
                         </div>
                       )}

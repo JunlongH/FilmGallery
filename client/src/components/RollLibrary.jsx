@@ -4,13 +4,16 @@ import { useQuery } from '@tanstack/react-query';
 import { getRolls } from '../api';
 import { useNavigate } from 'react-router-dom';
 import RollGrid from './RollGrid';
+import { getCacheStrategy } from '../lib';
 
 export default function RollLibrary() {
   const nav = useNavigate();
 
   const { data: rolls = [], isLoading } = useQuery({
     queryKey: ['rolls'],
-    queryFn: () => getRolls()
+    queryFn: () => getRolls(),
+    ...getCacheStrategy('rolls'),
+    keepPreviousData: true,
   });
 
   if (isLoading) return <div className="p-10 text-center text-default-500">Loading rolls...</div>;

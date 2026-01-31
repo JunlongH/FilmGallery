@@ -5,10 +5,9 @@
  * - Auto-advances every 6 seconds
  * - Manual navigation with arrows
  * - Click to open full viewer
- * - Smooth crossfade transitions
+ * - Smooth crossfade transitions (CSS-based for Electron compatibility)
  */
 import React, { useEffect, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardBody, Button, Spinner } from '@heroui/react';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { buildUploadUrl, getApiBase } from '../../api';
@@ -94,6 +93,9 @@ export default function HeroCarousel({ onPhotoClick }) {
   }
 
   const current = photos[currentIndex];
+  // Preload next image
+  const nextIndex = (currentIndex + 1) % photos.length;
+  const prevIndex = (currentIndex - 1 + photos.length) % photos.length;
 
   return (
     <Card 
@@ -108,53 +110,53 @@ export default function HeroCarousel({ onPhotoClick }) {
            aria-label="View photo details"
         />
 
-        {/* Photo */}
-        <AnimatePresence mode="popLayout" initial={false}>
-          <motion.img
-            key={current.id}
-            src={getPhotoUrl(current)}
-            alt={current.caption || current.roll_title || ''}
-            initial={{ opacity: 0, scale: 1.05 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.8, ease: 'easeInOut' }}
+        {/* Photos - CSS crossfade for Electron stability */}
+        {photos.map((photo, idx) => (
+          <img
+            key={photo.id}
+            src={getPhotoUrl(photo)}
+            alt={photo.caption || photo.roll_title || ''}
             className="absolute inset-0 w-full h-full object-cover z-0"
+            style={{
+              opacity: idx === currentIndex ? 1 : 0,
+              transition: 'opacity 0.8s ease-in-out',
+              willChange: idx === currentIndex || idx === nextIndex || idx === prevIndex ? 'opacity' : 'auto'
+            }}
             draggable={false}
           />
-        </AnimatePresence>
+        ))}
 
         {/* Cinematic Gradient Overlay - Always Visible */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-80 z-0 pointer-events-none" />
 
-        {/* Photo Info (bottom) */}
+        {/* Photo Info (bottom) - CSS transition for stability */}
         <div className="absolute bottom-0 left-0 right-0 p-8 md:p-12 z-20 pointer-events-none">
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            key={current.id}
-            transition={{ delay: 0.2 }}
+          <div 
+            className="transition-opacity duration-500"
+            style={{ opacity: 1 }}
           >
-            <h2 className="text-white text-3xl md:text-4xl font-bold mb-2 tracking-tight drop-shadow-lg">
-              {current.roll_title || current.caption || 'Untitled'}
+            <h2 className="text-white text-3xl md:text-4xl font-bold mb-3 tracking-tight drop-shadow-lg">
+              {current.roll_title || 'Untitled'}
             </h2>
-            <div className="flex flex-wrap gap-3 text-white/90 text-sm md:text-base font-medium drop-shadow-md">
-              {current.film_name && (
-                <span className="bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/20">
-                  {current.film_name}
-                </span>
-              )}
-              {current.camera_name && (
-                <span className="bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/20">
-                  {current.camera_name}
-                </span>
-              )}
-              {current.date && (
-                 <span className="opacity-80 flex items-center">
-                   {new Date(current.date).toLocaleDateString()}
-                 </span>
-              )}
-            </div>
-          </motion.div>
+            
+            {/* Photo Details - Simple inline text */}
+            <p className="text-white/70 text-xs md:text-sm drop-shadow-lg">
+              {[
+                current.date && new Date(current.date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }),
+                current.city,
+                current.camera_name,
+                current.lens_name,
+                current.film_name
+              ].filter(Boolean).join(' · ')}
+            </p>
+            
+            {/* Photo Caption - if exists */}
+            {current.caption && (
+              <p className="text-white/60 text-xs md:text-sm drop-shadow-lg mt-2 max-w-2xl line-clamp-2">
+                {current.caption}
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Navigation Arrows - Show on Hover - High Z-index */}

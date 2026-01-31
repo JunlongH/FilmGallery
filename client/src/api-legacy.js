@@ -6,6 +6,24 @@ export const API_BASE = (typeof window !== 'undefined' && window.__electron?.API
   : (process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000');
 
 /**
+ * Filter out React Query context properties from params object.
+ * When API functions are used as queryFn directly, React Query passes
+ * a context object { client, queryKey, signal, meta } which should not
+ * be added to URL query params.
+ */
+const REACT_QUERY_CONTEXT_KEYS = ['client', 'queryKey', 'signal', 'meta', 'direction', 'pageParam'];
+function filterQueryParams(params) {
+  if (!params || typeof params !== 'object') return {};
+  const filtered = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (!REACT_QUERY_CONTEXT_KEYS.includes(key) && value !== undefined) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
+/**
  * Get the current API base URL dynamically.
  * This is important for hybrid mode where API_BASE can change after module load.
  * @returns {string} The current API base URL
@@ -662,7 +680,7 @@ export async function createFilmFormat(data) {
 
 // Cameras
 export async function getCameras(params = {}, noCache = false) {
-  const qs = new URLSearchParams(params);
+  const qs = new URLSearchParams(filterQueryParams(params));
   if (noCache) qs.set('_t', Date.now());
   const qsStr = qs.toString();
   const url = `/api/equipment/cameras${qsStr ? '?' + qsStr : ''}`;

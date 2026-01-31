@@ -10,9 +10,9 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid var(--heroui-divider, #d1d5db);
+  border: 1px solid #27272a;
   border-radius: 6px;
-  background: var(--heroui-content1, white);
+  background: #18181b;
   cursor: pointer;
   min-height: 42px;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -28,23 +28,23 @@
 }
 
 .equip-trigger.disabled {
-  background: var(--heroui-default-100, #f3f4f6);
+  background: #27272a;
   cursor: not-allowed;
   opacity: 0.7;
 }
 
 .equip-placeholder {
-  color: var(--heroui-default-400, #9ca3af);
+  color: #a1a1aa;
   flex: 1;
 }
 
 .equip-loading {
-  color: var(--heroui-default-500, #6b7280);
+  color: #71717a;
   font-style: italic;
 }
 
 .equip-arrow {
-  color: var(--heroui-default-500, #6b7280);
+  color: #71717a;
   font-size: 10px;
 }
 
@@ -67,10 +67,10 @@
   top: 100%;
   left: 0;
   right: 0;
-  background: var(--heroui-content1, white);
-  border: 1px solid var(--heroui-divider, #d1d5db);
+  background: #18181b;
+  border: 1px solid #27272a;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   z-index: 100;
   margin-top: 4px;
   max-height: 350px;
@@ -87,12 +87,12 @@
 .equip-search {
   padding: 10px 12px;
   border: none;
-  border-bottom: 1px solid var(--heroui-divider, #e5e7eb);
+  border-bottom: 1px solid #27272a;
   font-size: 14px;
   outline: none;
   flex-shrink: 0;
-  background: var(--heroui-content1, white);
-  color: var(--heroui-foreground, #1f2937);
+  background: #18181b;
+  color: #ECEDEE;
 }
 
 .equip-list {
@@ -110,17 +110,17 @@
 }
 
 .equip-option:hover {
-  background: var(--heroui-default-100, #f3f4f6);
+  background: #27272a;
 }
 
 .equip-option.selected {
-  background: var(--heroui-primary-50, #eff6ff);
+  background: #3f3f46;
 }
 
 .equip-empty {
   padding: 20px;
   text-align: center;
-  color: var(--heroui-default-400, #9ca3af);
+  color: #a1a1aa;
 }
 
 .equip-item {

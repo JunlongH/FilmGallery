@@ -1,13 +1,15 @@
 /**
  * FilmInventoryGrid - 胶片库存网格组件
  * 
- * 展示胶片库存卡片的响应式网格
- * 支持加载状态、空状态、筛选
+ * 模仿原来的CSS grid设计:
+ * - 默认卡片 1:1 正方形
+ * - 展开的卡片占两列 (2:1)
+ * - 响应式网格布局
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Skeleton, Card, CardBody } from '@heroui/react';
+import { Skeleton } from '@heroui/react';
 import { Package } from 'lucide-react';
 import FilmInventoryCard from './FilmInventoryCard';
 
@@ -17,32 +19,26 @@ const containerVariants = {
   visible: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.05
+      staggerChildren: 0.03
     }
   }
 };
 
 const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
+  hidden: { opacity: 0, scale: 0.95 },
   visible: { 
     opacity: 1, 
-    y: 0,
-    transition: { duration: 0.3 }
+    scale: 1,
+    transition: { duration: 0.2 }
   }
 };
 
-// Skeleton loading card
+// Skeleton loading card - 1:1 grid style
 function SkeletonCard() {
   return (
-    <Card className="overflow-hidden">
-      <CardBody className="p-0 gap-0">
-        <Skeleton className="aspect-[4/3] w-full" />
-        <div className="p-3 space-y-2">
-          <Skeleton className="h-4 w-3/4 rounded-lg" />
-          <Skeleton className="h-3 w-1/2 rounded-lg" />
-        </div>
-      </CardBody>
-    </Card>
+    <div className="rounded-xl overflow-hidden bg-content1">
+      <Skeleton className="aspect-square w-full" />
+    </div>
   );
 }
 
@@ -61,6 +57,9 @@ export default function FilmInventoryGrid({
   onViewRoll,
   onToggleNegativeArchived
 }) {
+  // 当前展开的卡片ID
+  const [expandedItemId, setExpandedItemId] = useState(null);
+  
   // Create film lookup map for performance
   const filmMap = React.useMemo(() => {
     const map = new Map();
@@ -68,7 +67,7 @@ export default function FilmInventoryGrid({
     return map;
   }, [films]);
 
-  // Loading state
+  // Loading state - grid style
   if (isLoading) {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -100,32 +99,43 @@ export default function FilmInventoryGrid({
     );
   }
 
-  // Grid of cards
+  // Grid of cards - 使用原来的CSS grid样式
   return (
     <motion.div
       variants={containerVariants}
       initial="hidden"
       animate="visible"
       className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
+      style={{ alignItems: 'start' }}
     >
-      {items.map(item => (
-        <motion.div key={item.id} variants={itemVariants}>
-          <FilmInventoryCard
-            item={item}
-            film={filmMap.get(item.film_id)}
-            onLoad={onLoad}
-            onUnload={onUnload}
-            onLogShots={onLogShots}
-            onDevelop={onDevelop}
-            onCreateRoll={onCreateRoll}
-            onArchive={onArchive}
-            onEdit={onEdit}
-            onDelete={onDelete}
-            onViewRoll={onViewRoll}
-            onToggleNegativeArchived={onToggleNegativeArchived}
-          />
-        </motion.div>
-      ))}
+      {items.map(item => {
+        const isExpanded = expandedItemId === item.id;
+        return (
+          <motion.div 
+            key={item.id} 
+            variants={itemVariants}
+            className={isExpanded ? 'col-span-2' : ''}
+            layout
+          >
+            <FilmInventoryCard
+              item={item}
+              film={filmMap.get(item.film_id)}
+              isExpanded={isExpanded}
+              onToggleExpand={() => setExpandedItemId(isExpanded ? null : item.id)}
+              onLoad={onLoad}
+              onUnload={onUnload}
+              onLogShots={onLogShots}
+              onDevelop={onDevelop}
+              onCreateRoll={onCreateRoll}
+              onArchive={onArchive}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onViewRoll={onViewRoll}
+              onToggleNegativeArchived={onToggleNegativeArchived}
+            />
+          </motion.div>
+        );
+      })}
     </motion.div>
   );
 }

@@ -34,10 +34,14 @@ import {
   Check
 } from 'lucide-react';
 import { getMetadataOptions, getLocations, getFilms } from '../../api';
+import { useTheme } from '../../providers';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  
   const [options, setOptions] = useState({ 
     cameras: [], 
     lenses: [], 
@@ -158,11 +162,26 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
     );
   };
 
+  // Theme-aware styles using inline styles for reliability
+  const modalBgStyle = {
+    backgroundColor: isDark ? 'rgba(24, 24, 27, 0.95)' : 'rgba(255, 255, 255, 0.95)',
+    backdropFilter: 'blur(24px)'
+  };
+  
+  const headerBgStyle = {
+    backgroundColor: isDark ? 'transparent' : 'rgba(255, 255, 255, 0.8)'
+  };
+  
+  const bodyBgStyle = {
+    backgroundColor: isDark ? 'transparent' : 'rgba(255, 255, 255, 0.9)'
+  };
+
   return (
     <Modal 
       isOpen={isOpen} 
       onClose={onClose}
       size="full"
+      hideCloseButton={true}
       className="m-0 sm:m-0 h-[100dvh] max-h-[100dvh] w-full sm:w-[400px] rounded-none sm:rounded-none fixed right-0 inset-y-0"
       motionProps={{
         variants: {
@@ -172,22 +191,22 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
       }}
       classNames={{
         wrapper: "justify-end !items-start overflow-hidden",
-        base: "h-full max-h-screen rounded-none shadow-2xl bg-content1/95 backdrop-blur-xl border-l border-divider",
-        header: "border-b border-divider/50 p-4 h-[60px] flex items-center bg-transparent",
-        body: "p-0 bg-transparent",
-        footer: "border-t border-divider/50 p-4 bg-transparent",
+        base: "h-full max-h-screen rounded-none shadow-2xl border-l border-divider",
+        header: "border-b border-divider/50 p-4 h-[60px] flex items-center",
+        body: "p-0",
+        footer: "border-t border-divider/50 p-4",
         backdrop: "bg-black/20 backdrop-blur-[2px]"
       }}
       scrollBehavior="inside"
     >
-      <ModalContent>
-        <ModalHeader className="gap-2">
+      <ModalContent style={modalBgStyle}>
+        <ModalHeader className="gap-2" style={headerBgStyle}>
           <Button isIconOnly variant="light" onPress={onClose} size="sm">
-             <X size={20} />
+             <X size={20} style={{ color: isDark ? '#a1a1aa' : '#3f3f46' }} />
           </Button>
           <div className="flex flex-col">
-            <span className="text-lg font-bold leading-tight">Filters</span>
-            <span className="text-xs text-default-500 font-normal">Active filters: {activeCount}</span>
+            <span className="text-lg font-bold leading-tight" style={{ color: isDark ? '#fafafa' : '#18181b' }}>Filters</span>
+            <span className="text-xs font-normal" style={{ color: isDark ? '#a1a1aa' : '#52525b' }}>Active filters: {activeCount}</span>
           </div>
           {activeCount > 0 && (
             <Button
@@ -203,7 +222,7 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
           )}
         </ModalHeader>
         
-        <ModalBody>
+        <ModalBody style={bodyBgStyle}>
           <ScrollShadow className="h-full p-4 space-y-2">
             
             {/* Camera */}
@@ -318,8 +337,8 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
                             </Chip>
                           </div>
                           
-                          {/* Months Grid */}
-                          <div className="grid grid-cols-4 gap-1">
+                          {/* Months Grid - using inline style for reliable grid layout */}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' }}>
                             {MONTHS.map((mName, mIdx) => {
                               const ym = `${year}-${String(mIdx + 1).padStart(2, '0')}`;
                               const isMonthActive = (filters.ym || []).includes(ym);
@@ -328,12 +347,18 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
                                 <div 
                                   key={mName}
                                   onClick={() => toggleYearMonth(year, mIdx)}
-                                  className={`
-                                    text-center text-xs py-1.5 rounded-md cursor-pointer transition-colors
-                                    ${isMonthActive 
-                                      ? 'bg-primary text-primary-foreground font-semibold shadow-sm' 
-                                      : 'hover:bg-default-200 text-default-500'}
-                                  `}
+                                  style={{
+                                    textAlign: 'center',
+                                    fontSize: '12px',
+                                    padding: '6px 0',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.15s',
+                                    backgroundColor: isMonthActive ? 'var(--heroui-primary)' : 'transparent',
+                                    color: isMonthActive ? 'white' : 'var(--heroui-default-600)',
+                                    fontWeight: isMonthActive ? '600' : '400'
+                                  }}
+                                  className="hover:bg-default-200"
                                 >
                                   {mName}
                                 </div>
@@ -351,7 +376,7 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
           </ScrollShadow>
         </ModalBody>
 
-        <ModalFooter className="flex-col gap-2">
+        <ModalFooter className="flex-col gap-2" style={headerBgStyle}>
           <Button 
             fullWidth 
             color="primary" 

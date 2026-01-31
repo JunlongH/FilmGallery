@@ -113,15 +113,67 @@ export function TimelineProvider({ children }) {
   }, [grouped]);
 
   // Get rolls for current selection
+  // Logic: A roll is included if its date range (start_date to end_date) overlaps with the selected period
   const selectedRolls = useMemo(() => {
     if (!selectedYear) return rolls;
-    const months = grouped.get(selectedYear);
-    if (!months) return [];
-    if (!selectedMonth || selectedMonth === 'All') {
-      return Array.from(months.values()).flat();
+    
+    const yearNum = Number(selectedYear);
+    
+    // Debug: log first few rolls to see their date structure
+    if (rolls.length > 0) {
+      console.log('[Timeline] Sample roll data:', {
+        id: rolls[0].id,
+        title: rolls[0].title,
+        start_date: rolls[0].start_date,
+        startDate: rolls[0].startDate,
+        end_date: rolls[0].end_date,
+        endDate: rolls[0].endDate,
+        shot_date: rolls[0].shot_date,
+        date: rolls[0].date
+      });
     }
-    return months.get(selectedMonth) || [];
-  }, [rolls, grouped, selectedYear, selectedMonth]);
+    
+    // Filter rolls that overlap with the selected year (and optionally month)
+    const filtered = rolls.filter(roll => {
+      // Only use actual shooting dates, not created_at (which is system timestamp)
+      const startStr = roll.start_date || roll.startDate || roll.shot_date || roll.date || null;
+      const endStr = roll.end_date || roll.endDate || null;
+      
+      // Parse dates - validate they are real dates
+      const startDate = startStr ? new Date(startStr) : null;
+      const endDate = endStr ? new Date(endStr) : null;
+      
+      // Validate parsed dates
+      const validStart = startDate && !isNaN(startDate.getTime()) ? startDate : null;
+      const validEnd = endDate && !isNaN(endDate.getTime()) ? endDate : null;
+      
+      // If no valid dates at all, skip this roll
+      if (!validStart && !validEnd) return false;
+      
+      // Use start date as end if no end date (single-day roll)
+      const effectiveStart = validStart || validEnd;
+      const effectiveEnd = validEnd || validStart;
+      
+      // Determine the period to check against
+      let periodStart, periodEnd;
+      
+      if (!selectedMonth || selectedMonth === 'All') {
+        // Check if roll overlaps with the entire year
+        periodStart = new Date(yearNum, 0, 1); // Jan 1
+        periodEnd = new Date(yearNum, 11, 31, 23, 59, 59); // Dec 31
+      } else {
+        // Check if roll overlaps with the specific month
+        const monthNum = Number(selectedMonth) - 1; // 0-indexed
+        periodStart = new Date(yearNum, monthNum, 1);
+        periodEnd = new Date(yearNum, monthNum + 1, 0, 23, 59, 59); // Last day of month
+      }
+      
+      // Check for overlap: roll overlaps period if roll.start <= period.end AND roll.end >= period.start
+      return effectiveStart <= periodEnd && effectiveEnd >= periodStart;
+    });
+    
+    return filtered;
+  }, [rolls, selectedYear, selectedMonth]);
 
   const value = {
     // State

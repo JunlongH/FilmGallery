@@ -3,6 +3,7 @@
 > **技能等级**: 重要  
 > **适用场景**: React + Tailwind CSS 项目中的动态样式  
 > **创建日期**: 2026-01-30
+> **HeroUI手册**：https://www.heroui.com/docs/guide/introduction
 
 ## 问题描述
 
@@ -148,11 +149,74 @@ const COLOR_CONFIG = {
 <Card style={{ background: COLOR_CONFIG[color].gradient }}>
 ```
 
+## 实际案例 2: Grid 布局不生效
+
+### 问题描述
+使用 `grid-cols-2 grid-rows-2` 创建 2x2 按钮网格，但实际渲染成单列。
+
+**修复前（不生效）**:
+```jsx
+<div className="w-full h-full grid grid-cols-2 grid-rows-2 gap-2">
+  {buttons.map((btn, idx) => (
+    <Button key={idx} className="w-full h-full min-h-0 min-w-0">
+      {btn.label}
+    </Button>
+  ))}
+</div>
+```
+
+**问题原因**:
+1. HeroUI `Button` 组件有默认的 `min-height` 和 `padding`，覆盖了 Grid 子项的尺寸
+2. `grid-rows-2` 等类可能未被 Tailwind JIT 正确编译
+3. Tailwind 类与 HeroUI 内部样式冲突
+
+**修复后（生效）**:
+```jsx
+<div 
+  style={{
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gridTemplateRows: '1fr 1fr',
+    width: '100%',
+    height: '100%',
+    gap: '6px',
+    padding: '6px'
+  }}
+>
+  {buttons.map((btn, idx) => (
+    <button
+      key={idx}
+      onClick={btn.onClick}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        height: '100%',
+        background: '#27272a',
+        border: '1px solid rgba(255,255,255,0.05)',
+        borderRadius: '8px'
+      }}
+    >
+      <btn.icon size={22} />
+      <span>{btn.label}</span>
+    </button>
+  ))}
+</div>
+```
+
+**关键要点**:
+- 使用**原生 `<button>`** 而非 HeroUI `Button`，避免默认样式冲突
+- 使用**内联 `style`** 确保 Grid 布局 100% 生效
+- 子元素设置 `width: 100%` + `height: 100%` 填满格子
+
 ## 调试技巧
 
 1. **检查生成的 CSS**: 查看 `.output.css` 或浏览器 DevTools，确认类名是否存在
 2. **使用 Tailwind CSS IntelliSense**: VS Code 插件会警告无效类名
 3. **测试静态类名**: 先用硬编码类名确认样式正确，再考虑动态化
+4. **HeroUI 组件冲突**: 如果 Tailwind 类不生效，优先考虑使用内联样式或原生元素
 
 ## 参考资料
 

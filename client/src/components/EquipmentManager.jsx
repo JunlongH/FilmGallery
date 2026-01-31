@@ -5,12 +5,15 @@ import {
   getFlashes, createFlash, updateFlash, deleteFlash, uploadFlashImage,
   getScanners, createScanner, updateScanner, deleteScanner, uploadScannerImage,
   getFilmBacks, createFilmBack, updateFilmBack, deleteFilmBack, uploadFilmBackImage,
-  getFilms, createFilm, updateFilm, deleteFilm, uploadFilmImage, getFilmConstants,
-  getEquipmentConstants, getEquipmentRelatedRolls, buildUploadUrl
+  getFilms, createFilm, updateFilm, deleteFilm, uploadFilmImage,
+  getEquipmentRelatedRolls, buildUploadUrl
 } from '../api';
+import { addCacheKey } from '../utils/imageOptimization';
 import { useNavigate } from 'react-router-dom';
+import { Button } from '@heroui/react';
 import ModalDialog from './ModalDialog';
 import SearchInput from './shared/SearchInput';
+import { EquipmentEditModal } from './EquipmentManager/index';
 import { Camera, Aperture, Zap, Box, Scan, Film, Plus, Edit2, Trash2, Upload, Package, ImageIcon } from 'lucide-react';
 import '../styles/forms.css';
 
@@ -28,8 +31,6 @@ export default function EquipmentManager() {
   const [activeTab, setActiveTab] = useState('cameras');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [constants, setConstants] = useState(null);
-  const [filmConstants, setFilmConstants] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
   const [editItem, setEditItem] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -37,11 +38,6 @@ export default function EquipmentManager() {
   const [searchQuery, setSearchQuery] = useState('');
   const [relatedRolls, setRelatedRolls] = useState([]);
   const [loadingRolls, setLoadingRolls] = useState(false);
-
-  useEffect(() => {
-    getEquipmentConstants().then(setConstants).catch(console.error);
-    getFilmConstants().then(setFilmConstants).catch(console.error);
-  }, []);
 
   const loadItems = useCallback(async (noCache = false) => {
     setLoading(true);
@@ -130,6 +126,7 @@ export default function EquipmentManager() {
     
     // Cleanup function to prevent state updates after unmount
     return () => { isCancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedItem?.id, activeTab]);
 
   const handleCreate = async (data) => {
@@ -165,7 +162,11 @@ export default function EquipmentManager() {
         case 'films': updated = await updateFilm({ id, ...data }); break;
         default: return;
       }
-      setItems(prev => prev.map(i => i.id === id ? updated : i));
+      // Ensure updated item is valid and update local state
+      if (updated && updated.id) {
+        const updatedId = updated.id;
+        setItems(prev => prev.map(i => i.id === updatedId ? updated : i));
+      }
       setEditItem(null);
     } catch (err) {
       console.error('Update failed:', err);
@@ -219,12 +220,13 @@ export default function EquipmentManager() {
              <h2 className="text-3xl font-bold tracking-tight">Equipment Library</h2>
              <p className="text-default-500 mt-1">Manage your cameras, lenses, flashes, and film formats</p>
           </div>
-          <button 
-             onClick={() => setShowAddModal(true)}
-             className="flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-medium shadow-sm hover:opacity-90 transition-opacity"
+          <Button 
+             color="primary"
+             onPress={() => setShowAddModal(true)}
+             startContent={<Plus className="w-5 h-5" />}
           >
-             <Plus className="w-5 h-5" /> Add {TABS.find(t => t.key === activeTab)?.label.slice(0, -1) || 'Item'}
-          </button>
+             Add {TABS.find(t => t.key === activeTab)?.label.slice(0, -1) || 'Item'}
+          </Button>
         </header>
 
         <div className="flex p-1 bg-content1 rounded-xl border border-divider mb-6 flex-shrink-0">
@@ -317,17 +319,6 @@ export default function EquipmentManager() {
           {/* Detail Panel - Takes remaining space */}
           <div className="flex-1 bg-content1 rounded-xl border border-divider shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - 260px)' }}>
             {selectedItem ? (
-              editItem ? (
-                <EquipmentForm 
-                  type={activeTab}
-                  initialData={editItem}
-                  constants={activeTab === 'films' ? filmConstants : constants}
-                  onSave={async (data) => {
-                    await handleUpdate(selectedItem.id, data);
-                  }}
-                  onCancel={() => setEditItem(null)}
-                />
-               ) : (
                 <div className="p-6 lg:p-8 overflow-y-auto flex-1 animate-in fade-in slide-in-from-right-4 duration-300">
                    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 mb-8">
                       <div className="w-32 h-32 rounded-2xl bg-content2 overflow-hidden flex items-center justify-center shadow-lg relative group">
@@ -387,7 +378,7 @@ export default function EquipmentManager() {
                              >
                                <div className="aspect-square rounded bg-content2 overflow-hidden relative">
                                  {(roll.coverPath || roll.cover_photo) ? (
-                                   <img src={buildUploadUrl(roll.coverPath || roll.cover_photo)} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                   <img src={addCacheKey(buildUploadUrl(roll.coverPath || roll.cover_photo), roll.updated_at)} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                  ) : (
                                    <div className="w-full h-full flex items-center justify-center">
                                       <ImageIcon className="w-4 h-4 text-default-300" />
@@ -411,7 +402,6 @@ export default function EquipmentManager() {
                      </div>
                    )}
                 </div>
-               )
             ) : (
                <div className="flex-1 flex flex-col items-center justify-center text-default-400 p-8">
                   <div className="w-24 h-24 rounded-full bg-content2/50 flex items-center justify-center mb-6">
@@ -425,7 +415,28 @@ export default function EquipmentManager() {
         </div>
       </div>
       
-      {showAddModal && <EquipmentForm isNew type={activeTab} constants={activeTab === 'films' ? filmConstants : constants} onSave={handleCreate} onCancel={() => setShowAddModal(false)} />}
+      {/* Add Equipment Modal */}
+      <EquipmentEditModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        type={activeTab}
+        isNew={true}
+        onSave={handleCreate}
+      />
+      
+      {/* Edit Equipment Modal */}
+      <EquipmentEditModal
+        isOpen={!!editItem}
+        onClose={() => setEditItem(null)}
+        type={activeTab}
+        initialData={editItem || {}}
+        isNew={false}
+        onSave={async (data) => {
+          if (editItem?.id) {
+            await handleUpdate(editItem.id, data);
+          }
+        }}
+      />
       
       {confirmDelete && (
         <ModalDialog isOpen title="Delete Item" message={`Are you sure you want to delete "${confirmDelete.name}"?`} type="confirm" onConfirm={() => handleDelete(confirmDelete.id)} onCancel={() => setConfirmDelete(null)} />
@@ -446,56 +457,6 @@ function DetailRow({ label, value, capitalize }) {
 }
 
 // ========================================
-// CONSTANTS - Synced with server (packages/shared/constants/equipment.js)
-// ========================================
-
-const CAMERA_TYPES = [
-  'SLR', 'Rangefinder', 'P&S', 'TLR', 'Medium Format', 
-  'Large Format', 'Instant', 'Half Frame', 'Other'
-];
-
-const LENS_MOUNTS = [
-  'M42', 'Pentax K', 'Nikon F', 'Canon FD', 'Canon EF', 
-  'Minolta MD', 'Minolta A', 'Leica M', 'Leica R', 'Leica L',
-  'Contax/Yashica', 'Olympus OM', 'Sony A', 'Sony E',
-  'Micro Four Thirds', 'Fuji X', 'Hasselblad V', 'Mamiya 645',
-  'Mamiya RB/RZ', 'Pentax 645', 'Pentax 67', 'Fixed'
-];
-
-const FILM_FORMATS = [
-  '135', '120', '220', '110', '127', 
-  'Large Format 4x5', 'Large Format 8x10', 
-  'Instant', 'APS', 'Half Frame'
-];
-
-const SCANNER_TYPES = [
-  'Flatbed', 'Film Scanner', 'Drum Scanner', 
-  'DSLR Scan Rig', 'Virtual Drum', 'Lab Scanner', 'Other'
-];
-
-const FILM_BACK_SUB_FORMATS = [
-  { value: '645', label: '6x4.5 (645)' },
-  { value: '6x6', label: '6x6' },
-  { value: '6x7', label: '6x7' },
-  { value: '6x8', label: '6x8' },
-  { value: '6x9', label: '6x9' },
-  { value: '6x12', label: '6x12' },
-  { value: '6x17', label: '6x17' }
-];
-
-const FILM_BACK_MOUNTS = [
-  'Hasselblad V', 'Mamiya RB67', 'Mamiya RZ67', 'Mamiya 645',
-  'Pentax 645', 'Pentax 67', 'Bronica ETR', 'Bronica SQ', 
-  'Bronica GS-1', 'Rollei SL66', 'Graflex', 'Universal'
-];
-
-const METER_TYPES = ['None', 'Match-Needle', 'Center-Weighted', 'Matrix', 'Spot', 'Evaluative'];
-const FOCUS_TYPES = ['Manual', 'Auto', 'Hybrid'];
-const CONDITIONS = ['Mint', 'Excellent', 'Good', 'Fair', 'Poor', 'For Parts'];
-const STATUSES = ['Owned', 'Sold', 'Wishlist', 'Borrowed', 'Lab'];
-const SENSOR_TYPES = ['CCD', 'CMOS', 'PMT'];
-const BIT_DEPTHS = [8, 12, 14, 16, 24, 48];
-
 function EquipmentDetails({ item, type }) {
   // Format production years
   const getProductionYears = () => {
@@ -640,437 +601,6 @@ function EquipmentDetails({ item, type }) {
           <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed bg-default-50/50 p-4 rounded-xl border border-default-100">{item.notes}</p>
         </div>
       )}
-    </div>
-  );
-}
-
-// ========================================
-// FORM SECTION COMPONENT
-// ========================================
-function FormSection({ title, children, className = '' }) {
-  return (
-    <div className={`col-span-1 md:col-span-2 ${className}`}>
-      <h4 className="text-xs font-bold text-default-400 uppercase tracking-wider mb-4 flex items-center gap-2">
-        <span className="w-1 h-4 bg-primary/60 rounded-full" />
-        {title}
-      </h4>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function EquipmentForm({ type, initialData = {}, onSave, onCancel, isNew }) {
-  const [form, setForm] = useState(initialData || {});
-  const handleChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
-
-  // Unified input styles
-  const inputClass = "w-full h-10 px-3 rounded-lg bg-default-100 border border-default-200 hover:border-default-300 focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all outline-none text-foreground text-sm placeholder:text-default-400";
-  const selectClass = "w-full h-10 px-3 rounded-lg bg-default-100 border border-default-200 hover:border-default-300 focus:border-primary focus:ring-1 focus:ring-primary/30 transition-all outline-none text-foreground text-sm cursor-pointer appearance-none";
-  const labelClass = "text-xs font-semibold text-default-500 uppercase tracking-wide mb-1.5 block";
-  const checkboxClass = "w-4 h-4 rounded border-default-300 text-primary focus:ring-primary/50 cursor-pointer";
-
-  // Field wrapper for consistent sizing
-  const Field = ({ label, children, span = 1 }) => (
-    <div className={span === 2 ? 'col-span-2' : 'col-span-1'}>
-      <label className={labelClass}>{label}</label>
-      {children}
-    </div>
-  );
-
-  return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex justify-between items-center px-6 py-4 border-b border-divider flex-shrink-0 bg-content1">
-        <h3 className="text-xl font-bold">{isNew ? 'Add New' : 'Edit'} {TABS.find(t=>t.key===type)?.label.slice(0,-1)}</h3>
-      </div>
-       
-      {/* Scrollable Form Content */}
-      <form onSubmit={(e) => { e.preventDefault(); onSave(form); }} className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-          
-          {/* ========================================
-              BASIC INFO SECTION - All types
-          ======================================== */}
-          <FormSection title="Basic Information">
-            <Field label="Name *" span={2}>
-              <input required autoFocus className={inputClass} value={form.name || ''} onChange={e => handleChange('name', e.target.value)} placeholder="Display name" />
-            </Field>
-            <Field label={type === 'films' ? 'Manufacturer' : 'Brand'}>
-              <input className={inputClass} value={form.brand || ''} onChange={e => handleChange('brand', e.target.value)} placeholder={type === 'films' ? 'e.g. Kodak' : 'e.g. Nikon'} />
-            </Field>
-            <Field label="Model">
-              <input className={inputClass} value={form.model || ''} onChange={e => handleChange('model', e.target.value)} placeholder="Model number" />
-            </Field>
-          </FormSection>
-
-          {/* ========================================
-              CAMERA SPECIFICATIONS
-          ======================================== */}
-          {type === 'cameras' && (
-            <>
-              <FormSection title="Camera Specifications">
-                <Field label="Type">
-                  <select className={selectClass} value={form.type || ''} onChange={e => handleChange('type', e.target.value)}>
-                    <option value="">Select Type</option>
-                    {CAMERA_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </Field>
-                <Field label="Film Format">
-                  <select className={selectClass} value={form.format || ''} onChange={e => handleChange('format', e.target.value)}>
-                    <option value="">Select Format</option>
-                    {FILM_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
-                  </select>
-                </Field>
-                <Field label="Lens Mount">
-                  <select className={selectClass} value={form.mount || ''} onChange={e => handleChange('mount', e.target.value)}>
-                    <option value="">Select Mount</option>
-                    {LENS_MOUNTS.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </Field>
-                <Field label="Meter Type">
-                  <select className={selectClass} value={form.meter_type || ''} onChange={e => handleChange('meter_type', e.target.value)}>
-                    <option value="">None</option>
-                    {METER_TYPES.filter(m => m !== 'None').map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
-                </Field>
-                <Field label="Shutter Max">
-                  <input className={inputClass} value={form.shutter_speed_max || ''} onChange={e => handleChange('shutter_speed_max', e.target.value)} placeholder="e.g. 1/500" />
-                </Field>
-                <Field label="Shutter Min">
-                  <input className={inputClass} value={form.shutter_speed_min || ''} onChange={e => handleChange('shutter_speed_min', e.target.value)} placeholder="e.g. 1s" />
-                </Field>
-                <Field label="Weight (g)">
-                  <input type="number" className={inputClass} value={form.weight_g || ''} onChange={e => handleChange('weight_g', e.target.value ? parseFloat(e.target.value) : null)} placeholder="grams" />
-                </Field>
-                <Field label="Battery">
-                  <input className={inputClass} value={form.battery_type || ''} onChange={e => handleChange('battery_type', e.target.value)} placeholder="e.g. LR44" />
-                </Field>
-                <Field label="Prod. Start Year">
-                  <input type="number" className={inputClass} value={form.production_year_start || ''} onChange={e => handleChange('production_year_start', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 1985" />
-                </Field>
-                <Field label="Prod. End Year">
-                  <input type="number" className={inputClass} value={form.production_year_end || ''} onChange={e => handleChange('production_year_end', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 1995" />
-                </Field>
-                <div className="col-span-2 flex items-center gap-6 pt-2">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className={checkboxClass} checked={form.has_built_in_flash === 1} onChange={e => handleChange('has_built_in_flash', e.target.checked ? 1 : 0)} />
-                    <span className="text-sm font-medium">Built-in Flash</span>
-                  </label>
-                  {form.has_built_in_flash === 1 && (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-default-500">GN:</span>
-                      <input type="number" className={`${inputClass} w-20`} value={form.flash_gn || ''} onChange={e => handleChange('flash_gn', e.target.value ? parseFloat(e.target.value) : null)} placeholder="GN" />
-                    </div>
-                  )}
-                </div>
-              </FormSection>
-
-              {/* Fixed Lens Options */}
-              <div className="col-span-2 p-4 bg-default-50/50 rounded-xl border border-default-100">
-                <label className="flex items-center gap-3 cursor-pointer mb-4">
-                  <input type="checkbox" className={checkboxClass} checked={form.has_fixed_lens === 1 || form.has_fixed_lens === true} onChange={e => handleChange('has_fixed_lens', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm font-medium text-foreground">Fixed Lens Camera</span>
-                </label>
-                {(form.has_fixed_lens === 1 || form.has_fixed_lens === true) && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-2 border-t border-default-100">
-                    <Field label="Focal Length (mm)">
-                      <input type="number" className={inputClass} value={form.fixed_lens_focal_length || ''} onChange={e => handleChange('fixed_lens_focal_length', e.target.value ? parseFloat(e.target.value) : null)} placeholder="35" />
-                    </Field>
-                    <Field label="Max Aperture">
-                      <input type="number" step="0.1" className={inputClass} value={form.fixed_lens_max_aperture || ''} onChange={e => handleChange('fixed_lens_max_aperture', e.target.value ? parseFloat(e.target.value) : null)} placeholder="2.8" />
-                    </Field>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
-          {/* ========================================
-              LENS SPECIFICATIONS
-          ======================================== */}
-          {type === 'lenses' && (
-            <FormSection title="Lens Specifications">
-              <Field label="Min Focal (mm)">
-                <input type="number" className={inputClass} value={form.focal_length_min || ''} onChange={e => handleChange('focal_length_min', e.target.value ? parseFloat(e.target.value) : null)} placeholder="Wide/Prime" />
-              </Field>
-              <Field label="Max Focal (mm)">
-                <input type="number" className={inputClass} value={form.focal_length_max || ''} onChange={e => handleChange('focal_length_max', e.target.value ? parseFloat(e.target.value) : null)} placeholder="Tele (zoom)" />
-              </Field>
-              <Field label="Mount">
-                <select className={selectClass} value={form.mount || ''} onChange={e => handleChange('mount', e.target.value)}>
-                  <option value="">Select Mount</option>
-                  {LENS_MOUNTS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </Field>
-              <Field label="Focus Type">
-                <select className={selectClass} value={form.focus_type || 'Manual'} onChange={e => handleChange('focus_type', e.target.value)}>
-                  {FOCUS_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </Field>
-              <Field label="Max Aperture">
-                <input type="number" step="0.1" className={inputClass} value={form.max_aperture || ''} onChange={e => handleChange('max_aperture', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 1.4" />
-              </Field>
-              <Field label="Max Aperture (Tele)">
-                <input type="number" step="0.1" className={inputClass} value={form.max_aperture_tele || ''} onChange={e => handleChange('max_aperture_tele', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 5.6 (zoom)" />
-              </Field>
-              <Field label="Min Aperture">
-                <input type="number" step="0.1" className={inputClass} value={form.min_aperture || ''} onChange={e => handleChange('min_aperture', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 22" />
-              </Field>
-              <Field label="Filter Size (mm)">
-                <input type="number" className={inputClass} value={form.filter_size || ''} onChange={e => handleChange('filter_size', e.target.value ? parseFloat(e.target.value) : null)} placeholder="52" />
-              </Field>
-              <Field label="Aperture Blades">
-                <input type="number" className={inputClass} value={form.blade_count || ''} onChange={e => handleChange('blade_count', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 8" />
-              </Field>
-              <Field label="Elements">
-                <input type="number" className={inputClass} value={form.elements || ''} onChange={e => handleChange('elements', e.target.value ? parseInt(e.target.value) : null)} placeholder="镜片数" />
-              </Field>
-              <Field label="Groups">
-                <input type="number" className={inputClass} value={form.groups || ''} onChange={e => handleChange('groups', e.target.value ? parseInt(e.target.value) : null)} placeholder="镜组数" />
-              </Field>
-              <Field label="Weight (g)">
-                <input type="number" className={inputClass} value={form.weight_g || ''} onChange={e => handleChange('weight_g', e.target.value ? parseFloat(e.target.value) : null)} placeholder="grams" />
-              </Field>
-              <Field label="Min Focus (m)">
-                <input type="number" step="0.01" className={inputClass} value={form.min_focus_distance || ''} onChange={e => handleChange('min_focus_distance', e.target.value ? parseFloat(e.target.value) : null)} placeholder="0.45" />
-              </Field>
-              <Field label="Magnification">
-                <input className={inputClass} value={form.magnification_ratio || ''} onChange={e => handleChange('magnification_ratio', e.target.value)} placeholder="e.g. 1:1, 1:2" />
-              </Field>
-              <Field label="Prod. Start Year">
-                <input type="number" className={inputClass} value={form.production_year_start || ''} onChange={e => handleChange('production_year_start', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 1985" />
-              </Field>
-              <Field label="Prod. End Year">
-                <input type="number" className={inputClass} value={form.production_year_end || ''} onChange={e => handleChange('production_year_end', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 1995" />
-              </Field>
-              <div className="col-span-4 flex items-center gap-6 pt-3 border-t border-default-100">
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.is_macro === 1} onChange={e => handleChange('is_macro', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm font-medium">Macro Lens</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.image_stabilization === 1} onChange={e => handleChange('image_stabilization', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm font-medium">Image Stabilization</span>
-                </label>
-              </div>
-            </FormSection>
-          )}
-
-          {/* ========================================
-              FLASH SPECIFICATIONS
-          ======================================== */}
-          {type === 'flashes' && (
-            <FormSection title="Flash Specifications">
-              <Field label="Guide Number">
-                <input type="number" className={inputClass} value={form.guide_number || ''} onChange={e => handleChange('guide_number', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 36" />
-              </Field>
-              <Field label="Power Source">
-                <input className={inputClass} value={form.power_source || ''} onChange={e => handleChange('power_source', e.target.value)} placeholder="e.g. 4xAA" />
-              </Field>
-              <Field label="Recycle Time (s)">
-                <input type="number" step="0.1" className={inputClass} value={form.recycle_time || ''} onChange={e => handleChange('recycle_time', e.target.value ? parseFloat(e.target.value) : null)} placeholder="e.g. 3.5" />
-              </Field>
-              <div className="col-span-1" /> {/* Spacer */}
-              <div className="col-span-4 grid grid-cols-2 md:grid-cols-4 gap-4 pt-3 border-t border-default-100">
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.ttl_compatible === 1} onChange={e => handleChange('ttl_compatible', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm">TTL Compatible</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.has_auto_mode === 1} onChange={e => handleChange('has_auto_mode', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm">Auto Mode</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.swivel_head === 1} onChange={e => handleChange('swivel_head', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm">Swivel Head</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.bounce_head === 1} onChange={e => handleChange('bounce_head', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm">Bounce Head</span>
-                </label>
-              </div>
-            </FormSection>
-          )}
-
-          {/* ========================================
-              FILM BACK SPECIFICATIONS
-          ======================================== */}
-          {type === 'film-backs' && (
-            <FormSection title="Film Back Specifications">
-              <Field label="Format">
-                <select className={selectClass} value={form.format || ''} onChange={e => handleChange('format', e.target.value)}>
-                  <option value="">Select Format</option>
-                  <option value="120">120</option>
-                  <option value="220">220</option>
-                  <option value="4x5">4x5</option>
-                  <option value="Instant">Polaroid/Instant</option>
-                  <option value="Other">Other</option>
-                </select>
-              </Field>
-              <Field label="Sub-Format">
-                <select className={selectClass} value={form.sub_format || ''} onChange={e => handleChange('sub_format', e.target.value)}>
-                  <option value="">Select Frame Size</option>
-                  {FILM_BACK_SUB_FORMATS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-                </select>
-              </Field>
-              <Field label="Mount Type">
-                <select className={selectClass} value={form.mount_type || ''} onChange={e => handleChange('mount_type', e.target.value)}>
-                  <option value="">Select Mount</option>
-                  {FILM_BACK_MOUNTS.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
-              </Field>
-              <Field label="Magazine Type">
-                <input className={inputClass} value={form.magazine_type || ''} onChange={e => handleChange('magazine_type', e.target.value)} placeholder="e.g. A12, A24" />
-              </Field>
-              <Field label="Frames/Roll">
-                <input type="number" className={inputClass} value={form.frames_per_roll || ''} onChange={e => handleChange('frames_per_roll', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 12" />
-              </Field>
-              <Field label="Frame Width (mm)">
-                <input type="number" step="0.1" className={inputClass} value={form.frame_width_mm || ''} onChange={e => handleChange('frame_width_mm', e.target.value ? parseFloat(e.target.value) : null)} placeholder="56" />
-              </Field>
-              <Field label="Frame Height (mm)">
-                <input type="number" step="0.1" className={inputClass} value={form.frame_height_mm || ''} onChange={e => handleChange('frame_height_mm', e.target.value ? parseFloat(e.target.value) : null)} placeholder="56" />
-              </Field>
-              <Field label="Compatible Cameras">
-                <input className={inputClass} value={form.compatible_cameras || ''} onChange={e => handleChange('compatible_cameras', e.target.value)} placeholder="e.g. 500C, 500CM, 503CW" />
-              </Field>
-              <div className="col-span-4 grid grid-cols-2 md:grid-cols-3 gap-4 pt-3 border-t border-default-100">
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.is_motorized === 1} onChange={e => handleChange('is_motorized', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm">Motorized</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100">
-                  <input type="checkbox" className={checkboxClass} checked={form.has_dark_slide !== 0} onChange={e => handleChange('has_dark_slide', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm">Has Dark Slide</span>
-                </label>
-              </div>
-            </FormSection>
-          )}
-
-          {/* ========================================
-              SCANNER SPECIFICATIONS
-          ======================================== */}
-          {type === 'scanners' && (
-            <FormSection title="Scanner Specifications">
-              <Field label="Type">
-                <select className={selectClass} value={form.type || ''} onChange={e => handleChange('type', e.target.value)}>
-                  <option value="">Select Type</option>
-                  {SCANNER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </Field>
-              <Field label="Max Resolution (DPI)">
-                <input type="number" className={inputClass} value={form.max_resolution || ''} onChange={e => handleChange('max_resolution', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 4800" />
-              </Field>
-              <Field label="Sensor Type">
-                <select className={selectClass} value={form.sensor_type || ''} onChange={e => handleChange('sensor_type', e.target.value)}>
-                  <option value="">Select Sensor</option>
-                  {SENSOR_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </Field>
-              <Field label="Bit Depth">
-                <select className={selectClass} value={form.bit_depth || ''} onChange={e => handleChange('bit_depth', e.target.value ? parseInt(e.target.value) : null)}>
-                  <option value="">Select</option>
-                  {BIT_DEPTHS.map(b => <option key={b} value={b}>{b}-bit</option>)}
-                </select>
-              </Field>
-              <Field label="Supported Formats" span={2}>
-                <input className={inputClass} value={form.supported_formats || ''} onChange={e => handleChange('supported_formats', e.target.value)} placeholder="e.g. 35mm, 120, 4x5" />
-              </Field>
-              <Field label="Default Software" span={2}>
-                <input className={inputClass} value={form.default_software || ''} onChange={e => handleChange('default_software', e.target.value)} placeholder="e.g. SilverFast, VueScan" />
-              </Field>
-              <div className="col-span-4 pt-2">
-                <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-default-100 w-fit">
-                  <input type="checkbox" className={checkboxClass} checked={form.has_infrared_cleaning === 1} onChange={e => handleChange('has_infrared_cleaning', e.target.checked ? 1 : 0)} />
-                  <span className="text-sm font-medium">Infrared Dust Removal (ICE/iSRD)</span>
-                </label>
-              </div>
-            </FormSection>
-          )}
-
-          {/* ========================================
-              FILM STOCK SPECIFICATIONS
-          ======================================== */}
-          {type === 'films' && (
-            <FormSection title="Film Specifications">
-              <Field label="ISO Speed">
-                <input type="number" className={inputClass} value={form.iso || ''} onChange={e => handleChange('iso', e.target.value ? parseInt(e.target.value) : null)} placeholder="e.g. 400" />
-              </Field>
-              <Field label="Format">
-                <select className={selectClass} value={form.format || '135'} onChange={e => handleChange('format', e.target.value)}>
-                  {FILM_FORMATS.map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-              </Field>
-              <Field label="Category">
-                <select className={selectClass} value={form.category || ''} onChange={e => handleChange('category', e.target.value)}>
-                  <option value="">Select Category</option>
-                  <option value="color-negative">Color Negative</option>
-                  <option value="color-reversal">Color Reversal (Slide)</option>
-                  <option value="bw-negative">B&W Negative</option>
-                  <option value="bw-reversal">B&W Reversal</option>
-                  <option value="instant">Instant</option>
-                  <option value="cine">Cinema (ECN-2)</option>
-                  <option value="other">Other</option>
-                </select>
-              </Field>
-              <Field label="Process">
-                <select className={selectClass} value={form.process || ''} onChange={e => handleChange('process', e.target.value)}>
-                  <option value="">Select Process</option>
-                  <option value="C-41">C-41</option>
-                  <option value="E-6">E-6</option>
-                  <option value="B&W">B&W</option>
-                  <option value="ECN-2">ECN-2</option>
-                  <option value="Cross">Cross Process</option>
-                  <option value="Other">Other</option>
-                </select>
-              </Field>
-            </FormSection>
-          )}
-
-          {/* ========================================
-              OWNERSHIP SECTION - All types
-          ======================================== */}
-          <FormSection title="Ownership Details" className="border-t border-divider pt-6">
-            <Field label="Status">
-              <select className={selectClass} value={form.status || 'Owned'} onChange={e => handleChange('status', e.target.value)}>
-                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </Field>
-            <Field label="Condition">
-              <select className={selectClass} value={form.condition || ''} onChange={e => handleChange('condition', e.target.value)}>
-                <option value="">Select Condition</option>
-                {CONDITIONS.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </Field>
-            <Field label="Purchase Date">
-              <input type="date" className={inputClass} value={form.purchase_date || ''} onChange={e => handleChange('purchase_date', e.target.value)} />
-            </Field>
-            <Field label="Purchase Price">
-              <input type="number" step="0.01" className={inputClass} value={form.purchase_price || ''} onChange={e => handleChange('purchase_price', e.target.value ? parseFloat(e.target.value) : null)} placeholder="¥" />
-            </Field>
-            {type !== 'films' && (
-              <Field label="Serial Number" span={2}>
-                <input className={inputClass} value={form.serial_number || ''} onChange={e => handleChange('serial_number', e.target.value)} placeholder="S/N" />
-              </Field>
-            )}
-            <Field label="Notes" span={type !== 'films' ? 2 : 4}>
-              <textarea className={`${inputClass} h-20 py-2 resize-none`} value={form.notes || ''} onChange={e => handleChange('notes', e.target.value)} placeholder="Additional notes..." />
-            </Field>
-          </FormSection>
-        </div>
-          
-        {/* Footer Actions */}
-        <div className="flex justify-end gap-3 px-6 py-4 border-t border-divider bg-content1/95 backdrop-blur flex-shrink-0">
-          <button type="button" onClick={onCancel} className="px-5 py-2 rounded-lg border border-divider hover:bg-content2 font-medium text-sm transition-colors">
-            Cancel
-          </button>
-          <button type="submit" className="px-5 py-2 rounded-lg bg-primary text-primary-foreground font-medium text-sm shadow-sm hover:opacity-90 transition-opacity">
-            {isNew ? 'Create' : 'Save Changes'}
-          </button>
-        </div>
-      </form>
     </div>
   );
 }

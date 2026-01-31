@@ -3,7 +3,7 @@
  * 
  * Features:
  * - Tabs for Rolls/Photos mode
- * - Search input
+ * - Search input with debounce
  * - Filter button
  * - Results grid
  */
@@ -19,6 +19,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { SlidersHorizontal, X } from 'lucide-react';
 import { getRolls, searchPhotos } from '../../api';
+import { getCacheStrategy } from '../../lib';
+import { useDebounce } from '../../hooks';
 import RollGrid from '../RollGrid';
 import PhotoGrid from '../PhotoGrid';
 import FilterDrawer from './FilterDrawer';
@@ -38,6 +40,9 @@ export default function BrowseSection() {
     film: []
   });
 
+  // 搜索防抖 - 300ms 延迟
+  const debouncedSearch = useDebounce(searchQuery, 300);
+
   // Stabilize filters for react-query key
   const stableFilters = useMemo(() => {
     const out = {};
@@ -45,20 +50,24 @@ export default function BrowseSection() {
       if (Array.isArray(v)) out[k] = [...v].sort();
       else out[k] = v;
     });
-    if (searchQuery) out.q = searchQuery;
+    if (debouncedSearch) out.q = debouncedSearch;
     return out;
-  }, [filters, searchQuery]);
+  }, [filters, debouncedSearch]);
 
   const rollsQuery = useQuery({
     queryKey: ['rolls', stableFilters],
     queryFn: () => getRolls(stableFilters),
-    enabled: mode === 'rolls'
+    enabled: mode === 'rolls',
+    ...getCacheStrategy('rolls'),
+    keepPreviousData: true,
   });
 
   const photosQuery = useQuery({
     queryKey: ['photos', stableFilters],
     queryFn: () => searchPhotos(stableFilters),
-    enabled: mode === 'photos'
+    enabled: mode === 'photos',
+    ...getCacheStrategy('photos'),
+    keepPreviousData: true,
   });
 
   const isLoading = mode === 'rolls' ? rollsQuery.isLoading : photosQuery.isLoading;
@@ -95,7 +104,7 @@ export default function BrowseSection() {
           variant="solid"
           size="lg"
           classNames={{
-            tabList: 'bg-content2/60 backdrop-blur-md',
+            tabList: 'bg-content2',
           }}
         >
           <Tab 

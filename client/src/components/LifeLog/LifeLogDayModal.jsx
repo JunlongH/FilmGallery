@@ -5,11 +5,6 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
 import { 
-  Modal, 
-  ModalContent, 
-  ModalHeader, 
-  ModalBody, 
-  ModalFooter,
   Button,
   Chip 
 } from '@heroui/react';
@@ -35,34 +30,48 @@ export default function LifeLogDayModal() {
 
   if (!selectedDay) return null;
 
+  // Handle photo update (refresh if needed)
+  const handlePhotoUpdate = () => {
+    // Could trigger a refresh here if needed
+  };
+
   return (
     <>
-      <Modal 
-        isOpen={!!selectedDay} 
-        onClose={() => setSelectedDay(null)}
-        size="4xl"
-        scrollBehavior="inside"
-        backdrop="blur"
-        classNames={{
-          base: "bg-content1 border border-divider",
-          header: "border-b border-divider",
-          footer: "border-t border-divider"
+      {/* Custom Modal Implementation for Electron Compatibility */}
+      <div 
+        className="fixed inset-0 z-50 flex items-center justify-center"
+        style={{ backgroundColor: 'rgba(0, 0, 0, 0.7)' }}
+        onClick={(e) => {
+          if (e.target === e.currentTarget) setSelectedDay(null);
         }}
       >
-        <ModalContent>
-          {(onClose) => (
-            <>
-              <ModalHeader className="flex items-center gap-3">
-                <span className="text-xl font-semibold">
-                  {format(selectedDay, 'MMMM d, yyyy')}
-                </span>
-                <Chip size="sm" variant="flat" color="primary">
-                  {selectedPhotos.length} {selectedPhotos.length === 1 ? 'photo' : 'photos'}
-                </Chip>
-              </ModalHeader>
+        <div 
+          className="border border-divider shadow-2xl rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col"
+          style={{ backgroundColor: '#18181b' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 p-4 border-b border-divider">
+            <div className="flex items-center gap-3">
+              <span className="text-xl font-semibold">
+                {format(selectedDay, 'MMMM d, yyyy')}
+              </span>
+              <Chip size="sm" variant="flat" color="primary">
+                {selectedPhotos.length} {selectedPhotos.length === 1 ? 'photo' : 'photos'}
+              </Chip>
+            </div>
+            <Button 
+              isIconOnly
+              variant="light"
+              onPress={() => setSelectedDay(null)}
+            >
+              <X size={18} />
+            </Button>
+          </div>
 
-              <ModalBody className="py-6">
-                <AnimatePresence>
+          {/* Body */}
+          <div className="flex-1 overflow-auto p-6 custom-scrollbar">
+            <AnimatePresence>
                   <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     {selectedPhotos.map((photo, idx) => (
                       <motion.div
@@ -147,22 +156,21 @@ export default function LifeLogDayModal() {
                     ))}
                   </div>
                 </AnimatePresence>
-              </ModalBody>
+          </div>
 
-              <ModalFooter>
-                <Button 
-                  color="default" 
-                  variant="flat" 
-                  onPress={onClose}
-                  startContent={<X size={16} />}
-                >
-                  Close
-                </Button>
-              </ModalFooter>
-            </>
-          )}
-        </ModalContent>
-      </Modal>
+          {/* Footer */}
+          <div className="p-4 border-t border-divider flex justify-end">
+            <Button 
+              color="default" 
+              variant="flat" 
+              onPress={() => setSelectedDay(null)}
+              startContent={<X size={16} />}
+            >
+              Close
+            </Button>
+          </div>
+        </div>
+      </div>
 
       {/* Image Viewer */}
       {viewerIndex !== null && (
@@ -170,6 +178,7 @@ export default function LifeLogDayModal() {
           images={selectedPhotos}
           index={viewerIndex}
           onClose={() => setViewerIndex(null)}
+          onPhotoUpdate={handlePhotoUpdate}
         />
       )}
     </>

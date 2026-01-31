@@ -183,7 +183,7 @@ export default function RollEditDrawer({
       }}
       classNames={{
         wrapper: "justify-end !items-start overflow-hidden",
-        base: "h-full max-h-screen rounded-none shadow-2xl bg-content1/95 backdrop-blur-xl border-l border-divider",
+        base: "h-full max-h-screen rounded-none shadow-2xl bg-content1 border-l border-divider",
         header: "border-b border-divider/50 p-4",
         body: "p-0",
         footer: "border-t border-divider/50 p-4",

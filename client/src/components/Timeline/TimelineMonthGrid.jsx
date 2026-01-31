@@ -12,7 +12,7 @@ export default function TimelineMonthGrid() {
   const { 
     selectedYear, 
     selectedMonth, 
-    rolls, 
+    selectedRolls,
     getRollColor 
   } = useTimeline();
   const navigate = useNavigate();
@@ -35,8 +35,8 @@ export default function TimelineMonthGrid() {
       maxIdx = toIndex(y, 12);
     }
 
-    // Process rolls
-    const rows = rolls.map(r => {
+    // Process rolls - use selectedRolls which is already filtered by year
+    const rows = selectedRolls.map(r => {
       const s = getRollDate(r, 'start');
       const e = getRollDate(r, 'end');
       let si = null, ei = null;
@@ -96,13 +96,13 @@ export default function TimelineMonthGrid() {
     });
 
     return { labels, rows, activeSet, minIdx, maxIdx };
-  }, [rolls, selectedYear, selectedMonth]);
+  }, [selectedRolls, selectedYear, selectedMonth]);
 
   const { labels, rows } = timelineData;
 
   if (labels.length === 0) {
     return (
-      <Card className="bg-content1/60 backdrop-blur-md">
+      <Card className="bg-content1">
         <CardBody className="p-6 text-center text-default-500">
           No timeline data available
         </CardBody>
@@ -111,7 +111,7 @@ export default function TimelineMonthGrid() {
   }
 
   return (
-    <Card className="bg-content1/60 backdrop-blur-md shadow-sm">
+    <Card className="bg-content1 shadow-sm">
       <CardBody className="p-4 w-full overflow-hidden">
         {/* Month Headers */}
         <div 

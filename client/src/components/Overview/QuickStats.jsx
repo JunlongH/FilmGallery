@@ -14,13 +14,14 @@ import { Card, CardBody, Skeleton } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { Camera, Image, Heart, MapPin, Film } from 'lucide-react';
 import { getApiBase } from '../../api';
+import { getCacheStrategy } from '../../lib';
 
 const statItems = [
   { key: 'rolls', icon: Camera, label: 'Rolls', color: 'text-primary', path: '/rolls' },
   { key: 'photos', icon: Image, label: 'Photos', color: 'text-success', path: '/rolls' }, // Go to Library
   { key: 'favorites', icon: Heart, label: 'Favorites', color: 'text-danger', path: '/favorites' },
   { key: 'locations', icon: MapPin, label: 'Locations', color: 'text-warning', path: '/map' },
-  { key: 'films', icon: Film, label: 'Film Types', color: 'text-secondary', path: '/films' },
+  { key: 'films', icon: Film, label: 'Films', color: 'text-secondary', path: '/films' },
 ];
 
 async function fetchStats() {
@@ -47,7 +48,7 @@ export default function QuickStats() {
   const { data: stats, isLoading } = useQuery({
     queryKey: ['quickStats'],
     queryFn: fetchStats,
-    staleTime: 60000, // Cache for 1 minute
+    ...getCacheStrategy('stats'),
   });
 
   return (
@@ -61,7 +62,7 @@ export default function QuickStats() {
           className="h-full"
         >
           <Card 
-            className="bg-content1/60 backdrop-blur-md shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 group h-full border-none ring-0"
+            className="bg-content1 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 group h-full border-none ring-0"
             isPressable
             onPress={() => item.path && navigate(item.path)}
           >

@@ -30,8 +30,9 @@ export function Card({
   className = '',
   ...props
 }) {
+  // Use solid backgrounds for Electron compatibility
   const glassClasses = glass
-    ? 'bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border border-white/20 dark:border-slate-700/30'
+    ? 'bg-white dark:bg-slate-900 border border-default-200 dark:border-slate-700'
     : '';
   
   const hoverClasses = hoverable

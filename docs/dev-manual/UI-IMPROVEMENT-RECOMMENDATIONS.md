@@ -31,8 +31,32 @@
 
 - [ ] 深色模式全局优化
 - [ ] 动画系统统一
-- [ ] 剩余页面改造 (FilmLibrary, EquipmentManager, Settings, Favorites, TagGallery)
-- [ ] 清理冲突的旧 CSS 代码
+- [x] ~~FilmLibrary 页面改造~~ ✅ 已完成 (2025-01-30)
+  - 创建 GlassModal 可复用玻璃态模态框组件
+  - FilmInventoryCard 美化 (渐变状态徽章、胶片缩略图、动画效果)
+  - PurchaseBatchModal 玻璃态重构 (毛玻璃背景、缩略图预览)
+  - FilmStatusTabs 现代化 (药丸按钮、渐变背景)
+- [x] ~~EquipmentManager 页面改造~~ ✅ 已完成 (2025-01-31)
+  - 创建 EquipmentEditModal.jsx - HeroUI 风格设备编辑模态框
+  - 支持所有 6 种设备类型 (相机、镜头、闪光灯、胶片后背、扫描仪、胶片)
+  - 使用 GlassModal, GlassCard, HeroUI Select/Input/Checkbox 组件
+  - Select 下拉菜单透明度修复 (遵循 SKILL-FRONTEND-UI-TIPS.md)
+- [x] ~~Settings 页面改造~~ ✅ 已完成 (2025-01-31)
+  - GeneralSettings.jsx - HeroUI Card, Button, Switch 组件
+  - ServerSettings.jsx - HeroUI Card, Button, Input, Chip 组件
+  - LutLibrary.jsx - HeroUI Card, Button, Chip 组件
+  - SettingsTabs.jsx - 已使用 HeroUI Tabs
+- [x] ~~Favorites 页面改造~~ ✅ 已完成 (2025-01-31)
+  - HeroUI Card, Button, Chip 组件
+  - AnimatedContainer 交错动画
+  - 空状态提示 + FavoriteCard 组件
+- [x] ~~TagGallery 页面改造~~ ✅ 已完成 (2025-01-31)
+  - ThemeCard 标签云展示 + TagPhotoCard 照片卡片
+  - AnimatedContainer 交错入场动画
+  - HeroUI Button 返回导航
+- [ ] 清理冲突的旧 CSS 代码 (部分完成)
+  - ⚠️ 仍有组件依赖旧 CSS: RollDetail.jsx, PhotoDetailsSidebar.jsx, ContactSheetModal.jsx
+  - 保留文件: sidebar.css, roll-detail-card.css, forms.css, FilmInventory.css (被遗留组件引用)
 - [ ] 性能优化与测试
 
 ---
@@ -50,14 +74,22 @@
 
 ### 一、未改造页面的现代化 (Critical)
 
-#### 1.1 FilmLibrary 页面改造 ⭐⭐⭐⭐⭐
+#### 1.1 FilmLibrary 页面改造 ✅ 已完成
 
-**当前状态**: 
+> **完成日期**: 2025-01-30
+> **核心改进**: 
+> - 创建 `GlassModal` 可复用玻璃态模态框组件 (`components/ui/GlassModal.jsx`)
+> - 重构 `FilmInventoryCard` - 渐变状态徽章、胶片缩略图展示、hover动画
+> - 重构 `PurchaseBatchModal` - 毛玻璃背景遮罩、胶片选择预览、AnimatePresence动画
+> - 重构 `FilmStatusTabs` - 药丸式按钮、渐变选中态、ScrollShadow滚动
+> - 使用 Framer Motion 实现流畅的卡片/模态框动画
+
+**原状态**: 
 - 使用旧 CSS 样式 (`FilmInventory.css`, `FilmButtons.css`)
 - 传统表单 + 按钮布局
 - 缺少 HeroUI 组件
 
-**改造方案**:
+**改造方案（已实现）**:
 
 ```jsx
 // components/FilmLibrary/index.js
@@ -281,9 +313,21 @@ components/FilmLibrary/
 
 ---
 
-#### 1.2 EquipmentManager 页面改造 ⭐⭐⭐⭐⭐
+#### 1.2 EquipmentManager 页面改造 ✅ 已完成 (2025-01-31)
 
-**当前状态**:
+> **完成日期**: 2025-01-31
+> **核心改进**:
+> - 创建 `EquipmentEditModal.jsx` - 可复用 HeroUI 风格设备编辑模态框 (900+ 行)
+> - 支持所有 6 种设备类型: cameras, lenses, flashes, film-backs, scanners, films
+> - 使用 GlassModal + GlassCard 玻璃态设计
+> - HeroUI Select/Input/Checkbox/Textarea 表单组件
+> - Select 下拉菜单透明度修复 (listbox: "bg-content1" 等)
+> - 日期输入深色模式图标修复 (dark:[color-scheme:dark])
+> - 常量定义: CAMERA_TYPES, LENS_MOUNTS, FILM_FORMATS 等
+> - 更新 EquipmentManager.jsx 使用新模态框替代内联表单
+> - 头部按钮更新为 HeroUI Button
+
+**原状态**:
 - 1076 行巨型组件
 - 使用旧 CSS (`EquipmentManager.css`, `forms.css`)
 - 6 种设备类型混杂在一个组件中
@@ -514,9 +558,27 @@ components/FilmLibrary/
 
 ---
 
-#### 1.3 Settings 页面改造 ⭐⭐⭐⭐
+#### 1.3 Settings 页面改造 ✅ 已完成 (2025-01-31)
 
-**当前状态**:
+> **完成日期**: 2025-01-31
+> **核心改进**:
+> - `SettingsTabs.jsx` - 已使用 HeroUI Tabs (之前已完成)
+> - `GeneralSettings.jsx` - 使用 HeroUI Card, Button, Switch 组件
+>   - Section 组件重构为 HeroUI Card 包装
+>   - Mobile Connection 使用 Card + Chip 显示状态
+>   - Data Storage 使用 HeroUI Button
+>   - Cloud Sync 使用 HeroUI Switch 替代 checkbox
+> - `ServerSettings.jsx` - 使用 HeroUI Card, CardBody, Button, Input, Chip 组件
+>   - ModeCard 重构为 HeroUI Card + CardBody
+>   - Remote URL 使用 HeroUI Input + Button
+>   - Status 区域使用 HeroUI Chip 显示连接状态/能力
+>   - 操作按钮使用 HeroUI Button (isLoading, startContent)
+> - `LutLibrary.jsx` - 使用 HeroUI Card, CardBody, CardFooter, Button, Chip
+>   - Upload 按钮使用 HeroUI Button (isLoading)
+>   - LUT 卡片使用 HeroUI Card 组件
+>   - 类型标签使用 HeroUI Chip
+
+**原状态**:
 - 已有 `Settings/` 模块化目录
 - 使用 `SettingsTabs.jsx` 但样式较旧
 - 缺少 HeroUI 表单组件
@@ -694,9 +756,27 @@ components/FilmLibrary/
 
 ---
 
-#### 1.4 Favorites & TagGallery 改造 ⭐⭐⭐
+#### 1.4 Favorites & TagGallery 改造 ✅ 已完成 (2025-01-31)
 
-**当前状态**:
+> **完成日期**: 2025-01-31
+> **核心改进**:
+> 
+> **Favorites.jsx**:
+> - 完整重写为 HeroUI 组件 (Card, CardBody, CardFooter, Button, Chip)
+> - AnimatedContainer 交错入场动画 (staggered entry)
+> - 空状态提示 (Heart 图标 + "Browse Photos" 按钮)
+> - FavoriteCard 组件 (hover overlay, unlike 按钮, roll 导航)
+> - 使用 `buildUploadUrl` 构建缩略图 URL
+> 
+> **TagGallery.jsx**:
+> - 完整重写为 HeroUI 组件 (Card, CardBody, CardFooter, Button, Chip)
+> - ThemeCard 组件 (标签云展示, 封面图, 照片数量 Chip)
+> - TagPhotoCard 组件 (照片卡片, 移除/收藏按钮)
+> - AnimatedContainer 交错入场动画
+> - 空状态提示 (Tag/Image 图标)
+> - HeroUI Button 返回导航 (variant="light", startContent)
+
+**原状态**:
 - 基础网格布局
 - 缺少 HeroUI 组件
 - 无动画效果

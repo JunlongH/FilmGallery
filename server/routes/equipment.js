@@ -14,6 +14,7 @@ const path = require('path');
 const fs = require('fs');
 const { uploadsDir } = require('../config/paths');
 const { CAMERA_TYPES, LENS_MOUNTS, SCANNER_TYPES, FILM_BACK_SUB_FORMATS, FILM_BACK_MOUNTS, FILM_FORMATS } = require('../utils/equipment-migration');
+const { FOCUS_TYPES, CONDITIONS, STATUSES, METER_TYPES, SHUTTER_TYPES } = require('../../packages/shared/constants/equipment');
 
 // Service layer
 const equipmentService = require('../services/equipment-service');
@@ -50,11 +51,11 @@ router.get('/constants', (req, res) => {
     lensMounts: LENS_MOUNTS,
     scannerTypes: SCANNER_TYPES,
     filmFormats: FILM_FORMATS,
-    focusTypes: ['Manual', 'Auto', 'Hybrid'],
-    conditions: ['Mint', 'Excellent', 'Good', 'Fair', 'Poor'],
-    statuses: ['Owned', 'Sold', 'Wishlist', 'Borrowed', 'Lab'],
-    meterTypes: ['None', 'Match-Needle', 'Center-Weighted', 'Matrix', 'Spot', 'Evaluative'],
-    shutterTypes: ['Focal-Plane', 'Leaf', 'Electronic', 'Hybrid'],
+    focusTypes: FOCUS_TYPES,
+    conditions: CONDITIONS,
+    statuses: STATUSES,
+    meterTypes: METER_TYPES,
+    shutterTypes: SHUTTER_TYPES,
     magnificationRatios: ['1:1', '1:2', '1:3', '1:4', '1:5', '1:10'],
     sensorTypes: ['CCD', 'CMOS', 'PMT'],
     bitDepths: [8, 12, 14, 16, 24, 48],

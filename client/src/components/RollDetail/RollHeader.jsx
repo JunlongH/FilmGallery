@@ -90,7 +90,7 @@ export default function RollHeader({ roll, onEdit, coverUrl }) {
 
   return (
     <div className="mb-6">
-      <div className="relative rounded-2xl overflow-hidden bg-content1/40 backdrop-blur-md border border-white/5">
+      <div className="relative rounded-2xl overflow-hidden bg-content1 border border-divider">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5" />
         

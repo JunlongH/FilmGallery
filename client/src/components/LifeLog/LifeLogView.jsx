@@ -41,7 +41,7 @@ function LifeLogContent() {
         <h2 className="text-2xl font-bold text-foreground">Life Log</h2>
         
         {/* Navigation */}
-        <Card className="bg-content1/60 backdrop-blur-md shadow-sm">
+        <Card className="bg-content1 shadow-sm">
           <CardBody className="flex flex-row items-center gap-4 py-2 px-4">
             <Button
               isIconOnly

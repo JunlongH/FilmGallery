@@ -1,48 +1,46 @@
 /**
- * PurchaseBatchModal - 批量购买胶片的模态框
+ * PurchaseBatchModal - 批量购买胶片模态框
  * 
- * 使用 HeroUI Modal + Form 组件实现现代化表单
- * 支持多行胶片录入、运费分摊计算
+ * 设计原则：
+ * - 每个条目一行显示，紧凑清晰
+ * - 胶片选择器带缩略图，视觉清晰
+ * - 整体布局均匀宽松
  */
 
 import React, { useState, useMemo } from 'react';
 import { 
-  Modal, 
-  ModalContent, 
-  ModalHeader, 
-  ModalBody, 
+  Modal,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
   ModalFooter,
   Button,
   Input,
   Select,
   SelectItem,
   Divider,
-  Chip,
-  Card,
-  CardBody,
   ScrollShadow
 } from '@heroui/react';
-import { 
-  Plus, 
-  Trash2, 
-  Calendar, 
-  Store, 
-  Truck, 
-  FileText, 
-  Disc3,
-  Hash,
-  DollarSign,
-  Package
-} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Trash2, Film, ShoppingCart, Package } from 'lucide-react';
+import { buildUploadUrl } from '../../api';
 
-// Empty item template
+// 空项模板
 const EMPTY_ITEM = {
   film_id: '',
   quantity: 1,
   unit_price: '',
   expiry_date: '',
-  batch_code: '',
-  label: ''
+  batch_code: ''
+};
+
+// 获取胶片缩略图
+const getFilmThumbUrl = (film) => {
+  if (!film) return null;
+  const path = film.thumbPath || film.thumbnail_url;
+  if (!path) return null;
+  if (path.startsWith('http')) return path;
+  return buildUploadUrl(path.startsWith('/') ? path : `/uploads/films/${path}`);
 };
 
 export default function PurchaseBatchModal({
@@ -61,7 +59,7 @@ export default function PurchaseBatchModal({
     items: [{ ...EMPTY_ITEM }]
   });
 
-  // Calculate totals
+  // 计算汇总
   const { totalQuantity, totalCost, perItemShipping } = useMemo(() => {
     const qty = form.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     const shipping = Number(form.shipping_cost || 0);
@@ -69,37 +67,23 @@ export default function PurchaseBatchModal({
     const itemsCost = form.items.reduce((sum, item) => {
       return sum + (Number(item.quantity || 0) * Number(item.unit_price || 0));
     }, 0);
-    return {
-      totalQuantity: qty,
-      totalCost: itemsCost + shipping,
-      perItemShipping: perItem
-    };
+    return { totalQuantity: qty, totalCost: itemsCost + shipping, perItemShipping: perItem };
   }, [form.items, form.shipping_cost]);
 
-  const updateField = (key, value) => {
-    setForm(prev => ({ ...prev, [key]: value }));
-  };
-
-  const updateItem = (index, patch) => {
+  const updateField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  
+  const updateItem = (index, key, value) => {
     setForm(prev => ({
       ...prev,
-      items: prev.items.map((item, i) => i === index ? { ...item, ...patch } : item)
+      items: prev.items.map((item, i) => i === index ? { ...item, [key]: value } : item)
     }));
   };
 
-  const addRow = () => {
-    setForm(prev => ({
-      ...prev,
-      items: [...prev.items, { ...EMPTY_ITEM }]
-    }));
-  };
-
+  const addRow = () => setForm(prev => ({ ...prev, items: [...prev.items, { ...EMPTY_ITEM }] }));
+  
   const removeRow = (index) => {
     if (form.items.length <= 1) return;
-    setForm(prev => ({
-      ...prev,
-      items: prev.items.filter((_, i) => i !== index)
-    }));
+    setForm(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== index) }));
   };
 
   const handleSubmit = () => {
@@ -117,7 +101,7 @@ export default function PurchaseBatchModal({
         unit_price: item.unit_price === '' ? null : Number(item.unit_price),
         expiry_date: item.expiry_date || null,
         batch_number: item.batch_code || null,
-        label: item.label || null,
+        label: null,
         note_purchase: null
       }))
     });
@@ -134,10 +118,9 @@ export default function PurchaseBatchModal({
     });
   };
 
-  const handleClose = () => {
-    resetForm();
-    onClose?.();
-  };
+  const handleClose = () => { resetForm(); onClose?.(); };
+
+  const getSelectedFilm = (filmId) => films.find(f => String(f.id) === String(filmId));
 
   return (
     <Modal 
@@ -145,241 +128,315 @@ export default function PurchaseBatchModal({
       onClose={handleClose}
       size="3xl"
       scrollBehavior="inside"
+      backdrop="blur"
+      motionProps={{
+        variants: {
+          enter: {
+            y: 0,
+            opacity: 1,
+            transition: { duration: 0.25, ease: 'easeOut' }
+          },
+          exit: {
+            y: 10,
+            opacity: 0,
+            transition: { duration: 0.15, ease: 'easeIn' }
+          }
+        }
+      }}
       classNames={{
-        base: 'max-h-[90vh]',
-        header: 'border-b border-divider',
-        footer: 'border-t border-divider'
+        backdrop: "bg-black/60",
+        base: "shadow-2xl border border-divider",
+        header: "border-b border-divider px-6 py-4",
+        body: "p-6",
+        footer: "border-t border-divider px-6 py-4"
       }}
     >
-      <ModalContent>
-        <ModalHeader className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <Package className="w-5 h-5 text-primary" />
-            <span>Record Purchase Batch</span>
-          </div>
-          <p className="text-sm font-normal text-default-500">
-            Add multiple film rolls from a single purchase
-          </p>
-        </ModalHeader>
-
-        <ModalBody className="gap-6">
-          {/* Order Info Section */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <Input
-              type="date"
-              label="Purchase Date"
-              labelPlacement="outside"
-              size="sm"
-              value={form.order_date}
-              onChange={(e) => updateField('order_date', e.target.value)}
-              startContent={<Calendar className="w-4 h-4 text-default-400" />}
-            />
-            <Input
-              label="Channel"
-              labelPlacement="outside"
-              size="sm"
-              placeholder="e.g. eBay"
-              value={form.channel}
-              onChange={(e) => updateField('channel', e.target.value)}
-              startContent={<Store className="w-4 h-4 text-default-400" />}
-            />
-            <Input
-              label="Vendor"
-              labelPlacement="outside"
-              size="sm"
-              placeholder="Store name"
-              value={form.vendor}
-              onChange={(e) => updateField('vendor', e.target.value)}
-            />
-            <Input
-              type="number"
-              label="Total Shipping"
-              labelPlacement="outside"
-              size="sm"
-              placeholder="0.00"
-              value={form.shipping_cost}
-              onChange={(e) => updateField('shipping_cost', e.target.value)}
-              startContent={<Truck className="w-4 h-4 text-default-400" />}
-            />
-          </div>
-
-          <Input
-            label="Notes"
-            labelPlacement="outside"
-            size="sm"
-            placeholder="Optional notes about this purchase..."
-            value={form.notes}
-            onChange={(e) => updateField('notes', e.target.value)}
-            startContent={<FileText className="w-4 h-4 text-default-400" />}
-          />
-
-          <Divider />
-
-          {/* Items Section */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="text-sm font-semibold text-default-700 flex items-center gap-2">
-                <Disc3 className="w-4 h-4" />
-                Films in this batch
-              </h4>
-              <Chip size="sm" variant="flat" color="primary">
-                {totalQuantity} rolls total
-              </Chip>
-            </div>
-
-            <ScrollShadow className="max-h-[300px]">
-              <div className="space-y-3">
-                {form.items.map((item, index) => (
-                  <Card key={index} className="bg-default-50">
-                    <CardBody className="p-3">
-                      <div className="grid grid-cols-12 gap-3 items-end">
-                        {/* Film Select - spans 4 cols */}
-                        <div className="col-span-12 sm:col-span-4">
-                          <Select
-                            size="sm"
-                            label="Film"
-                            labelPlacement="outside"
-                            placeholder="Select film..."
-                            selectedKeys={item.film_id ? [item.film_id.toString()] : []}
-                            onSelectionChange={(keys) => {
-                              const value = Array.from(keys)[0] || '';
-                              updateItem(index, { film_id: value });
-                            }}
-                          >
-                            {films.map(f => (
-                              <SelectItem key={f.id.toString()} textValue={`${f.brand || ''} ${f.name}`}>
-                                <div className="flex flex-col">
-                                  <span>{f.brand ? `${f.brand} ` : ''}{f.name}</span>
-                                  <span className="text-tiny text-default-400">
-                                    ISO {f.iso} {f.format && f.format !== '135' ? `• ${f.format}` : ''}
-                                  </span>
-                                </div>
-                              </SelectItem>
-                            ))}
-                          </Select>
-                        </div>
-
-                        {/* Quantity */}
-                        <div className="col-span-4 sm:col-span-1">
-                          <Input
-                            type="number"
-                            size="sm"
-                            label="Qty"
-                            labelPlacement="outside"
-                            min={1}
-                            value={item.quantity.toString()}
-                            onChange={(e) => updateItem(index, { quantity: e.target.value })}
-                          />
-                        </div>
-
-                        {/* Unit Price */}
-                        <div className="col-span-4 sm:col-span-2">
-                          <Input
-                            type="number"
-                            size="sm"
-                            label="Unit Price"
-                            labelPlacement="outside"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={item.unit_price}
-                            onChange={(e) => updateItem(index, { unit_price: e.target.value })}
-                            startContent={<DollarSign className="w-3 h-3 text-default-400" />}
-                          />
-                        </div>
-
-                        {/* Expiry */}
-                        <div className="col-span-4 sm:col-span-2">
-                          <Input
-                            type="date"
-                            size="sm"
-                            label="Expiry"
-                            labelPlacement="outside"
-                            value={item.expiry_date}
-                            onChange={(e) => updateItem(index, { expiry_date: e.target.value })}
-                          />
-                        </div>
-
-                        {/* Batch Code */}
-                        <div className="col-span-6 sm:col-span-2">
-                          <Input
-                            size="sm"
-                            label="Batch #"
-                            labelPlacement="outside"
-                            placeholder="Emulsion"
-                            value={item.batch_code}
-                            onChange={(e) => updateItem(index, { batch_code: e.target.value })}
-                            startContent={<Hash className="w-3 h-3 text-default-400" />}
-                          />
-                        </div>
-
-                        {/* Delete Button */}
-                        <div className="col-span-6 sm:col-span-1 flex justify-end">
-                          <Button
-                            isIconOnly
-                            size="sm"
-                            variant="light"
-                            color="danger"
-                            isDisabled={form.items.length <= 1}
-                            onPress={() => removeRow(index)}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Label / Notes row */}
-                      <div className="mt-2">
-                        <Input
-                          size="sm"
-                          placeholder="Optional label or notes for this item..."
-                          value={item.label}
-                          onChange={(e) => updateItem(index, { label: e.target.value })}
-                          classNames={{
-                            input: 'text-xs',
-                            inputWrapper: 'h-8'
-                          }}
-                        />
-                      </div>
-                    </CardBody>
-                  </Card>
-                ))}
+      <ModalContent style={{ backgroundColor: 'var(--heroui-content1)' }}>
+        {(onModalClose) => (
+          <>
+            <ModalHeader className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                <ShoppingCart className="w-5 h-5 text-primary" />
               </div>
-            </ScrollShadow>
+              <div>
+                <h3 className="text-lg font-semibold">Record Purchase</h3>
+                <p className="text-xs text-default-500 font-normal">Add film rolls from a single order</p>
+              </div>
+            </ModalHeader>
 
-            <Button
-              size="sm"
-              variant="flat"
-              startContent={<Plus className="w-4 h-4" />}
-              className="mt-4"
-              onPress={addRow}
-            >
-              Add Another Film
-            </Button>
-          </div>
-        </ModalBody>
+            <ModalBody className="gap-6">
+              {/* 订单信息 - 一行四列，使用stacked label避免重叠 */}
+              <div>
+                <p className="text-sm font-semibold text-default-400 uppercase tracking-wide mb-3">Order Details</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 120px', gap: '16px' }}>
+                  <div>
+                    <label className="block text-sm text-default-500 mb-2">Date</label>
+                    <Input
+                      type="date"
+                      size="md"
+                      value={form.order_date}
+                      onChange={(e) => updateField('order_date', e.target.value)}
+                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-default-500 mb-2">Channel</label>
+                    <Input
+                      size="md"
+                      placeholder="Taobao, eBay..."
+                      value={form.channel}
+                      onChange={(e) => updateField('channel', e.target.value)}
+                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-default-500 mb-2">Vendor</label>
+                    <Input
+                      size="md"
+                      placeholder="Vendor name"
+                      value={form.vendor}
+                      onChange={(e) => updateField('vendor', e.target.value)}
+                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-default-500 mb-2">Shipping</label>
+                    <Input
+                      type="number"
+                      size="md"
+                      placeholder="0.00"
+                      startContent={<span className="text-default-400 text-sm pr-1">¥</span>}
+                      value={form.shipping_cost}
+                      onChange={(e) => updateField('shipping_cost', e.target.value)}
+                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                    />
+                  </div>
+                </div>
+              </div>
 
-        <ModalFooter className="flex justify-between">
-          <div className="text-sm text-default-500">
-            {totalQuantity > 0 && (
-              <span>
-                Shipping: ¥{perItemShipping.toFixed(2)}/roll • 
-                Total: <span className="font-semibold text-default-700">¥{totalCost.toFixed(2)}</span>
-              </span>
-            )}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="flat" onPress={handleClose}>
-              Cancel
-            </Button>
-            <Button 
-              color="primary" 
-              onPress={handleSubmit}
-              isLoading={isLoading}
-            >
-              Save Batch
-            </Button>
-          </div>
-        </ModalFooter>
+              <Divider />
+
+              {/* 胶卷列表 - 表格式一行显示 */}
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm font-semibold text-default-400 uppercase tracking-wide flex items-center gap-2">
+                    <Film size={16} />
+                    Films ({form.items.length})
+                  </p>
+                  <Button size="sm" variant="flat" color="primary" startContent={<Plus size={14} />} onPress={addRow}>
+                    Add Row
+                  </Button>
+                </div>
+
+                {/* 表头 */}
+                <div 
+                  style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: '1fr 55px 90px 130px 70px 36px', 
+                    gap: '12px',
+                    padding: '0 10px',
+                    marginBottom: '10px'
+                  }}
+                  className="text-xs text-default-400 font-medium"
+                >
+                  <div>Film Type</div>
+                  <div style={{ textAlign: 'center' }}>Qty</div>
+                  <div>Price</div>
+                  <div>Expiry</div>
+                  <div>Batch</div>
+                  <div></div>
+                </div>
+
+                <ScrollShadow className="max-h-[240px]">
+                  <div className="space-y-2">
+                    <AnimatePresence>
+                      {form.items.map((item, index) => {
+                        const selectedFilm = getSelectedFilm(item.film_id);
+                        const thumbUrl = getFilmThumbUrl(selectedFilm);
+                        
+                        return (
+                          <motion.div
+                            key={index}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.15 }}
+                            style={{ 
+                              display: 'grid', 
+                              gridTemplateColumns: '1fr 55px 90px 130px 70px 36px', 
+                              gap: '12px',
+                              alignItems: 'center',
+                              padding: '10px',
+                              borderRadius: '8px',
+                              background: 'rgba(255,255,255,0.03)'
+                            }}
+                            className="hover:bg-default-100 transition-colors"
+                          >
+                            {/* 胶片选择器 - 带缩略图 */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <div style={{ 
+                                width: '36px', 
+                                height: '36px', 
+                                borderRadius: '6px', 
+                                overflow: 'hidden', 
+                                background: '#27272a',
+                                flexShrink: 0
+                              }}>
+                                {thumbUrl ? (
+                                  <img src={thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                ) : (
+                                  <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    <Film size={16} className="text-default-400" />
+                                  </div>
+                                )}
+                              </div>
+                              <Select
+                                size="md"
+                                aria-label="Select film"
+                                placeholder="Select..."
+                                selectedKeys={item.film_id ? [String(item.film_id)] : []}
+                                onSelectionChange={(keys) => {
+                                  const val = Array.from(keys)[0] || '';
+                                  updateItem(index, 'film_id', val);
+                                }}
+                                classNames={{
+                                  trigger: "h-10 min-h-10",
+                                  value: "text-sm pr-6",
+                                  innerWrapper: "pr-6",
+                                  selectorIcon: "right-2",
+                                  popoverContent: "bg-content1 border border-default-200 shadow-xl",
+                                  listbox: "bg-content1"
+                                }}
+                                popoverProps={{
+                                  classNames: {
+                                    content: "bg-zinc-900 border border-zinc-700 shadow-2xl"
+                                  }
+                                }}
+                                style={{ flex: 1, minWidth: 0 }}
+                              >
+                                {films.map(f => {
+                                  const filmThumb = getFilmThumbUrl(f);
+                                  return (
+                                    <SelectItem 
+                                      key={String(f.id)} 
+                                      textValue={`${f.brand || ''} ${f.name}`}
+                                      className="py-2"
+                                    >
+                                      <div className="flex items-center gap-3">
+                                        <div style={{
+                                          width: '28px',
+                                          height: '28px',
+                                          borderRadius: '4px',
+                                          overflow: 'hidden',
+                                          background: '#3f3f46',
+                                          flexShrink: 0
+                                        }}>
+                                          {filmThumb ? (
+                                            <img src={filmThumb} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                          ) : (
+                                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                              <Film size={12} className="text-zinc-500" />
+                                            </div>
+                                          )}
+                                        </div>
+                                        <span className="text-sm text-foreground">{f.brand ? `${f.brand} ` : ''}{f.name}</span>
+                                      </div>
+                                    </SelectItem>
+                                  );
+                                })}
+                              </Select>
+                            </div>
+
+                            {/* 数量 */}
+                            <div>
+                              <Input
+                                type="number"
+                                size="md"
+                                min={1}
+                                value={String(item.quantity)}
+                                onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                                classNames={{ input: "text-center text-sm", inputWrapper: "h-10 min-h-10" }}
+                              />
+                            </div>
+
+                            {/* 单价 */}
+                            <div>
+                              <Input
+                                type="number"
+                                size="md"
+                                placeholder="0.00"
+                                startContent={<span className="text-default-400 text-sm pr-1">¥</span>}
+                                value={item.unit_price}
+                                onChange={(e) => updateItem(index, 'unit_price', e.target.value)}
+                                classNames={{ inputWrapper: "h-10 min-h-10", input: "text-sm" }}
+                              />
+                            </div>
+
+                            {/* 过期日期 */}
+                            <div>
+                              <Input
+                                type="date"
+                                size="md"
+                                value={item.expiry_date}
+                                onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
+                                classNames={{ inputWrapper: "h-10 min-h-10", input: "text-sm" }}
+                              />
+                            </div>
+
+                            {/* 批次号 */}
+                            <div>
+                              <Input
+                                size="md"
+                                placeholder="#"
+                                value={item.batch_code}
+                                onChange={(e) => updateItem(index, 'batch_code', e.target.value)}
+                                classNames={{ inputWrapper: "h-10 min-h-10", input: "text-sm" }}
+                              />
+                            </div>
+
+                            {/* 删除按钮 */}
+                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                              <Button
+                                isIconOnly
+                                size="sm"
+                                variant="light"
+                                color="danger"
+                                isDisabled={form.items.length <= 1}
+                                onPress={() => removeRow(index)}
+                                style={{ minWidth: '28px', width: '28px', height: '28px' }}
+                              >
+                                <Trash2 size={14} />
+                              </Button>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  </div>
+                </ScrollShadow>
+              </div>
+            </ModalBody>
+
+            <ModalFooter>
+              <div className="flex-1 flex items-center gap-6 text-sm">
+                <span className="flex items-center gap-2 text-default-500">
+                  <Package size={16} />
+                  <span className="font-medium text-foreground">{totalQuantity}</span> rolls
+                </span>
+                <span className="text-default-500">
+                  ¥{perItemShipping.toFixed(2)}/roll shipping
+                </span>
+                <span className="font-semibold text-lg text-foreground">
+                  Total: ¥{totalCost.toFixed(2)}
+                </span>
+              </div>
+              <Button variant="flat" onPress={onModalClose}>Cancel</Button>
+              <Button color="primary" onPress={handleSubmit} isLoading={isLoading}>
+                Save Purchase
+              </Button>
+            </ModalFooter>
+          </>
+        )}
       </ModalContent>
     </Modal>
   );

@@ -225,10 +225,24 @@ router.get('/', async (req, res) => {
 router.get('/random', async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
   const sql = `
-    SELECT p.*, r.title as roll_title 
+    SELECT p.*, 
+           r.title as roll_title,
+           p.date_taken as date,
+           f.name AS film_name,
+           COALESCE(
+             (SELECT brand || ' ' || model FROM equip_cameras WHERE id = p.camera_equip_id),
+             p.camera
+           ) as camera_name,
+           COALESCE(
+             (SELECT name FROM equip_lenses WHERE id = p.lens_equip_id),
+             p.lens
+           ) as lens_name,
+           COALESCE(loc.city_name, p.city) as city
     FROM photos p
     JOIN rolls r ON p.roll_id = r.id
-    WHERE p.full_rel_path IS NOT NULL
+    LEFT JOIN films f ON f.id = r.filmId
+    LEFT JOIN locations loc ON loc.id = p.location_id
+    WHERE p.full_rel_path IS NOT NULL OR p.positive_rel_path IS NOT NULL
     ORDER BY RANDOM() 
     LIMIT ?
   `;

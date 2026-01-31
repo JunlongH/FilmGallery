@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import WordCloud from './WordCloud';
 import { API_BASE as API } from '../api';
+import { getCacheStrategy } from '../lib';
 import { StatCard, ChartCard, StatsModeToggle } from './Statistics/';
 import { useNavigate } from 'react-router-dom';
 import { Camera, Image, DollarSign, TrendingUp, Package, Wallet, AlertTriangle, Store } from 'lucide-react';
@@ -17,14 +18,17 @@ const formatStat = (val) => {
   return Number.isInteger(num) ? num.toString() : num.toFixed(2);
 };
 
+// 统计数据缓存策略
+const statsCache = getCacheStrategy('stats');
+
 export default function Statistics({ mode = 'stats' }) {
-  const { data: summary } = useQuery({ queryKey: ['stats-summary'], queryFn: () => fetch(`${API}/api/stats/summary`).then(r => r.json()) });
-  const { data: gear } = useQuery({ queryKey: ['stats-gear'], queryFn: () => fetch(`${API}/api/stats/gear`).then(r => r.json()) });
-  const { data: activity } = useQuery({ queryKey: ['stats-activity'], queryFn: () => fetch(`${API}/api/stats/activity`).then(r => r.json()) });
-  const { data: costs } = useQuery({ queryKey: ['stats-costs'], queryFn: () => fetch(`${API}/api/stats/costs`).then(r => r.json()), enabled: mode === 'spending' });
-  const { data: locations } = useQuery({ queryKey: ['stats-locations'], queryFn: () => fetch(`${API}/api/stats/locations`).then(r => r.json()).catch(() => []) });
-  const { data: themes } = useQuery({ queryKey: ['stats-themes'], queryFn: () => fetch(`${API}/api/stats/themes`).then(r => r.json()) });
-  const { data: inventory } = useQuery({ queryKey: ['stats-inventory'], queryFn: () => fetch(`${API}/api/stats/inventory`).then(r => r.json()) });
+  const { data: summary } = useQuery({ queryKey: ['stats-summary'], queryFn: () => fetch(`${API}/api/stats/summary`).then(r => r.json()), ...statsCache });
+  const { data: gear } = useQuery({ queryKey: ['stats-gear'], queryFn: () => fetch(`${API}/api/stats/gear`).then(r => r.json()), ...statsCache });
+  const { data: activity } = useQuery({ queryKey: ['stats-activity'], queryFn: () => fetch(`${API}/api/stats/activity`).then(r => r.json()), ...statsCache });
+  const { data: costs } = useQuery({ queryKey: ['stats-costs'], queryFn: () => fetch(`${API}/api/stats/costs`).then(r => r.json()), enabled: mode === 'spending', ...statsCache });
+  const { data: locations } = useQuery({ queryKey: ['stats-locations'], queryFn: () => fetch(`${API}/api/stats/locations`).then(r => r.json()).catch(() => []), ...statsCache });
+  const { data: themes } = useQuery({ queryKey: ['stats-themes'], queryFn: () => fetch(`${API}/api/stats/themes`).then(r => r.json()), ...statsCache });
+  const { data: inventory } = useQuery({ queryKey: ['stats-inventory'], queryFn: () => fetch(`${API}/api/stats/inventory`).then(r => r.json()), ...statsCache });
 
   // Ensure locations is always an array
   const locationsArray = Array.isArray(locations) ? locations : [];

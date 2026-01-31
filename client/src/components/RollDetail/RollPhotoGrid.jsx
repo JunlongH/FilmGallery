@@ -1,25 +1,27 @@
 /**
  * RollPhotoGrid - Modern photo grid component for roll detail view
  * 
- * Uses HeroUI Card + Image for beautiful photo thumbnails with:
+ * Uses HeroUI Card + LazyImage for beautiful photo thumbnails with:
  * - Hover effects
  * - Selection mode
  * - Quick actions (favorite, set cover, delete)
- * - Lazy loading
+ * - Optimized lazy loading with CSS transitions
  */
-import React, { useMemo, useCallback } from 'react';
-import { Card, CardBody, CardFooter, Image, Button, Checkbox, Chip, Skeleton } from '@heroui/react';
+import React, { useMemo, useCallback, memo } from 'react';
+import { Card, CardBody, CardFooter, Button, Checkbox, Chip, Skeleton } from '@heroui/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, Star, Trash2, Tag, FileText, Check } from 'lucide-react';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
-import 'react-lazy-load-image-component/src/effects/opacity.css';
+import LazyImage from '../common/LazyImage';
 import { buildUploadUrl } from '../../api';
 
 /**
  * Get thumbnail URL for a photo based on view mode
+ * 使用文件的 updated_at 作为缓存键，而不是 Date.now()
+ * 这样可以充分利用浏览器缓存，只有文件更新时才重新加载
  */
 function getPhotoUrls(photo, viewMode) {
-  const bust = `?t=${Date.now()}`;
+  // 使用文件的 updated_at 作为缓存键，如果没有则不添加参数
+  const cacheKey = photo.updated_at ? `?v=${new Date(photo.updated_at).getTime()}` : '';
   let thumbUrl = null;
   let fullUrl = null;
 
@@ -48,8 +50,8 @@ function getPhotoUrls(photo, viewMode) {
   }
 
   return {
-    thumb: thumbUrl ? buildUploadUrl(thumbUrl) + bust : null,
-    full: fullUrl ? buildUploadUrl(fullUrl) + bust : null
+    thumb: thumbUrl ? buildUploadUrl(thumbUrl) + cacheKey : null,
+    full: fullUrl ? buildUploadUrl(fullUrl) + cacheKey : null
   };
 }
 
@@ -132,13 +134,14 @@ function PhotoCard({
         shadow="sm"
       >
         <CardBody className="p-0 overflow-hidden relative">
-          {/* Photo Image */}
-          <LazyLoadImage
+          {/* Photo Image - 使用优化的 LazyImage */}
+          <LazyImage
             src={urls.thumb}
             alt={photo.caption || `Photo ${photo.frame_number || index + 1}`}
-            effect="opacity"
-            className="w-full h-full object-cover"
-            wrapperClassName="w-full h-full"
+            aspectRatio="1"
+            className="w-full h-full"
+            objectFit="cover"
+            fadeInDuration={0.3}
           />
           
           {/* Selection checkbox overlay */}

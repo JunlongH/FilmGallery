@@ -34,6 +34,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { buildUploadUrl } from '../../api';
+import { addCacheKey } from '../../utils/imageOptimization';
 
 // Icon mapping
 const TYPE_ICONS = {
@@ -79,7 +80,7 @@ export default function EquipmentDetailPanel({
   
   const Icon = TYPE_ICONS[type] || Camera;
   const imagePath = item?.image_path || item?.thumbPath;
-  const imageUrl = imagePath ? buildUploadUrl(imagePath) : null;
+  const imageUrl = imagePath ? addCacheKey(buildUploadUrl(imagePath), item?.updated_at) : null;
 
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];

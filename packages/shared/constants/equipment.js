@@ -129,6 +129,61 @@ const FILM_PROCESSES = [
   'Cross'       // Cross processing
 ];
 
+/**
+ * Focus types (for lenses)
+ * value: lowercase for database, label: display text
+ */
+const FOCUS_TYPES = [
+  { value: 'manual', label: 'Manual' },
+  { value: 'auto', label: 'Auto' },
+  { value: 'hybrid', label: 'Hybrid' }
+];
+
+/**
+ * Equipment condition options
+ */
+const CONDITIONS = [
+  { value: 'mint', label: 'Mint' },
+  { value: 'excellent', label: 'Excellent' },
+  { value: 'good', label: 'Good' },
+  { value: 'fair', label: 'Fair' },
+  { value: 'poor', label: 'Poor' },
+  { value: 'for_parts', label: 'For Parts' }
+];
+
+/**
+ * Equipment ownership status
+ */
+const STATUSES = [
+  { value: 'owned', label: 'Owned' },
+  { value: 'sold', label: 'Sold' },
+  { value: 'wishlist', label: 'Wishlist' },
+  { value: 'borrowed', label: 'Borrowed' },
+  { value: 'lab', label: 'Lab' }
+];
+
+/**
+ * Camera meter types
+ */
+const METER_TYPES = [
+  { value: 'none', label: 'None' },
+  { value: 'match-needle', label: 'Match-Needle' },
+  { value: 'center-weighted', label: 'Center-Weighted' },
+  { value: 'matrix', label: 'Matrix' },
+  { value: 'spot', label: 'Spot' },
+  { value: 'evaluative', label: 'Evaluative' }
+];
+
+/**
+ * Shutter types
+ */
+const SHUTTER_TYPES = [
+  { value: 'focal-plane', label: 'Focal-Plane' },
+  { value: 'leaf', label: 'Leaf' },
+  { value: 'electronic', label: 'Electronic' },
+  { value: 'hybrid', label: 'Hybrid' }
+];
+
 module.exports = {
   CAMERA_TYPES,
   FILM_FORMATS,
@@ -138,5 +193,10 @@ module.exports = {
   FILM_BACK_SUB_FORMATS,
   FILM_BACK_MOUNTS,
   FILM_CATEGORIES,
-  FILM_PROCESSES
+  FILM_PROCESSES,
+  FOCUS_TYPES,
+  CONDITIONS,
+  STATUSES,
+  METER_TYPES,
+  SHUTTER_TYPES
 };

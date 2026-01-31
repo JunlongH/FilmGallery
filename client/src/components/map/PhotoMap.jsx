@@ -16,6 +16,7 @@ import MapPhotoPreview from './MapPhotoPreview';
 import PhotoGlobe from './PhotoGlobe';
 import useGeoPhotos from '../../hooks/useGeoPhotos';
 import { getApiBase } from '../../api';
+import { useTheme } from '../../providers';
 
 // Import Leaflet CSS
 import 'leaflet/dist/leaflet.css';
@@ -297,12 +298,20 @@ function FitBoundsToPhotos({ photos }) {
  * @param {Object} props.selectedPhoto - Currently selected photo
  */
 export default function PhotoMap({ filters, onPhotoClick, selectedPhoto }) {
+  // Get current theme
+  const { theme } = useTheme();
+  
   // View mode: 'globe' for 3D Earth, 'flat' for Leaflet map
   // Default to 'flat' for faster initial load and more practical use
   const [viewMode, setViewMode] = useState('flat');
   
-  // Tile layer state (default to light/bright mode)
-  const [tileLayer, setTileLayer] = useState('light');
+  // Tile layer state - initialized based on theme (dark theme -> dark map)
+  const [tileLayer, setTileLayer] = useState(() => theme === 'dark' ? 'dark' : 'light');
+  
+  // Sync tile layer with theme changes
+  useEffect(() => {
+    setTileLayer(theme === 'dark' ? 'dark' : 'light');
+  }, [theme]);
   
   // Map bounds for lazy loading (future use)
   const [bounds, setBounds] = useState(null);

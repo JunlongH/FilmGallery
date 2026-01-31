@@ -11,5 +11,11 @@ export * from './Card';
 export * from './Skeleton';
 export * from './AnimatedContainer';
 
+// 模态框组件
+export { default as GlassModal, GlassModalHeader, GlassCard } from './GlassModal';
+
+// 照片卡片组件
+export { HoverPhotoCard, ActionButton } from './HoverPhotoCard';
+
 // 图标组件
 export * from './icons';

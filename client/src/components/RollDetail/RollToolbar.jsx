@@ -35,6 +35,13 @@ import {
   Edit
 } from 'lucide-react';
 
+// Dropdown style for consistent appearance (solid bg for Electron compatibility)
+const dropdownMenuStyle = {
+  backgroundColor: '#18181b',
+  border: '1px solid #27272a',
+  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
+};
+
 export default function RollToolbar({
   viewMode,
   onViewModeChange,
@@ -58,7 +65,7 @@ export default function RollToolbar({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2, duration: 0.3 }}
-      className="flex flex-wrap items-center justify-between gap-4 mb-6 p-4 bg-content1/60 backdrop-blur-md border border-divider rounded-xl"
+      className="flex flex-wrap items-center justify-between gap-4 mb-6 p-4 bg-content1 border border-divider rounded-xl"
     >
       {/* Left: View Controls */}
       <div className="flex items-center gap-4">
@@ -116,7 +123,7 @@ export default function RollToolbar({
                  <MoreHorizontal size={14} />
                </Button>
              </DropdownTrigger>
-             <DropdownMenu aria-label="Selection Actions">
+             <DropdownMenu aria-label="Selection Actions" style={dropdownMenuStyle}>
                <DropdownItem key="all" onPress={onSelectAll}>Select All</DropdownItem>
                <DropdownItem key="invert" onPress={onInvertSelection}>Invert</DropdownItem>
                <DropdownItem key="none" onPress={onDeselectAll} className="text-danger" color="danger">Deselect All</DropdownItem>
@@ -154,11 +161,11 @@ export default function RollToolbar({
               Batch
             </Button>
           </DropdownTrigger>
-          <DropdownMenu aria-label="Batch actions">
+          <DropdownMenu aria-label="Batch actions" style={dropdownMenuStyle}>
             <DropdownItem
               key="render"
               startContent={<Palette size={14} />}
-              description="Render all photos with current settings"
+              description="Render all photos with settings"
               onPress={onBatchRender}
             >
               Batch Render
@@ -166,7 +173,7 @@ export default function RollToolbar({
             <DropdownItem
               key="download"
               startContent={<Download size={14} />}
-              description="Download all photos as ZIP"
+              description="Download photos"
               onPress={onBatchDownload}
             >
               Batch Download
@@ -193,7 +200,7 @@ export default function RollToolbar({
               Import
             </Button>
           </DropdownTrigger>
-          <DropdownMenu aria-label="Import options">
+          <DropdownMenu aria-label="Import options" style={dropdownMenuStyle}>
             <DropdownItem
               key="positive"
               startContent={<FileImage size={14} />}
@@ -202,14 +209,15 @@ export default function RollToolbar({
             >
               Import Positives
             </DropdownItem>
-            <DropdownItem
+            {/* 注释掉这一块 */}
+            {/* <DropdownItem
               key="raw"
               startContent={<Layers size={14} />}
               description="Import RAW files from scanner"
               onPress={onRawImport}
             >
               Import RAW
-            </DropdownItem>
+            </DropdownItem>*/}
           </DropdownMenu>
         </Dropdown>
       </div>

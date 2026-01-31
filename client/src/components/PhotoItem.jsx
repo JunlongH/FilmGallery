@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
-import 'react-lazy-load-image-component/src/effects/opacity.css';
+import LazyImage from './common/LazyImage';
 import { buildUploadUrl } from '../api';
 import ModalDialog from './ModalDialog';
 
@@ -69,8 +68,6 @@ export default function PhotoItem({ p, onSelect, onSetCover, onDeletePhoto, onUp
   React.useEffect(() => {
     let fullCandidate = null;
     let thumbCandidate = null;
-
-    // Cache buster (implicit below via Date.now())
     
     if (viewMode === 'negative') {
       // Prefer new negative paths
@@ -116,16 +113,17 @@ export default function PhotoItem({ p, onSelect, onSetCover, onDeletePhoto, onUp
       }
     }
     
-    // Append timestamp to force reload if file changed
-    const bust = `?t=${Date.now()}`; 
+    // 使用文件的 updated_at 作为缓存键，而不是 Date.now()
+    // 这样可以充分利用浏览器缓存，只有文件更新时才重新加载
+    const cacheKey = p.updated_at ? `?v=${new Date(p.updated_at).getTime()}` : '';
 
     // If viewMode is positive but no positive image exists, show placeholder or handle gracefully
     if (viewMode === 'positive' && !p.full_rel_path && !p.positive_rel_path) {
         setFullUrl(null); // Or a placeholder URL
         setThumbUrl(null);
     } else {
-        setFullUrl(buildUploadUrl(fullCandidate) + bust);
-        setThumbUrl(buildUploadUrl(thumbCandidate) + bust);
+        setFullUrl(buildUploadUrl(fullCandidate) + cacheKey);
+        setThumbUrl(buildUploadUrl(thumbCandidate) + cacheKey);
     }
     setLiked(p.rating === 1);
   }, [p, viewMode]);
@@ -240,12 +238,13 @@ export default function PhotoItem({ p, onSelect, onSetCover, onDeletePhoto, onUp
       )}
       <div className="photo-thumb">
         {(thumbUrl || fullUrl) ? (
-          <LazyLoadImage
+          <LazyImage
             alt={p.caption || ''}
             src={thumbUrl || fullUrl}
-            effect="opacity"
-            wrapperClassName="lazy-load-wrapper"
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            aspectRatio="1"
+            className="w-full h-full"
+            objectFit="cover"
+            fadeInDuration={0.3}
           />
         ) : (
           <div style={{ 

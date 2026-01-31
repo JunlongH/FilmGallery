@@ -97,7 +97,7 @@ export default function TimelineCalendarGrid() {
   };
 
   return (
-    <Card className="bg-content1/60 backdrop-blur-md shadow-sm">
+    <Card className="bg-content1 shadow-sm">
       <CardBody className="p-4">
         {/* Weekday Header */}
         <div className="grid grid-cols-7 gap-1 mb-2">

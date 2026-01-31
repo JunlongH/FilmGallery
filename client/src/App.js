@@ -1,7 +1,8 @@
 // src/App.js
 import React, { useCallback, useEffect, useState } from 'react';
 import { HashRouter as Router, Routes, Route } from 'react-router-dom';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { queryClient, prefetchCommonData } from './lib';
 import RollLibrary from './components/RollLibrary';
 import NewRollForm from './components/NewRollForm';
 import RollDetail from './components/RollDetail';
@@ -24,18 +25,7 @@ import { HeroUIProvider } from './providers';
 // Modern Sidebar
 import { Sidebar, SidebarProvider } from './components/Sidebar';
 
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 10, // 10 minutes (increased for desktop stability)
-      cacheTime: 1000 * 60 * 30, // 30 minutes
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false, // Desktop app doesn't need reconnect refetch
-      refetchOnMount: false, // Use cache if available
-      retry: 1, // Reduce retry attempts to speed up error feedback
-    },
-  },
-});
+// queryClient 已从 lib/queryClient.js 导入
 
 function Layout() {
   const [tags, setTags] = useState([]);
@@ -55,6 +45,8 @@ function Layout() {
 
   useEffect(() => {
     refreshTags();
+    // 启动时预取常用数据
+    prefetchCommonData();
     const handler = () => refreshTags();
     window.addEventListener('refresh-tags', handler);
     return () => window.removeEventListener('refresh-tags', handler);

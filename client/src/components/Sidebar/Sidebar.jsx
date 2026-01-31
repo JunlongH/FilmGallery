@@ -9,8 +9,8 @@
  */
 
 import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Avatar, Button } from '@heroui/react';
+import { motion } from 'framer-motion';
+import { Button } from '@heroui/react';
 import { 
   Home, 
   Camera, 
@@ -51,7 +51,7 @@ export function Sidebar({ tags = [] }) {
     <motion.nav
       className={`
         flex flex-col h-full
-        bg-content1/50 backdrop-blur-2xl
+        bg-content1
         overflow-hidden
       `}
       initial={false}
@@ -63,44 +63,8 @@ export function Sidebar({ tags = [] }) {
         ease: [0.4, 0, 0.2, 1],
       }}
     >
-      {/* Header */}
-      <div className={`
-        flex items-center gap-3 p-4
-        ${isCollapsed ? 'justify-center' : ''}
-      `}>
-        {/* Logo/Avatar */}
-        <Avatar
-          src="/logo192.png"
-          size="sm"
-          radius="lg"
-          className="flex-shrink-0"
-          fallback={
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-              <Camera className="w-4 h-4 text-white" />
-            </div>
-          }
-        />
-        
-        {/* Title */}
-        <AnimatePresence>
-          {!isCollapsed && (
-            <motion.div
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex-1 min-w-0"
-            >
-              <h1 className="text-base font-semibold text-foreground truncate">
-                Film Gallery
-              </h1>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-      
-      {/* Navigation */}
-      <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6 scrollbar-hide">
+      {/* Navigation - 直接开始，不需要 Header */}
+      <div className="flex-1 overflow-y-auto pt-2 pb-4 px-3 space-y-6 custom-scrollbar">
         {/* 主导航 */}
         <SidebarSection>
           <SidebarItem

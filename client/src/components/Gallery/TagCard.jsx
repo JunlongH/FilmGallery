@@ -1,17 +1,16 @@
 /**
  * TagCard - 标签/主题卡片组件
  * 
- * 使用 HeroUI Card 展示单个标签
+ * 使用 HeroUI Card + LazyImage 展示单个标签
  * 显示封面图和照片数量
  */
 
-import React from 'react';
-import { Card, CardBody, Image } from '@heroui/react';
+import React, { memo } from 'react';
+import { Card, CardBody } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { Tag, Image as ImageIcon } from 'lucide-react';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
+import LazyImage from '../common/LazyImage';
 import { buildUploadUrl } from '../../api';
-import 'react-lazy-load-image-component/src/effects/opacity.css';
 
 const getCoverUrl = (tag) => {
   const coverPath = tag.cover_thumb || tag.cover_full;
@@ -21,7 +20,7 @@ const getCoverUrl = (tag) => {
   return buildUploadUrl(path);
 };
 
-export default function TagCard({
+const TagCard = memo(function TagCard({
   tag,
   onSelect
 }) {
@@ -39,13 +38,15 @@ export default function TagCard({
       >
         <CardBody className="p-0">
           <div className="relative aspect-[4/3] overflow-hidden">
-            {/* Cover Image */}
+            {/* Cover Image - 使用优化的 LazyImage */}
             {coverUrl ? (
-              <LazyLoadImage
+              <LazyImage
                 src={coverUrl}
                 alt={tag.name}
-                effect="opacity"
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                aspectRatio="4/3"
+                className="w-full h-full group-hover:scale-105 transition-transform duration-500"
+                objectFit="cover"
+                fadeInDuration={0.3}
               />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-default-100 to-default-200 flex items-center justify-center">
@@ -71,4 +72,6 @@ export default function TagCard({
       </Card>
     </motion.div>
   );
-}
+});
+
+export default TagCard;

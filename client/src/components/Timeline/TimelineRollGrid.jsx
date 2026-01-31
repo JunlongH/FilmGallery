@@ -7,8 +7,11 @@ import { useNavigate } from 'react-router-dom';
 import { Skeleton } from '@heroui/react';
 import { Camera } from 'lucide-react';
 import { buildUploadUrl } from '../../api';
+import { addCacheKey } from '../../utils/imageOptimization';
 import { useTimeline } from './TimelineContext';
 
+// Animation variants for future Framer Motion integration
+// eslint-disable-next-line no-unused-vars
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -19,6 +22,7 @@ const containerVariants = {
   }
 };
 
+// eslint-disable-next-line no-unused-vars
 const itemVariants = {
   hidden: { opacity: 0, y: 20 },
   visible: { opacity: 1, y: 0 }
@@ -37,7 +41,8 @@ export default function TimelineRollGrid() {
       title: r.title,
       cover: r.coverPath || r.cover_photo,
       displaySeq: r.display_seq,
-      photoCount: r.photo_count || r.photos?.length || 0
+      photoCount: r.photo_count || r.photos?.length || 0,
+      updatedAt: r.updated_at || r.cover_updated_at
     }));
   }, [selectedRolls]);
 
@@ -45,7 +50,7 @@ export default function TimelineRollGrid() {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mt-6">
         {[...Array(8)].map((_, i) => (
-          <div key={i} className="rounded-xl overflow-hidden bg-content1/60">
+          <div key={i} className="rounded-xl overflow-hidden bg-content1">
             <Skeleton className="aspect-square" />
           </div>
         ))}
@@ -71,7 +76,7 @@ export default function TimelineRollGrid() {
   return (
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mt-6">
       {thumbs.map(item => {
-        const url = buildUploadUrl(item.cover);
+        const url = addCacheKey(buildUploadUrl(item.cover), item.updatedAt);
         const color = getRollColor(item.id);
 
         return (
@@ -79,7 +84,7 @@ export default function TimelineRollGrid() {
             key={item.id} 
             onClick={() => navigate(`/rolls/${item.id}`)}
             className="rounded-xl overflow-hidden cursor-pointer 
-                       bg-content1/60 backdrop-blur-sm
+                       bg-content1
                        hover:shadow-lg hover:scale-[1.02]
                        transition-all duration-200"
           >

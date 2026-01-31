@@ -1,5 +1,158 @@
 /* src/styles.css */
 
+/* ========================================
+   Custom Scrollbar Styles
+   ======================================== */
+
+/* 自定义滚动条 - 现代风格 */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 128, 0.3) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 128, 0.3);
+  border-radius: 3px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 128, 0.5);
+}
+
+/* 暗色模式滚动条 */
+html.dark .custom-scrollbar {
+  scrollbar-color: rgba(200, 200, 210, 0.2) transparent;
+}
+
+html.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(200, 200, 210, 0.2);
+}
+
+html.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(200, 200, 210, 0.4);
+}
+
+/* 默认隐藏滚动条，悬停时显示 */
+.scrollbar-auto {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-auto:hover {
+  scrollbar-color: rgba(120, 120, 128, 0.3) transparent;
+}
+
+.scrollbar-auto::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-auto::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.scrollbar-auto:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 128, 0.3);
+}
+
+/* 完全隐藏滚动条 */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* 应用于 main 内容区域 - 使用自动隐藏滚动条 */
+.main {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 128, 0.2) transparent;
+}
+
+.main::-webkit-scrollbar {
+  width: 8px;
+}
+
+.main::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.main::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 128, 0.2);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.main::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 128, 0.4);
+}
+
+html.dark .main::-webkit-scrollbar-thumb {
+  background-color: rgba(200, 200, 210, 0.15);
+}
+
+html.dark .main::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(200, 200, 210, 0.3);
+}
+
+/* ========================================
+   Reset
+   ======================================== */
+
+/* Global Scrollbar Override - Applies to ALL scrollable elements */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 128, 0.3) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 128, 0.3);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 128, 0.5);
+}
+
+html.dark * {
+  scrollbar-color: rgba(200, 200, 210, 0.2) transparent;
+}
+
+html.dark *::-webkit-scrollbar-thumb {
+  background-color: rgba(200, 200, 210, 0.2);
+}
+
+html.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(200, 200, 210, 0.4);
+}
+
 /* Reset */
 body, html, #root {
   margin: 0;
@@ -213,6 +366,7 @@ input, textarea, select, button {
   min-width: 0;
   padding: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   background-color: var(--heroui-background, #fdfdfd);
 }
 
@@ -1201,4 +1355,42 @@ form button:hover {
 .floating-refresh-btn:hover svg {
   transform: rotate(-180deg);
   opacity: 1;
+}
+
+/* ========================================
+   HeroUI Components - Electron Compatibility
+   Solid backgrounds to fix transparency issues in Electron
+   ======================================== */
+
+/* Dropdown Menu */
+[data-slot="content"][data-open="true"],
+[role="listbox"],
+[role="menu"] {
+  background-color: #18181b !important;
+  border: 1px solid #27272a !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Popover / Tooltip */
+[data-slot="base"][data-open="true"],
+.heroui-popover-content,
+[data-heroui-popover] {
+  background-color: #18181b !important;
+  border: 1px solid #27272a !important;
+}
+
+/* Autocomplete Listbox */
+[data-slot="listbox"] {
+  background-color: #18181b !important;
+}
+
+/* Modal Content (backup for custom modals) */
+[data-slot="wrapper"] [data-slot="base"] {
+  background-color: #18181b !important;
+}
+
+/* Select dropdown */
+[data-slot="listboxWrapper"] {
+  background-color: #18181b !important;
+  border: 1px solid #27272a !important;
 }

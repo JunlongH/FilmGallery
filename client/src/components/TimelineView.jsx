@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getRolls, buildUploadUrl } from '../api';
+import { addCacheKey } from '../utils/imageOptimization';
 import { useNavigate } from 'react-router-dom';
 import { LazyLoadImage } from 'react-lazy-load-image-component';
 import 'react-lazy-load-image-component/src/effects/opacity.css';
@@ -213,7 +214,7 @@ export default function TimelineView() {
 
   const thumbsForGrid = useMemo(()=>{
     if (!selectedYear && timeline && timeline.mode === 'months') {
-       return (timeline.rows || []).map(r => ({ id: r.id, title: r.title, cover: (r.roll && (r.roll.coverPath || r.roll.cover_photo)) }));
+       return (timeline.rows || []).map(r => ({ id: r.id, title: r.title, cover: (r.roll && (r.roll.coverPath || r.roll.cover_photo)), updatedAt: r.roll?.updated_at }));
     }
     if (!timeline || timeline.mode !== 'days') {
         if (!selectedYear) {
@@ -223,17 +224,17 @@ export default function TimelineView() {
             for (let i = pool.length -1; i>0; i--) {
                 const j = Math.floor(Math.random()*(i+1)); [pool[i], pool[j]] = [pool[j], pool[i]];
             }
-            return pool.slice(0,8).map(r => ({ id: r.id, title: r.title, cover: r.coverPath || r.cover_photo }));
+            return pool.slice(0,8).map(r => ({ id: r.id, title: r.title, cover: r.coverPath || r.cover_photo, updatedAt: r.updated_at }));
         }
         const months = grouped.get(selectedYear);
         if (!months) return [];
         if (!selectedMonth || selectedMonth === 'All') {
-            return Array.from(months.values()).flat().map(r=>({ id:r.id, title:r.title, cover: r.coverPath || r.cover_photo }));
+            return Array.from(months.values()).flat().map(r=>({ id:r.id, title:r.title, cover: r.coverPath || r.cover_photo, updatedAt: r.updated_at }));
         }
         const list = months.get(selectedMonth) || [];
-        return list.map(r=>({ id:r.id, title:r.title, cover: r.coverPath || r.cover_photo }));
+        return list.map(r=>({ id:r.id, title:r.title, cover: r.coverPath || r.cover_photo, updatedAt: r.updated_at }));
     }
-    return (timeline.rows || []).map(r => ({ id: r.id, title: r.title, cover: (r.roll && (r.roll.coverPath || r.roll.cover_photo)) }));
+    return (timeline.rows || []).map(r => ({ id: r.id, title: r.title, cover: (r.roll && (r.roll.coverPath || r.roll.cover_photo)), updatedAt: r.roll?.updated_at }));
   }, [timeline, selectedYear, selectedMonth, grouped, rolls]);
 
   return (
@@ -413,7 +414,7 @@ export default function TimelineView() {
 
       <div className="overview-grid">
         {thumbsForGrid.map(item => {
-          const url = buildUploadUrl(item.cover);
+          const url = addCacheKey(buildUploadUrl(item.cover), item.updatedAt);
           return (
             <div key={item.id} className="overview-thumb" onClick={()=>nav(`/rolls/${item.id}`)} style={{ cursor: 'pointer' }}>
               {url ? (

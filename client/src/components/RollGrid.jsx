@@ -1,7 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LazyLoadImage } from 'react-lazy-load-image-component';
-import 'react-lazy-load-image-component/src/effects/opacity.css';
+import LazyImage from './common/LazyImage';
 import { buildUploadUrl, deleteRoll } from '../api';
 import { useQueryClient } from '@tanstack/react-query';
 import HorizontalScroller from './HorizontalScroller';
@@ -52,11 +51,13 @@ function RollGridInner({ rolls = [], horizontal = false }) {
                 const cover = r.coverPath || r.cover_photo;
                 const url = buildUploadUrl(cover);
                 return (
-                  <LazyLoadImage
+                  <LazyImage
                     src={url}
                     alt="cover"
-                    effect="opacity"
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    aspectRatio="3/2"
+                    className="w-full h-full"
+                    objectFit="cover"
+                    fadeInDuration={0.3}
                   />
                 );
               })()
@@ -91,11 +92,13 @@ function RollGridInner({ rolls = [], horizontal = false }) {
                   const cover = r.coverPath || r.cover_photo;
                   const url = buildUploadUrl(cover);
                   return (
-                    <LazyLoadImage
+                    <LazyImage
                       src={url}
                       alt="cover"
-                      effect="opacity"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      aspectRatio="3/2"
+                      className="w-full h-full"
+                      objectFit="cover"
+                      fadeInDuration={0.3}
                     />
                   );
                 })()

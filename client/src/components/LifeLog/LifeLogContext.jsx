@@ -9,6 +9,7 @@ import {
   eachDayOfInterval, addMonths, subMonths, addYears, subYears, setMonth 
 } from 'date-fns';
 import { getApiBase, buildUploadUrl } from '../../api';
+import { addCacheKey } from '../../utils/imageOptimization';
 
 const LifeLogContext = createContext(null);
 
@@ -87,7 +88,7 @@ export function LifeLogProvider({ children }) {
     });
   }, []);
 
-  // Helper to get photo URL
+  // Helper to get photo URL with cache key based on updated_at
   const getPhotoUrl = useCallback((photo) => {
     if (!photo) return null;
     let path = photo.positive_thumb_rel_path || photo.thumb_rel_path || 
@@ -97,7 +98,7 @@ export function LifeLogProvider({ children }) {
         !path.startsWith('uploads') && !path.includes(':')) {
       path = `uploads/${path}`;
     }
-    return buildUploadUrl(path);
+    return addCacheKey(buildUploadUrl(path), photo.updated_at);
   }, []);
 
   // Get days for current month view

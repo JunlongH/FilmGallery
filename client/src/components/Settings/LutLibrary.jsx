@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { Card, CardBody, Button, Chip } from '@heroui/react';
 import { Upload, Trash2, FileType } from 'lucide-react';
 import { listLuts, uploadLut, deleteLut } from '../../api';
 
@@ -131,18 +132,15 @@ export default function LutLibrary() {
             multiple
             className="hidden"
           />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium shadow-sm"
+          <Button
+            onPress={() => fileInputRef.current?.click()}
+            isDisabled={uploading}
+            isLoading={uploading}
+            color="primary"
+            startContent={!uploading && <Upload className="w-4 h-4" />}
           >
-            {uploading ? (
-              <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Upload className="w-4 h-4" />
-            )}
             Upload LUTs
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -152,62 +150,74 @@ export default function LutLibrary() {
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : luts.length === 0 ? (
-        <div className="text-center py-24 border border-dashed border-divider rounded-xl bg-content1/30">
-          <div className="w-16 h-16 bg-content2 rounded-full flex items-center justify-center mx-auto mb-4">
-            <FileType className="w-8 h-8 text-default-400" />
-          </div>
-          <h3 className="text-lg font-medium">No LUTs found</h3>
-          <p className="text-default-500 mt-2 max-w-sm mx-auto">
-            Upload .cube, .3dl, or .csp files to add film simulation presets.
-          </p>
-        </div>
+        <Card className="bg-content1">
+          <CardBody className="text-center py-24">
+            <div className="w-16 h-16 bg-content2 rounded-full flex items-center justify-center mx-auto mb-4">
+              <FileType className="w-8 h-8 text-default-400" />
+            </div>
+            <h3 className="text-lg font-medium">No LUTs found</h3>
+            <p className="text-default-500 mt-2 max-w-sm mx-auto">
+              Upload .cube, .3dl, or .csp files to add film simulation presets.
+            </p>
+          </CardBody>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
           {luts.map((lut) => (
             <div 
               key={lut.name} 
-              className="group bg-card border border-divider rounded-xl overflow-hidden hover:border-primary/50 hover:shadow-md transition-all duration-300"
+              className="group relative overflow-hidden rounded-xl cursor-pointer"
+              style={{ paddingBottom: '100%' }} // 1:1 aspect ratio
             >
-              {/* Preview Bar */}
+              {/* Background gradient */}
               <div 
-                className="h-24 w-full relative"
+                className="absolute inset-0"
                 style={{ background: generatePreviewGradient(lut.name) }}
-              >
-                <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    onClick={() => handleDelete(lut.name)}
-                    className="p-1.5 bg-black/50 text-white rounded-full hover:bg-red-500 transition-colors backdrop-blur-sm"
-                    title="Delete LUT"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {lut.name.startsWith('FilmGallery_') && (
-                  <div className="absolute top-2 left-2 px-1.5 py-0.5 bg-black/40 backdrop-blur-md rounded text-[10px] font-medium text-white border border-white/10">
-                    BUILT-IN
-                  </div>
-                )}
+              />
+              
+              {/* Bottom gradient overlay */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+              
+              {/* Delete button - top right */}
+              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                <Button
+                  isIconOnly
+                  size="sm"
+                  onPress={() => handleDelete(lut.name)}
+                  className="bg-black/50 text-white hover:bg-red-500 backdrop-blur-sm"
+                  title="Delete LUT"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </Button>
               </div>
-
-              {/* Info */}
-              <div className="p-4">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <h4 className="font-medium text-sm truncate flex-1" title={lut.name}>
-                    {lut.name}
-                  </h4>
-                </div>
-                
-                <div className="flex items-center gap-3 text-xs text-default-400">
-                  <span className="uppercase bg-content2 px-1.5 py-0.5 rounded text-[10px] font-semibold tracking-wider">
+              
+              {/* Built-in badge - top left */}
+              {lut.name.startsWith('FilmGallery_') && (
+                <Chip 
+                  size="sm" 
+                  variant="flat" 
+                  className="absolute top-2 left-2 bg-black/40 backdrop-blur-md text-white border border-white/10 z-10"
+                >
+                  BUILT-IN
+                </Chip>
+              )}
+              
+              {/* Info overlay - bottom */}
+              <div className="absolute bottom-0 left-0 right-0 p-3 z-10">
+                <h4 className="font-medium text-sm text-white truncate mb-1" title={lut.name}>
+                  {lut.name}
+                </h4>
+                <div className="flex items-center gap-2 text-xs text-white/70">
+                  <span className="uppercase font-semibold tracking-wider">
                     {lut.type || lut.name.split('.').pop()}
                   </span>
+                  <span>·</span>
                   <span>{formatFileSize(lut.size)}</span>
                 </div>
-                
                 {lut.modifiedAt && (
-                   <div className="mt-3 pt-3 border-t border-divider text-[10px] text-default-400">
-                     Updated {formatDate(lut.modifiedAt)}
-                   </div>
+                  <span className="text-[10px] text-white/50 block mt-1">
+                    Updated {formatDate(lut.modifiedAt)}
+                  </span>
                 )}
               </div>
             </div>

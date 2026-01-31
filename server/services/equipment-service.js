@@ -160,9 +160,20 @@ async function listEquipment(type, filters = {}) {
     sql += ` AND ${prefix}deleted_at IS NULL`;
   }
 
-  // Apply dynamic filters
+  // Allowed filter fields (only fields that exist in config + common fields)
+  const allowedFilterFields = new Set([
+    ...config.fields,
+    'id', 'deleted_at', 'created_at', 'updated_at'
+  ]);
+
+  // Apply dynamic filters - only for valid fields
   for (const [key, value] of Object.entries(filters)) {
     if (value === undefined || key === 'includeDeleted') continue;
+    // Skip unknown fields to prevent SQL errors
+    if (!allowedFilterFields.has(key)) {
+      console.warn(`[equipment-service] Ignoring unknown filter field: ${key}`);
+      continue;
+    }
     sql += ` AND ${prefix}${key} = ?`;
     params.push(value);
   }
