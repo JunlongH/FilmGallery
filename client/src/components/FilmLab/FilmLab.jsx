@@ -199,7 +199,7 @@ export default function FilmLab({
       // Film Curve params
       filmCurveEnabled, filmCurveProfile,
       // Include geometry params to invalidate cache when geometry changes
-      rotation, orientation, isCropping,
+      rotation, orientation, rotationOffset, isCropping,
       // Serialize committedCrop for comparison
       cropKey: `${committedCrop.x},${committedCrop.y},${committedCrop.w},${committedCrop.h}`,
       // include scale so WebGL output matches geometry.rotatedW used by overlay
@@ -212,7 +212,7 @@ export default function FilmLab({
       densityLevelsEnabled, densityLevels,
       curves, lut1, lut2,
       hslParams, splitToning, filmCurveEnabled, filmCurveProfile,
-      rotation, orientation, isCropping, committedCrop, image, sourceType]);
+      rotation, orientation, rotationOffset, isCropping, committedCrop, image, sourceType]);
 
   // 当前参数（用于 PhotoSwitcher "Apply to batch" 功能）
   const currentParams = React.useMemo(() => ({
@@ -265,8 +265,9 @@ export default function FilmLab({
     const cos = Math.abs(Math.cos(rad));
     const scaledW = image.width * scale;
     const scaledH = image.height * scale;
-    const rotatedW = scaledW * cos + scaledH * sin;
-    const rotatedH = scaledW * sin + scaledH * cos;
+    // Rounded output dimensions for canvas sizing (matches FilmLabWebGL.js final output)
+    const rotatedW = Math.round(scaledW * cos + scaledH * sin);
+    const rotatedH = Math.round(scaledW * sin + scaledH * cos);
     return { rotatedW, rotatedH, scale, rad, scaledW, scaledH };
   }, [image, rotation, orientation, rotationOffset]);
 
@@ -1614,10 +1615,18 @@ export default function FilmLab({
         };
       };
       
+      // Get Film Curve profile parameters (same as GPU Export)
+      const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
+      const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+      const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
+      const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+      
       const params = {
         sourceType, // 传递源类型以便服务器选择正确的源文件
         inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
         inversionMode, filmCurveEnabled, filmCurveProfile,
+        // Explicitly pass film curve parameters for RenderCore (same as GPU Export)
+        filmCurveGamma, filmCurveDMin, filmCurveDMax,
         exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
         // 片基校正增益 (Pre-Inversion)
         baseRed, baseGreen, baseBlue,
@@ -1653,85 +1662,109 @@ export default function FilmLab({
   };
 
   const handleGpuExport = async () => {
-    if (!window.__electron || gpuBusy) return;
+    if (gpuBusy) return;
     setGpuBusy(true);
     try {
-      // Generate 1D LUT for Curves only (tone handled in shader via uniforms)
-      const lutRGB = getCurveLUT(curves.rgb);
-      const lutR = getCurveLUT(curves.red);
-      const lutG = getCurveLUT(curves.green);
-      const lutB = getCurveLUT(curves.blue);
-      
-      // Combine into a single 256x3 array [r,g,b, r,g,b...] for the GPU to sample
-      // The GPU will use this to map the linear(ish) color through curves (tone via uniforms)
-      const toneCurveLut = new Uint8Array(256 * 4); // RGBA
-      for (let i = 0; i < 256; i++) {
-        let r = i, g = i, b = i;
-        // Apply RGB Curve
-        r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-        // Apply Channel Curves
-        r = lutR[r];
-        g = lutG[g];
-        b = lutB[b];
+      // 检查 GPU 是否可用
+      if (window.__electron?.filmlabGpuProcess) {
+        // Generate 1D LUT for Curves only (tone handled in shader via uniforms)
+        const lutRGB = getCurveLUT(curves.rgb);
+        const lutR = getCurveLUT(curves.red);
+        const lutG = getCurveLUT(curves.green);
+        const lutB = getCurveLUT(curves.blue);
         
-        toneCurveLut[i * 4 + 0] = r;
-        toneCurveLut[i * 4 + 1] = g;
-        toneCurveLut[i * 4 + 2] = b;
-        toneCurveLut[i * 4 + 3] = 255;
+        // Combine into a single 256x3 array [r,g,b, r,g,b...] for the GPU to sample
+        const toneCurveLut = new Uint8Array(256 * 4); // RGBA
+        for (let i = 0; i < 256; i++) {
+          let r = i, g = i, b = i;
+          // Apply RGB Curve
+          r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
+          // Apply Channel Curves
+          r = lutR[r];
+          g = lutG[g];
+          b = lutB[b];
+          
+          toneCurveLut[i * 4 + 0] = r;
+          toneCurveLut[i * 4 + 1] = g;
+          toneCurveLut[i * 4 + 2] = b;
+          toneCurveLut[i * 4 + 3] = 255;
+        }
+
+        // Prepare 3D LUTs if any
+        let lut3d = null;
+        if (lut1 || lut2) {
+          lut3d = buildCombinedLUT(lut1, lut2);
+        }
+
+        // Get Film Curve profile parameters
+        const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
+        const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+        const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
+        const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+
+        const params = { 
+          sourceType,
+          inverted: getEffectiveInverted(sourceType, inverted),
+          inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
+          temp, tint, red, green, blue,
+          baseRed, baseGreen, baseBlue,
+          baseMode, baseDensityR, baseDensityG, baseDensityB,
+          densityLevelsEnabled, densityLevels,
+          rotation, orientation,
+          filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
+          cropRect: committedCrop,
+          toneCurveLut: Array.from(toneCurveLut),
+          lut3d: lut3d ? { size: lut3d.size, data: Array.from(lut3d.data) } : null,
+          hslParams, splitToning
+        };
+        
+        const res = await window.__electron.filmlabGpuProcess({ params, photoId, imageUrl });
+        if (res?.ok) {
+          if (onPhotoUpdate) onPhotoUpdate();
+          if (res.filePath) {
+            try { window.__electron.showInFolder && window.__electron.showInFolder(res.filePath); } catch(_){}
+            if (typeof window !== 'undefined') alert('GPU Export Saved To:\n' + res.filePath);
+          }
+          return; // GPU 成功，直接返回
+        }
+        
+        // GPU 失败，尝试 CPU 回退
+        console.warn('[FilmLab] GPU export failed, trying CPU fallback:', res?.error);
+      } else {
+        console.log('[FilmLab] GPU processor not available, using CPU fallback');
       }
-
-      // Prepare 3D LUTs if any
-      // We can pass them as raw data. The GPU worker will need to handle them.
-      // For now, let's just pass the first active LUT if any, or maybe combine them?
-      // Combining 3D LUTs in JS is expensive.
-      // Let's pass them individually if possible, or just the first one for now as a start.
-      // Or, if we want full parity, we should combine them in JS if they are small (33^3 is small).
-      // The `buildCombinedLUT` function exists in this file! Let's use it.
-      let lut3d = null;
-      if (lut1 || lut2) {
-        lut3d = buildCombinedLUT(lut1, lut2); // returns { data: Float32Array, size: number }
-      }
-
-      // Get Film Curve profile parameters
-      const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
-      const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
-      const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
-      const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
-
-      const params = { 
-        sourceType, // 传递源类型
-        inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
-        inversionMode, exposure, contrast, highlights, shadows, whites, blacks,
-        temp, tint, red, green, blue,
-        // 片基校正增益 (Pre-Inversion)
+      
+      // CPU 回退：使用 smartExportPositive（会自动选择可用的渲染方式）
+      console.log('[FilmLab] Attempting CPU export fallback');
+      const cpuParams = {
+        sourceType,
+        inverted: getEffectiveInverted(sourceType, inverted),
+        inversionMode, filmCurveEnabled, filmCurveProfile,
+        exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
         baseRed, baseGreen, baseBlue,
-        // 对数域片基校正参数
         baseMode, baseDensityR, baseDensityG, baseDensityB,
-        // 密度色阶 (Density Levels)
         densityLevelsEnabled, densityLevels,
-        rotation, orientation,
-        filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
-        cropRect: committedCrop,
-        toneCurveLut: Array.from(toneCurveLut), // Pass as array
-        lut3d: lut3d ? { size: lut3d.size, data: Array.from(lut3d.data) } : null,
-        hslParams, splitToning
+        rotation, orientation, cropRect: committedCrop, curves,
+        hslParams, splitToning,
+        // LUT 需要序列化
+        lut1: lut1 ? { size: lut1.size, data: Array.from(lut1.data), intensity: lut1.intensity } : null,
+        lut2: lut2 ? { size: lut2.size, data: Array.from(lut2.data), intensity: lut2.intensity } : null,
       };
       
-      const res = await window.__electron.filmlabGpuProcess({ params, photoId, imageUrl });
-      if (!res || !res.ok) {
-        const msg = (res && (res.error || res.message)) || 'unknown_error';
-        if (typeof window !== 'undefined') alert('GPU Export Failed: ' + msg);
-      } else {
+      const result = await smartExportPositive(photoId, cpuParams, { format: 'jpeg', sourceType });
+      
+      if (result?.ok) {
         if (onPhotoUpdate) onPhotoUpdate();
-        // Reveal saved file and inform user where it went
-        if (res.filePath) {
-          try { window.__electron.showInFolder && window.__electron.showInFolder(res.filePath); } catch(_){}
-          if (typeof window !== 'undefined') alert('GPU Export Saved To:\n' + res.filePath);
+        if (typeof window !== 'undefined') {
+          const source = result.source || 'local';
+          alert(`Export completed (${source} mode)`);
         }
+      } else {
+        if (typeof window !== 'undefined') alert('Export Failed: ' + (result?.error || 'Unknown error'));
       }
     } catch (e) {
-      console.error('GPU export failed', e);
-      if (typeof window !== 'undefined') alert('GPU Export Failed: ' + (e.message || e));
+      console.error('Export failed', e);
+      if (typeof window !== 'undefined') alert('Export Failed: ' + (e.message || e));
     } finally {
       setGpuBusy(false);
     }
@@ -2428,6 +2461,7 @@ export default function FilmLab({
         setCropRect={setCropRect}
         image={image}
         orientation={orientation}
+        rotationOffset={rotationOffset}
         ratioMode={ratioMode}
         ratioSwap={ratioSwap}
         compareMode={compareMode}

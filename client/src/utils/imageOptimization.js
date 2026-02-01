@@ -77,9 +77,12 @@ export async function preloadImages(urls, options = {}) {
     return { success: urls.length, failed: 0 };
   }
   
-  let success = urls.length - toLoad.length;
-  let failed = 0;
-  let completed = 0;
+  // 使用对象来存储状态，避免 no-loop-func 警告
+  const stats = {
+    success: urls.length - toLoad.length,
+    failed: 0,
+    completed: 0
+  };
   
   // 分批加载
   const chunks = [];
@@ -101,16 +104,16 @@ export async function preloadImages(urls, options = {}) {
     
     results.forEach((result) => {
       if (result.status === 'fulfilled' && result.value) {
-        success++;
+        stats.success++;
       } else {
-        failed++;
+        stats.failed++;
       }
-      completed++;
-      onProgress?.(completed, toLoad.length);
+      stats.completed++;
+      onProgress?.(stats.completed, toLoad.length);
     });
   }
   
-  return { success, failed };
+  return { success: stats.success, failed: stats.failed };
 }
 
 /**
@@ -304,7 +307,7 @@ export function getPhotoUrlWithCache(url, photo) {
   return addCacheKey(url, photo?.updated_at);
 }
 
-export default {
+const imageOptimization = {
   preloadImage,
   preloadImages,
   isImageCached,
@@ -316,3 +319,5 @@ export default {
   addCacheKey,
   getPhotoUrlWithCache,
 };
+
+export default imageOptimization;

@@ -33,7 +33,7 @@ export default function SettingsTabs({
       color="primary"
       variant="underlined"
       classNames={{
-        base: 'w-full border-b border-divider',
+        base: 'w-full border-b border-zinc-200 dark:border-zinc-700',
         tabList: 'gap-6 w-full relative rounded-none p-0',
         cursor: 'w-full bg-primary',
         tab: 'max-w-fit px-0 h-12',

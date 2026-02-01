@@ -9,7 +9,7 @@ import ShotModeModal from '../components/ShotModeModal';
 import locationService from '../services/locationService.native';
 import { parseISODate, toISODateString } from '../utils/date';
 import { getFilmItem, updateFilmItem, getMetadataOptions, getCountries, searchLocations, getFilms } from '../api/filmItems';
-import { getCamera, getCompatibleLenses } from '../api/equipment';
+import { getCamera, getCompatibleLenses, getLenses } from '../api/equipment';
 import { spacing, radius } from '../theme';
 
 function parseShotLog(raw) {
@@ -29,7 +29,8 @@ function parseShotLog(raw) {
         city: entry.city || '',
         detail_location: entry.detail_location || '',
         latitude: entry.latitude ?? null,
-        longitude: entry.longitude ?? null
+        longitude: entry.longitude ?? null,
+        caption: entry.caption || ''
       }))
       .filter(e => e.date && e.count > 0);
   } catch {
@@ -64,6 +65,7 @@ export default function ShotLogScreen({ route, navigation }) {
   const [newCountry, setNewCountry] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newDetail, setNewDetail] = useState('');
+  const [newCaption, setNewCaption] = useState('');
   const [lensOptions, setLensOptions] = useState(FALLBACK_LENSES);
   const [countries, setCountries] = useState([]);
   const [countryCode, setCountryCode] = useState('');
@@ -276,14 +278,19 @@ export default function ShotLogScreen({ route, navigation }) {
 
   useEffect(() => {
     let mounted = true;
-    getMetadataOptions()
-      .then((opts) => {
+    
+    // Fetch lens library for suggestions
+    getLenses()
+      .then((lenses) => {
         if (!mounted) return;
-        const base = Array.isArray(opts?.lenses) && opts.lenses.length ? opts.lenses : FALLBACK_LENSES;
-        // Add to existing options instead of replacing (to preserve compatible lenses from camera)
-        setLensOptions(prev => dedupeAndSort([...prev, ...base]));
+        const formatted = (Array.isArray(lenses) ? lenses : []).map(l => formatLensDisplay(l));
+        setLensOptions(prev => dedupeAndSort([...prev, ...formatted]));
       })
-      .catch(() => setLensOptions(prev => dedupeAndSort([...prev, ...FALLBACK_LENSES])));
+      .catch((err) => {
+        console.warn('Failed to fetch library lenses:', err);
+        setLensOptions(prev => dedupeAndSort([...prev, ...FALLBACK_LENSES]));
+      });
+
     return () => { mounted = false; };
   }, []);
 
@@ -398,7 +405,8 @@ export default function ShotLogScreen({ route, navigation }) {
         city: newCity || last.city || '',
         detail_location: newDetail || last.detail_location || '',
         latitude: newLatitude,
-        longitude: newLongitude
+        longitude: newLongitude,
+        caption: newCaption
       }];
       return next.sort((a, b) => a.date.localeCompare(b.date));
     });
@@ -410,9 +418,10 @@ export default function ShotLogScreen({ route, navigation }) {
     setNewCountry(prev => prev || last.country || '');
     setNewCity(prev => prev || last.city || '');
     setNewDetail(prev => prev || last.detail_location || '');
-    // Reset coordinates for next entry
+    // Reset coordinates and caption for next entry
     setNewLatitude(null);
     setNewLongitude(null);
+    setNewCaption('');
     setShowLensOptions(false);
     setShowCountryOptions(false);
     setShowCityOptions(false);
@@ -440,7 +449,8 @@ export default function ShotLogScreen({ route, navigation }) {
           city: e.city || '',
           detail_location: e.detail_location || '',
           latitude: e.latitude ?? null,
-          longitude: e.longitude ?? null
+          longitude: e.longitude ?? null,
+          caption: e.caption || ''
         }));
       await updateFilmItem(itemId, { shot_logs: JSON.stringify(payload) });
       navigation.goBack();
@@ -533,6 +543,11 @@ export default function ShotLogScreen({ route, navigation }) {
               {item.latitude != null && item.longitude != null ? (
                 <Text variant="bodySmall" style={{ color: '#4ade80' }}>
                   📍 {item.latitude.toFixed(5)}, {item.longitude.toFixed(5)}
+                </Text>
+              ) : null}
+              {item.caption ? (
+                <Text variant="bodySmall" style={{ color: '#6366f1', marginTop: 2 }} numberOfLines={1}>
+                  💬 {item.caption}
                 </Text>
               ) : null}
             </View>
@@ -809,6 +824,16 @@ export default function ShotLogScreen({ route, navigation }) {
           mode="outlined"
           value={newDetail}
           onChangeText={setNewDetail}
+          style={[styles.input, { marginBottom: spacing.xs }]}
+          dense
+        />
+        
+        <TextInput
+          label="Caption (Photo Description)"
+          mode="outlined"
+          value={newCaption}
+          onChangeText={setNewCaption}
+          placeholder="Describe the shot, e.g. 'Sunset at the Great Wall'"
           style={[styles.input, { marginBottom: spacing.xs }]}
           dense
         />

@@ -104,7 +104,8 @@ export default function BrowseSection() {
           variant="solid"
           size="lg"
           classNames={{
-            tabList: 'bg-content2',
+            tabList: 'bg-zinc-100 dark:bg-zinc-800/50',
+            tab: 'data-[selected=true]:bg-white data-[selected=true]:dark:bg-zinc-700',
           }}
         >
           <Tab 
@@ -206,7 +207,7 @@ export default function BrowseSection() {
             transition={{ duration: 0.3 }}
           >
             {data?.length === 0 ? (
-              <div className="text-center py-20 text-default-400">
+              <div className="text-center py-20 text-zinc-400 dark:text-zinc-500">
                 <p className="text-lg mb-2">No {mode} found</p>
                 <p className="text-sm">Try adjusting your filters or search query</p>
               </div>

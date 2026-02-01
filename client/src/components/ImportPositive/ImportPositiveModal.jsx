@@ -284,6 +284,25 @@ export default function ImportPositiveModal({
   
   if (!isOpen) return null;
   
+  // Theme detection
+  const isDark = document.documentElement.classList.contains('dark') || 
+                 document.documentElement.getAttribute('data-theme') === 'dark';
+  
+  // Theme-aware colors
+  const colors = {
+    overlay: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.5)',
+    modalBg: isDark ? '#18181b' : '#ffffff',
+    modalBorder: isDark ? '#27272a' : '#e4e4e7',
+    text: isDark ? '#ECEDEE' : '#11181C',
+    textMuted: isDark ? '#71717a' : '#a1a1aa',
+    textSecondary: isDark ? '#d4d4d8' : '#3f3f46',
+    inputBg: isDark ? '#27272a' : '#f4f4f5',
+    inputBorder: isDark ? '#3f3f46' : '#e4e4e7',
+    buttonSecondary: isDark ? '#27272a' : '#f4f4f5',
+    buttonSecondaryText: isDark ? '#ECEDEE' : '#11181C',
+    progressBg: isDark ? '#3f3f46' : '#e4e4e7'
+  };
+  
   return (
     <div style={{
       position: 'fixed',
@@ -291,14 +310,15 @@ export default function ImportPositiveModal({
       left: 0,
       right: 0,
       bottom: 0,
-      background: 'rgba(0,0,0,0.8)',
+      background: colors.overlay,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 10000
     }}>
       <div style={{
-        background: '#1e1e1e',
+        background: colors.modalBg,
+        border: `1px solid ${colors.modalBorder}`,
         borderRadius: 12,
         padding: 24,
         width: 650,
@@ -313,16 +333,16 @@ export default function ImportPositiveModal({
           alignItems: 'center',
           marginBottom: 20
         }}>
-          <h2 style={{ margin: 0, color: '#fff' }}>
+          <h2 style={{ margin: 0, color: colors.text }}>
             导入外部正片
-            {rollName && <span style={{ color: '#888', fontSize: 14, marginLeft: 8 }}>- {rollName}</span>}
+            {rollName && <span style={{ color: colors.textMuted, fontSize: 14, marginLeft: 8 }}>- {rollName}</span>}
           </h2>
           <button
             onClick={handleClose}
             style={{
               background: 'none',
               border: 'none',
-              color: '#888',
+              color: colors.textMuted,
               fontSize: 24,
               cursor: 'pointer'
             }}
@@ -357,6 +377,7 @@ export default function ImportPositiveModal({
             loading={loading}
             onPreview={handlePreview}
             onClose={handleClose}
+            colors={colors}
           />
         )}
         
@@ -376,15 +397,16 @@ export default function ImportPositiveModal({
             loading={loading}
             onBack={() => setStep('select')}
             onExecute={handleExecute}
+            colors={colors}
           />
         )}
         
         {step === 'importing' && (
-          <ImportingStep progress={progress} />
+          <ImportingStep progress={progress} colors={colors} />
         )}
         
         {step === 'done' && (
-          <DoneStep result={importResult} onClose={handleClose} />
+          <DoneStep result={importResult} onClose={handleClose} colors={colors} />
         )}
       </div>
     </div>
@@ -404,12 +426,16 @@ function SelectStep({
   onStrategyChange,
   loading,
   onPreview,
-  onClose
+  onClose,
+  colors
 }) {
+  const btnSecondaryStyle = getBtnSecondary(colors);
+  const btnPrimaryStyle = getBtnPrimary(colors);
+  
   return (
     <>
       {/* 选择文件 */}
-      <Section title="选择文件">
+      <Section title="选择文件" colors={colors}>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
             type="text"
@@ -419,23 +445,23 @@ function SelectStep({
             style={{
               flex: 1,
               padding: '10px 12px',
-              background: '#252525',
-              border: '1px solid #333',
+              background: colors.inputBg,
+              border: `1px solid ${colors.inputBorder}`,
               borderRadius: 4,
-              color: '#fff'
+              color: colors.text
             }}
           />
-          <button onClick={onSelectFolder} style={btnSecondary}>
+          <button onClick={onSelectFolder} style={btnSecondaryStyle}>
             选择文件夹
           </button>
-          <button onClick={onSelectFiles} style={btnSecondary}>
+          <button onClick={onSelectFiles} style={btnSecondaryStyle}>
             选择文件
           </button>
         </div>
       </Section>
       
       {/* 匹配策略 */}
-      <Section title="匹配策略">
+      <Section title="匹配策略" colors={colors}>
         {STRATEGIES.map(s => (
           <label
             key={s.id}
@@ -454,11 +480,11 @@ function SelectStep({
               style={{ marginTop: 3, accentColor: '#2196F3' }}
             />
             <div>
-              <span style={{ color: '#ddd' }}>
+              <span style={{ color: colors.textSecondary }}>
                 {s.name}
                 {s.recommended && <span style={{ color: '#4CAF50', marginLeft: 4 }}>(推荐)</span>}
               </span>
-              <div style={{ color: '#888', fontSize: 12 }}>{s.desc}</div>
+              <div style={{ color: colors.textMuted, fontSize: 12 }}>{s.desc}</div>
             </div>
           </label>
         ))}
@@ -466,8 +492,8 @@ function SelectStep({
       
       {/* 按钮 */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 24 }}>
-        <button onClick={onClose} style={btnSecondary}>取消</button>
-        <button onClick={onPreview} disabled={loading} style={btnPrimary}>
+        <button onClick={onClose} style={btnSecondaryStyle}>取消</button>
+        <button onClick={onPreview} disabled={loading} style={btnPrimaryStyle}>
           {loading ? '加载中...' : '预览匹配'}
         </button>
       </div>
@@ -489,15 +515,18 @@ function PreviewStep({
   onConflictResolutionChange,
   loading,
   onBack,
-  onExecute
+  onExecute,
+  colors
 }) {
   const isManualMode = strategy === STRATEGY.MANUAL;
   const importableCount = stats.matched + (conflictResolution === CONFLICT_RESOLUTION.OVERWRITE ? stats.conflict : 0);
+  const btnSecondaryStyle = getBtnSecondary(colors);
+  const btnPrimaryStyle = getBtnPrimary(colors);
   
   return (
     <>
       {/* 策略切换 */}
-      <Section title="匹配策略">
+      <Section title="匹配策略" colors={colors}>
         <div style={{ display: 'flex', gap: 12 }}>
           {STRATEGIES.map(s => (
             <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
@@ -507,18 +536,18 @@ function PreviewStep({
                 onChange={() => onStrategyChange(s.id)}
                 style={{ accentColor: '#2196F3' }}
               />
-              <span style={{ color: '#ddd', fontSize: 13 }}>{s.name}</span>
+              <span style={{ color: colors.textSecondary, fontSize: 13 }}>{s.name}</span>
             </label>
           ))}
         </div>
       </Section>
       
       {/* 统计 */}
-      <Section title={`匹配预览 (${stats.matched + stats.conflict}/${stats.total})`}>
+      <Section title={`匹配预览 (${stats.matched + stats.conflict}/${stats.total})`} colors={colors}>
         <div style={{ display: 'flex', gap: 16, marginBottom: 12, fontSize: 13 }}>
           <span style={{ color: '#4CAF50' }}>✓ 匹配: {stats.matched}</span>
           <span style={{ color: '#FF9800' }}>⚠ 冲突: {stats.conflict}</span>
-          <span style={{ color: '#9E9E9E' }}>○ 未匹配: {stats.unmatched}</span>
+          <span style={{ color: colors.textMuted }}>○ 未匹配: {stats.unmatched}</span>
         </div>
         
         <MatchPreviewTable
@@ -533,7 +562,7 @@ function PreviewStep({
       
       {/* 手动匹配面板 */}
       {isManualMode && (
-        <Section title="选择底片">
+        <Section title="选择底片" colors={colors}>
           <ManualMatchPanel
             unmatchedPhotos={unmatchedPhotos}
             selectedFileIndex={selectedFileIndex}
@@ -544,7 +573,7 @@ function PreviewStep({
       
       {/* 冲突处理 */}
       {stats.conflict > 0 && (
-        <Section title={`冲突处理 (${stats.conflict} 张已有正片)`}>
+        <Section title={`冲突处理 (${stats.conflict} 张已有正片)`} colors={colors}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, cursor: 'pointer' }}>
             <input
               type="radio"
@@ -552,7 +581,7 @@ function PreviewStep({
               onChange={() => onConflictResolutionChange(CONFLICT_RESOLUTION.OVERWRITE)}
               style={{ accentColor: '#2196F3' }}
             />
-            <span style={{ color: '#ddd' }}>覆盖现有正片</span>
+            <span style={{ color: colors.textSecondary }}>覆盖现有正片</span>
           </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input
@@ -561,20 +590,20 @@ function PreviewStep({
               onChange={() => onConflictResolutionChange(CONFLICT_RESOLUTION.SKIP)}
               style={{ accentColor: '#2196F3' }}
             />
-            <span style={{ color: '#ddd' }}>跳过已有正片</span>
+            <span style={{ color: colors.textSecondary }}>跳过已有正片</span>
           </label>
         </Section>
       )}
       
       {/* 按钮 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24 }}>
-        <button onClick={onBack} style={btnSecondary}>返回</button>
+        <button onClick={onBack} style={btnSecondaryStyle}>返回</button>
         <button 
           onClick={onExecute} 
           disabled={loading || importableCount === 0} 
           style={{
-            ...btnPrimary,
-            background: importableCount === 0 ? '#666' : '#4CAF50'
+            ...btnPrimaryStyle,
+            background: importableCount === 0 ? colors.textMuted : '#4CAF50'
           }}
         >
           {loading ? '处理中...' : `导入 ${importableCount} 张`}
@@ -584,13 +613,13 @@ function PreviewStep({
   );
 }
 
-function ImportingStep({ progress }) {
+function ImportingStep({ progress, colors }) {
   const percent = progress.total > 0 ? (progress.completed / progress.total * 100) : 0;
   
   return (
     <div style={{ textAlign: 'center', padding: 40 }}>
       <div style={{ fontSize: 48, marginBottom: 16 }}>📥</div>
-      <div style={{ color: '#fff', fontSize: 18, marginBottom: 20 }}>
+      <div style={{ color: colors.text, fontSize: 18, marginBottom: 20 }}>
         正在导入...
       </div>
       
@@ -598,7 +627,7 @@ function ImportingStep({ progress }) {
       <div style={{
         width: '100%',
         height: 8,
-        background: '#333',
+        background: colors.progressBg,
         borderRadius: 4,
         overflow: 'hidden',
         marginBottom: 12
@@ -611,34 +640,35 @@ function ImportingStep({ progress }) {
         }} />
       </div>
       
-      <div style={{ color: '#888' }}>
+      <div style={{ color: colors.textMuted }}>
         {progress.completed} / {progress.total}
       </div>
     </div>
   );
 }
 
-function DoneStep({ result, onClose }) {
+function DoneStep({ result, onClose, colors }) {
   const isSuccess = result?.status === 'completed';
+  const btnPrimaryStyle = getBtnPrimary(colors);
   
   return (
     <div style={{ textAlign: 'center', padding: 40 }}>
       <div style={{ fontSize: 48, marginBottom: 16 }}>
         {isSuccess ? '✅' : '⚠️'}
       </div>
-      <div style={{ color: '#fff', fontSize: 18, marginBottom: 20 }}>
+      <div style={{ color: colors.text, fontSize: 18, marginBottom: 20 }}>
         {isSuccess ? '导入完成' : '导入结束'}
       </div>
       
       {result && (
-        <div style={{ color: '#888', marginBottom: 20 }}>
+        <div style={{ color: colors.textMuted, marginBottom: 20 }}>
           <div>成功: {result.completed} 张</div>
           {result.failed > 0 && <div style={{ color: '#f44336' }}>失败: {result.failed} 张</div>}
           {result.skipped > 0 && <div>跳过: {result.skipped} 张</div>}
         </div>
       )}
       
-      <button onClick={onClose} style={btnPrimary}>
+      <button onClick={onClose} style={btnPrimaryStyle}>
         关闭
       </button>
     </div>
@@ -649,11 +679,11 @@ function DoneStep({ result, onClose }) {
 // 辅助组件和样式
 // ============================================================================
 
-function Section({ title, children }) {
+function Section({ title, children, colors }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{
-        color: '#888',
+        color: colors?.textMuted || '#888',
         fontSize: 12,
         fontWeight: 600,
         marginBottom: 10,
@@ -666,20 +696,20 @@ function Section({ title, children }) {
   );
 }
 
-const btnSecondary = {
+const getBtnSecondary = (colors) => ({
   padding: '10px 16px',
-  background: '#333',
-  border: 'none',
+  background: colors?.buttonSecondary || '#333',
+  border: `1px solid ${colors?.inputBorder || '#333'}`,
   borderRadius: 6,
-  color: '#fff',
+  color: colors?.buttonSecondaryText || '#fff',
   cursor: 'pointer'
-};
+});
 
-const btnPrimary = {
+const getBtnPrimary = (colors) => ({
   padding: '10px 24px',
   background: '#2196F3',
   border: 'none',
   borderRadius: 6,
   color: '#fff',
   cursor: 'pointer'
-};
+});

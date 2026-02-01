@@ -7,8 +7,18 @@ const { getDbPath } = require('./config/db-config');
 
 const dbPath = getDbPath();
 
+// Detect OneDrive path
+const isOneDrivePath = dbPath.toLowerCase().includes('onedrive');
+
 // OneDrive write-through mode: ensure changes land in the main DB file immediately (no WAL lag)
-const writeThrough = process.env.DB_WRITE_THROUGH === '1' || process.env.DB_ONEDRIVE_WRITE_THROUGH === '1';
+// Auto-enable for OneDrive paths to avoid WAL sync issues
+const writeThrough = process.env.DB_WRITE_THROUGH === '1' 
+  || process.env.DB_ONEDRIVE_WRITE_THROUGH === '1'
+  || (isOneDrivePath && process.env.DB_WRITE_THROUGH !== '0');
+
+if (isOneDrivePath) {
+  console.log('[DB] OneDrive path detected, write-through mode:', writeThrough ? 'ENABLED' : 'disabled');
+}
 
 // Auto-cleanup OneDrive conflict copies before opening DB
 const dataDir = path.dirname(dbPath);
@@ -25,17 +35,50 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.error('Could not connect to database', err);
   } else {
     console.log('Connected to database at', dbPath);
+    
+    // For OneDrive paths: checkpoint any existing WAL before switching modes
+    if (isOneDrivePath && writeThrough) {
+      db.run('PRAGMA busy_timeout = 30000', () => {
+        db.run('PRAGMA wal_checkpoint(TRUNCATE)', (checkpointErr) => {
+          if (checkpointErr) {
+            console.warn('[DB] Pre-checkpoint warning:', checkpointErr.message);
+          } else {
+            console.log('[DB] Pre-mode-switch checkpoint done');
+          }
+        });
+      });
+    }
   }
 });
 
 // Ensure tables exist
 db.serialize(() => {
+    // Always set busy_timeout first to handle OneDrive sync delays
+    db.run('PRAGMA busy_timeout = 30000');
+    
     if (writeThrough) {
       // Write-through mode: keep changes in main DB file immediately, avoid WAL/SHM reliance
-      db.run('PRAGMA journal_mode = TRUNCATE', (err) => {
-        if (err) console.error('[DB] Failed to set TRUNCATE journal mode:', err);
-        else console.log('[DB] ✅ Write-through mode: TRUNCATE journal');
+      // First, try to checkpoint any existing WAL data
+      db.run('PRAGMA wal_checkpoint(TRUNCATE)', (err) => {
+        if (err) console.warn('[DB] Initial checkpoint warning:', err.message);
       });
+      
+      // Then switch journal mode (with retry on SQLITE_BUSY)
+      const setTruncateMode = (retries = 3) => {
+        db.run('PRAGMA journal_mode = TRUNCATE', function(err) {
+          if (err && err.code === 'SQLITE_BUSY' && retries > 0) {
+            console.warn(`[DB] Journal mode switch busy, retrying in 1s... (${retries} left)`);
+            setTimeout(() => setTruncateMode(retries - 1), 1000);
+          } else if (err) {
+            console.error('[DB] Failed to set TRUNCATE journal mode:', err);
+            console.log('[DB] Continuing with current journal mode (likely WAL)');
+          } else {
+            console.log('[DB] ✅ Write-through mode: TRUNCATE journal');
+          }
+        });
+      };
+      setTruncateMode();
+      
       db.run('PRAGMA synchronous = FULL', (err) => {
         if (err) console.error('[DB] Synchronous FULL failed:', err);
       });
@@ -87,11 +130,13 @@ db.serialize(() => {
       // Optimize page size for SSD (4KB is optimal for modern drives)
       db.run('PRAGMA page_size = 4096');
     
-      // WAL autocheckpoint: merge WAL to main DB every 1000 pages (~4MB)
-      // This keeps WAL file small and allows OneDrive to sync regularly
-      db.run('PRAGMA wal_autocheckpoint = 1000', (err) => {
+      // WAL autocheckpoint: merge WAL to main DB after N pages
+      // For OneDrive: more aggressive (100 pages = ~400KB) to minimize WAL size
+      // For local: standard (1000 pages = ~4MB)
+      const autocheckpointPages = isOneDrivePath ? 100 : 1000;
+      db.run(`PRAGMA wal_autocheckpoint = ${autocheckpointPages}`, (err) => {
         if (err) console.error('[DB] WAL autocheckpoint failed:', err);
-        else console.log('[DB] ✅ WAL autocheckpoint set to 1000 pages');
+        else console.log(`[DB] ✅ WAL autocheckpoint set to ${autocheckpointPages} pages`);
       });
     }
 
@@ -172,9 +217,8 @@ db.serialize(() => {
 });
 
 // [ONEDRIVE-SYNC] Periodic WAL checkpoint for OneDrive sync (only in WAL mode)
-// Run checkpoint every 5 minutes to merge WAL into main DB
-// This ensures OneDrive can sync the latest data regularly
-const WAL_CHECKPOINT_INTERVAL = 5 * 60 * 1000; // 5 minutes
+// Run checkpoint more frequently for OneDrive paths to ensure data is synced
+const WAL_CHECKPOINT_INTERVAL = isOneDrivePath ? 60 * 1000 : 5 * 60 * 1000; // 1 min for OneDrive, 5 min otherwise
 let checkpointInterval = null;
 
 function startWalCheckpoint() {

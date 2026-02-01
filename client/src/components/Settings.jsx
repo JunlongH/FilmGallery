@@ -119,7 +119,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-background text-foreground animate-in fade-in duration-300">
+    <div className="flex flex-col h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 animate-in fade-in duration-300">
       <div className="p-6 md:p-8 max-w-7xl mx-auto w-full">
         <h2 className="text-3xl font-bold mb-8 tracking-tight">Settings</h2>
         
@@ -150,7 +150,7 @@ export default function Settings() {
            )}
 
            {activeTab === 'storage' && (
-             <div className="p-12 text-center text-default-500 bg-content2/30 rounded-xl border border-divider border-dashed">
+             <div className="p-12 text-center text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/30 rounded-xl border border-zinc-200 dark:border-zinc-700 border-dashed">
                <p>Storage analysis coming soon...</p>
              </div>
            )}

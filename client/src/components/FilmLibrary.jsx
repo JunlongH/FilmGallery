@@ -104,7 +104,7 @@ export default function FilmLibrary() {
   });
 
   return (
-    <div className="min-h-full bg-background p-6 pb-20">
+    <div className="min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-6 pb-20">
       {/* Dialog for alerts/confirms */}
       <ModalDialog 
         isOpen={dialog.isOpen} 
@@ -124,7 +124,7 @@ export default function FilmLibrary() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Package className="w-7 h-7 text-primary" />
-            <h1 className="text-2xl font-semibold text-foreground">Film Inventory</h1>
+            <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-100">Film Inventory</h1>
           </div>
           <Button
             color="primary"
@@ -158,7 +158,7 @@ export default function FilmLibrary() {
             <Spinner size="lg" color="primary" />
           </div>
         ) : filmItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-default-400">
+          <div className="flex flex-col items-center justify-center py-20 text-zinc-400 dark:text-zinc-500">
             <AlertCircle className="w-12 h-12 mb-4" />
             <p className="text-lg">No inventory records found</p>
             <p className="text-sm">Try adjusting your filters or add a new purchase</p>

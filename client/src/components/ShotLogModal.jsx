@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { updateFilmItem, getMetadataOptions, exportShotLogsCsv, getCountries, searchLocations, getCompatibleLenses } from '../api';
+import { updateFilmItem, exportShotLogsCsv, getCountries, searchLocations, getCompatibleLenses, getLenses } from '../api';
 import { getCityCoordinates } from '../utils/geocoding';
 import GeoSearchInput from './GeoSearchInput.jsx';
 
@@ -15,6 +15,7 @@ const FALLBACK_LENSES = [
 // Entry Edit Modal Component
 function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCountry, lensOptions, nativeLenses, adaptedLenses, fixedLensInfo, cameraMount }) {
   const [editData, setEditData] = useState({ ...entry });
+  const isDark = document.documentElement.classList.contains('dark');
   
   const handleGeoSelect = (result) => {
     setEditData(prev => ({
@@ -31,14 +32,19 @@ function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCoun
     <div className="fg-modal-overlay" style={{ zIndex: 1100 }} onClick={onClose}>
       <div 
         className="fg-modal-content" 
-        style={{ maxWidth: 600, width: '90%', background: '#fff', color: '#333' }}
+        style={{ 
+          maxWidth: 600, 
+          width: '90%', 
+          background: isDark ? '#1e293b' : '#fff', 
+          color: isDark ? '#f1f5f9' : '#333' 
+        }}
         onClick={e => e.stopPropagation()}
       >
-        <div className="fg-modal-header" style={{ borderBottom: '1px solid #eee', paddingBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1e293b' }}>
+        <div className="fg-modal-header" style={{ borderBottom: isDark ? '1px solid #334155' : '1px solid #eee', paddingBottom: 16 }}>
+          <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: isDark ? '#f1f5f9' : '#1e293b' }}>
             Edit Entry - {entry.date}
           </h3>
-          <button className="fg-modal-close" onClick={onClose} style={{ color: '#64748b' }}>&times;</button>
+          <button className="fg-modal-close" onClick={onClose} style={{ color: isDark ? '#94a3b8' : '#64748b' }}>&times;</button>
         </div>
         
         <div className="fg-modal-body" style={{ padding: 24 }}>
@@ -102,7 +108,13 @@ function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCoun
               Lens {fixedLensInfo && <span style={{ color: '#10b981' }}>(Fixed)</span>}
             </label>
             {fixedLensInfo ? (
-              <div style={{ padding: '10px 12px', background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6, color: '#166534' }}>
+              <div style={{ 
+                padding: '10px 12px', 
+                background: isDark ? '#064e3b' : '#f0fdf4', 
+                border: isDark ? '1px solid #10b981' : '1px solid #86efac', 
+                borderRadius: 6, 
+                color: isDark ? '#d1fae5' : '#166534' 
+              }}>
                 🔒 {fixedLensInfo.text}
               </div>
             ) : (
@@ -197,7 +209,7 @@ function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCoun
           {editData.latitude && editData.longitude && (
             <div style={{ 
               padding: 12, 
-              background: '#f0fdf4', 
+              background: isDark ? '#064e3b' : '#f0fdf4', 
               borderRadius: 8, 
               marginBottom: 20,
               display: 'flex',
@@ -205,14 +217,27 @@ function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCoun
               gap: 8
             }}>
               <span style={{ fontSize: 18 }}>📍</span>
-              <span style={{ color: '#166534', fontSize: 14 }}>
+              <span style={{ color: isDark ? '#d1fae5' : '#166534', fontSize: 14 }}>
                 {editData.latitude.toFixed(5)}, {editData.longitude.toFixed(5)}
               </span>
             </div>
           )}
+          
+          {/* Row 6: Caption */}
+          <div className="fg-field" style={{ marginBottom: 20 }}>
+            <label className="fg-label">Caption (Photo Description)</label>
+            <textarea
+              className="fg-input"
+              rows={3}
+              value={editData.caption || ''}
+              placeholder="Describe what you shot, e.g. 'Sunset at the Great Wall'"
+              onChange={e => setEditData(prev => ({ ...prev, caption: e.target.value }))}
+              style={{ resize: 'vertical', fontFamily: 'inherit' }}
+            />
+          </div>
         </div>
         
-        <div className="fg-modal-footer" style={{ borderTop: '1px solid #eee', padding: 16, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+        <div className="fg-modal-footer" style={{ borderTop: isDark ? '1px solid #334155' : '1px solid #eee', padding: 16, display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
           <button className="fg-btn fg-btn-secondary" onClick={onClose}>
             Cancel
           </button>
@@ -230,6 +255,7 @@ function EntryEditModal({ entry, index, onSave, onClose, countries, citiesByCoun
 }
 
 export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
+  const isDark = document.documentElement.classList.contains('dark');
   const [logs, setLogs] = useState([]);
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
   const [newCount, setNewCount] = useState('1');
@@ -240,6 +266,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
   const [newCountry, setNewCountry] = useState('');
   const [newCity, setNewCity] = useState('');
   const [newDetail, setNewDetail] = useState('');
+  const [newCaption, setNewCaption] = useState('');
   const [selectedLens, setSelectedLens] = useState('');
   const [lensOptions, setLensOptions] = useState(FALLBACK_LENSES);
   // Inventory-based lens categorization
@@ -491,7 +518,8 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
             detail_location: entry.detail_location || '',
             // Preserve latitude and longitude!
             latitude: entry.latitude !== undefined && entry.latitude !== null ? Number(entry.latitude) : null,
-            longitude: entry.longitude !== undefined && entry.longitude !== null ? Number(entry.longitude) : null
+            longitude: entry.longitude !== undefined && entry.longitude !== null ? Number(entry.longitude) : null,
+            caption: entry.caption || ''
           })).filter(e => e.date && e.count > 0);
           setLogs(normalized);
           setLensOptions((prev) => dedupeAndSort([...prev, ...normalized.map(e => e.lens).filter(Boolean)]));
@@ -591,14 +619,18 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
 
   useEffect(() => {
     let mounted = true;
-    getMetadataOptions()
-      .then((opts) => {
+    
+    // Fetch lens library for suggestions (instead of dirty metadata)
+    getLenses()
+      .then((lenses) => {
         if (!mounted) return;
-        const base = Array.isArray(opts?.lenses) && opts.lenses.length ? opts.lenses : FALLBACK_LENSES;
-        // Add to existing options instead of replacing (to preserve compatible lenses)
-        setLensOptions(prev => dedupeAndSort([...prev, ...base]));
+        const formatted = (Array.isArray(lenses) ? lenses : []).map(l => formatLensDisplay(l));
+        setLensOptions(prev => dedupeAndSort([...prev, ...formatted]));
       })
-      .catch(() => setLensOptions(prev => dedupeAndSort([...prev, ...FALLBACK_LENSES])));
+      .catch((err) => {
+        console.warn('Failed to fetch library lenses:', err);
+        setLensOptions(prev => dedupeAndSort([...prev, ...FALLBACK_LENSES]));
+      });
 
     getCountries()
       .then(rows => {
@@ -610,9 +642,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     return () => { mounted = false; };
   }, []);
 
-  useEffect(() => {
-    setLensOptions((prev) => dedupeAndSort([...prev, ...logs.map(l => l.lens).filter(Boolean)]));
-  }, [logs]);
+  // Removed: auto-adding non-standard lenses from existing logs
+  // useEffect(() => {
+  //   setLensOptions((prev) => dedupeAndSort([...prev, ...logs.map(l => l.lens).filter(Boolean)]));
+  // }, [logs]);
 
   useEffect(() => {
     const last = logs[logs.length - 1];
@@ -659,7 +692,8 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
       detail_location: newDetail || last.detail_location || '',
       // Include coordinates if available
       latitude: newLatitude,
-      longitude: newLongitude
+      longitude: newLongitude,
+      caption: newCaption.trim()
     };
 
     const updatedLogs = [...logs, entry].sort((a, b) => a.date.localeCompare(b.date));
@@ -673,9 +707,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
     setNewCountry(entry.country || '');
     setNewCity(entry.city || '');
     setNewDetail(entry.detail_location || '');
-    // Reset coordinates for next entry
+    // Reset coordinates and caption for next entry
     setNewLatitude(null);
     setNewLongitude(null);
+    setNewCaption('');
   };
 
   // Handle geocoding result selection from GeoSearchInput
@@ -765,17 +800,17 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
 
   return (
     <div className="fg-modal-overlay">
-      <div className="fg-modal-content" style={{ maxWidth: 1100, width: '94%', background: '#fff', color: '#333', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
-        <div className="fg-modal-header" style={{ borderBottom: '1px solid #eee', paddingBottom: 16, marginBottom: 0 }}>
+      <div className="fg-modal-content" style={{ maxWidth: 1100, width: '94%', background: isDark ? '#1e293b' : '#fff', color: isDark ? '#f1f5f9' : '#333', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+        <div className="fg-modal-header" style={{ borderBottom: isDark ? '1px solid #334155' : '1px solid #eee', paddingBottom: 16, marginBottom: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: '#1e293b' }}>Shot Log - {item.label || `Item #${item.id}`}</h3>
+            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: isDark ? '#f1f5f9' : '#1e293b' }}>Shot Log - {item.label || `Item #${item.id}`}</h3>
             <div style={{ display: 'flex', gap: 8 }}>
               <button
                 type="button"
                 className="fg-btn fg-btn-sm"
                 onClick={handleExport}
                 disabled={exporting}
-                style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '6px 10px', fontSize: 12 }}
+                style={{ background: isDark ? '#334155' : '#fff', border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', color: isDark ? '#f1f5f9' : '#0f172a', padding: '6px 10px', fontSize: 12 }}
               >
                 {exporting ? 'Exporting…' : '📤 Export CSV'}
               </button>
@@ -784,7 +819,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                 className="fg-btn fg-btn-sm"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={importing}
-                style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#0f172a', padding: '6px 10px', fontSize: 12 }}
+                style={{ background: isDark ? '#334155' : '#fff', border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', color: isDark ? '#f1f5f9' : '#0f172a', padding: '6px 10px', fontSize: 12 }}
               >
                 {importing ? 'Importing…' : '📥 Import CSV'}
               </button>
@@ -792,7 +827,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                 type="button"
                 className="fg-btn fg-btn-sm"
                 onClick={downloadTemplate}
-                style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#64748b', padding: '6px 10px', fontSize: 12 }}
+                style={{ background: isDark ? '#334155' : '#fff', border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', color: isDark ? '#94a3b8' : '#64748b', padding: '6px 10px', fontSize: 12 }}
                 title="Download CSV template"
               >
                 📋 Template
@@ -807,7 +842,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
               style={{ display: 'none' }}
             />
           </div>
-          <button className="fg-modal-close" onClick={onClose} style={{ color: '#64748b' }}>&times;</button>
+          <button className="fg-modal-close" onClick={onClose} style={{ color: isDark ? '#94a3b8' : '#64748b' }}>&times;</button>
         </div>
         
         {/* Import Options Dialog */}
@@ -826,17 +861,17 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
             borderRadius: 8
           }}>
             <div style={{ 
-              background: '#fff', 
+              background: isDark ? '#1e293b' : '#fff', 
               borderRadius: 12, 
               padding: 24, 
               maxWidth: 400, 
               width: '90%',
               boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
             }}>
-              <h4 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 600, color: '#1e293b' }}>
+              <h4 style={{ margin: '0 0 16px', fontSize: 18, fontWeight: 600, color: isDark ? '#f1f5f9' : '#1e293b' }}>
                 Import {pendingImportData.length} Entries
               </h4>
-              <p style={{ margin: '0 0 20px', color: '#64748b', fontSize: 14 }}>
+              <p style={{ margin: '0 0 20px', color: isDark ? '#94a3b8' : '#64748b', fontSize: 14 }}>
                 How would you like to import these entries?
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -858,9 +893,9 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   className="fg-btn"
                   onClick={() => executeImport('merge')}
                   style={{ 
-                    background: '#fff', 
-                    color: '#475569', 
-                    border: '1px solid #e2e8f0',
+                    background: isDark ? '#334155' : '#fff', 
+                    color: isDark ? '#f1f5f9' : '#475569', 
+                    border: isDark ? '1px solid #475569' : '1px solid #e2e8f0',
                     padding: '12px 16px',
                     borderRadius: 8,
                     fontWeight: 500
@@ -886,8 +921,8 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   className="fg-btn"
                   onClick={() => { setShowImportOptions(false); setPendingImportData(null); }}
                   style={{ 
-                    background: '#f8fafc', 
-                    color: '#64748b', 
+                    background: isDark ? '#0f172a' : '#f8fafc', 
+                    color: isDark ? '#94a3b8' : '#64748b', 
                     border: 'none',
                     padding: '10px 16px',
                     borderRadius: 8,
@@ -914,7 +949,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   className="fg-input" 
                   value={newDate} 
                   onChange={e => setNewDate(e.target.value)} 
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
                 />
               </div>
               <div className="fg-field" style={{ flex: '0 0 80px' }}>
@@ -926,7 +961,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   onChange={e => setNewCount(e.target.value)} 
                   placeholder="#"
                   min="1"
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
                   onKeyDown={e => e.key === 'Enter' && handleAdd()}
                 />
               </div>
@@ -939,7 +974,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   value={newAperture}
                   onChange={e => setNewAperture(e.target.value)}
                   placeholder="1.8"
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
                   onKeyDown={e => e.key === 'Enter' && handleAdd()}
                 />
               </div>
@@ -951,7 +986,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   value={newShutter}
                   onChange={e => setNewShutter(e.target.value)}
                   placeholder="1/125"
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
                   onKeyDown={e => e.key === 'Enter' && handleAdd()}
                 />
               </div>
@@ -966,7 +1001,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   value={newFocalLength}
                   onChange={e => setNewFocalLength(e.target.value)}
                   placeholder="50"
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
                   onKeyDown={e => e.key === 'Enter' && handleAdd()}
                 />
               </div>
@@ -1009,7 +1044,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                           }
                         }
                       }}
-                      style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
+                      style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
                     >
                       <option value="">Select lens...</option>
                       {/* Inventory lenses (Native) - use name for value, displayName for label */}
@@ -1043,7 +1078,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                       value={newLens}
                       onChange={e => setNewLens(e.target.value)}
                       placeholder="Custom"
-                      style={{ background: '#fff', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
+                      style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', flex: 1, minWidth: 0, fontSize: 13 }}
                       onKeyDown={e => e.key === 'Enter' && handleAdd()}
                     />
                   </div>
@@ -1051,7 +1086,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
               </div>
             </div>
             
-            {/* Row 2: Country, City, Detail, Add Button */}
+            {/* Row 2: Country, City, Detail */}
             <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
               <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
                 <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Country</label>
@@ -1062,7 +1097,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   value={newCountry}
                   onChange={e => setNewCountry(e.target.value)}
                   placeholder="From DB"
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
                 />
                 <datalist id="fg-country-options">
                   {countries.map(c => (
@@ -1080,7 +1115,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   onChange={e => setNewCity(e.target.value)}
                   placeholder={countryCode ? 'Filtered' : 'Country first'}
                   disabled={!countryCode && !newCountry}
-                  style={{ background: '#fff', height: 38, border: 'none', fontSize: 13 }}
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
                 />
                 <datalist id="fg-city-options">
                   {(citiesByCountry[countryCode] || []).map(ct => (
@@ -1105,6 +1140,22 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   style={{ background: 'transparent' }}
                 />
               </div>
+            </div>
+            
+            {/* Row 3: Caption + Add Button */}
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
+              <div className="fg-field" style={{ flex: 1, minWidth: 0 }}>
+                <label className="fg-label" style={{ color: 'rgba(255,255,255,0.95)', marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Caption (Photo Description)</label>
+                <input
+                  type="text"
+                  className="fg-input"
+                  value={newCaption}
+                  onChange={e => setNewCaption(e.target.value)}
+                  placeholder="Describe the shot, e.g. 'Sunset at the Great Wall'"
+                  style={{ background: '#fff', color: '#1f2937', height: 38, border: 'none', fontSize: 13 }}
+                  onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                />
+              </div>
               <button 
                 type="button" 
                 className="fg-btn" 
@@ -1126,7 +1177,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           {/* Selected Day Entries (above calendar) */}
           <div style={{ marginBottom: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1e293b' }}>
+              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: isDark ? '#f1f5f9' : '#1e293b' }}>
                 Selected Day
               </h4>
               <span style={{ 
@@ -1141,7 +1192,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
               </span>
             </div>
             {selectedDayLogs.length === 0 ? (
-              <div style={{ border: '2px dashed #e2e8f0', borderRadius: 12, padding: 20, color: '#94a3b8', fontSize: 13, textAlign: 'center' }}>
+              <div style={{ border: isDark ? '2px dashed #475569' : '2px dashed #e2e8f0', borderRadius: 12, padding: 20, color: '#94a3b8', fontSize: 13, textAlign: 'center' }}>
                 <div style={{ marginBottom: 4 }}>📅</div>
                 No entries for this day. Click the calendar to choose a date, then add logs above.
               </div>
@@ -1151,10 +1202,10 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   <div 
                     key={`${entry.date}-${entry.idx}`} 
                     style={{ 
-                      border: '1px solid #e2e8f0', 
+                      border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', 
                       borderRadius: 10, 
                       padding: 12,
-                      background: '#fff',
+                      background: isDark ? '#334155' : '#fff',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
@@ -1178,6 +1229,18 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                       {entry.lens && <span style={{ color: '#475569', fontSize: 13 }}>• {entry.lens}</span>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {entry.caption && (
+                        <span style={{ 
+                          color: isDark ? '#a5b4fc' : '#6366f1', 
+                          fontSize: 12,
+                          maxWidth: 150,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }} title={entry.caption}>
+                          💬 {entry.caption}
+                        </span>
+                      )}
                       {(entry.country || entry.city) && (
                         <span style={{ color: '#64748b', fontSize: 12 }}>
                           📍 {[entry.country, entry.city].filter(Boolean).join(' / ')}
@@ -1199,14 +1262,14 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button
                         className="fg-btn"
-                        style={{ background: '#fff', border: '1px solid #e2e8f0', color: '#475569', padding: '4px 10px', fontSize: 12 }}
+                        style={{ background: isDark ? '#1e293b' : '#fff', border: isDark ? '1px solid #64748b' : '1px solid #e2e8f0', color: isDark ? '#cbd5e1' : '#475569', padding: '4px 10px', fontSize: 12 }}
                         onClick={() => handleEditEntry(entry.idx)}
                       >
                         ✏️
                       </button>
                       <button
                         className="fg-btn"
-                        style={{ background: '#fff', border: '1px solid #fecaca', color: '#ef4444', padding: '4px 10px', fontSize: 12 }}
+                        style={{ background: isDark ? '#1e293b' : '#fff', border: '1px solid #fecaca', color: '#ef4444', padding: '4px 10px', fontSize: 12 }}
                         onClick={() => {
                           if (window.confirm('Delete this log entry?')) handleRemoveIndex(entry.idx);
                         }}
@@ -1227,26 +1290,26 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
               <button
                 type="button"
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
-                style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: '#475569', fontWeight: 500 }}
+                style={{ border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', background: isDark ? '#334155' : '#fff', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: isDark ? '#f1f5f9' : '#475569', fontWeight: 500 }}
               >
                 ← Prev
               </button>
-              <h4 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#1e293b' }}>
+              <h4 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: isDark ? '#f1f5f9' : '#1e293b' }}>
                 {currentMonth.toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
               </h4>
               <button
                 type="button"
                 onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
-                style={{ border: '1px solid #e2e8f0', background: '#fff', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: '#475569', fontWeight: 500 }}
+                style={{ border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', background: isDark ? '#334155' : '#fff', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, color: isDark ? '#f1f5f9' : '#475569', fontWeight: 500 }}
               >
                 Next →
               </button>
             </div>
 
             {/* Calendar Grid */}
-            <div style={{ border: '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
+            <div style={{ border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', borderRadius: 12, overflow: 'hidden', background: isDark ? '#1e293b' : '#fff' }}>
               {/* Weekday Headers */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: isDark ? '#0f172a' : '#f8fafc', borderBottom: isDark ? '1px solid #475569' : '1px solid #e2e8f0' }}>
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                   <div key={day} style={{ padding: '12px 8px', textAlign: 'center', fontSize: 12, fontWeight: 600, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                     {day}
@@ -1265,7 +1328,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   
                   // Empty cells before first day
                   for (let i = 0; i < firstDay; i++) {
-                    days.push(<div key={`empty-${i}`} style={{ aspectRatio: '1', borderTop: '1px solid #f1f5f9', borderLeft: i > 0 ? '1px solid #f1f5f9' : 'none', background: '#fafafa' }} />);
+                    days.push(<div key={`empty-${i}`} style={{ aspectRatio: '1', borderTop: isDark ? '1px solid #334155' : '1px solid #f1f5f9', borderLeft: i > 0 ? (isDark ? '1px solid #334155' : '1px solid #f1f5f9') : 'none', background: isDark ? '#0f172a' : '#fafafa' }} />);
                   }
                   
                   // Day cells
@@ -1287,25 +1350,25 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                         }}
                         style={{
                           aspectRatio: '1',
-                          borderTop: '1px solid #e2e8f0',
-                          borderLeft: colIndex > 0 ? '1px solid #e2e8f0' : 'none',
+                          borderTop: isDark ? '1px solid #475569' : '1px solid #e2e8f0',
+                          borderLeft: colIndex > 0 ? (isDark ? '1px solid #475569' : '1px solid #e2e8f0') : 'none',
                           padding: 8,
                           cursor: 'pointer',
                           position: 'relative',
-                          background: hasLog ? '#eff6ff' : isToday ? '#fef3c7' : '#fff',
+                          background: hasLog ? (isDark ? '#1e3a5f' : '#eff6ff') : isToday ? (isDark ? '#451a03' : '#fef3c7') : (isDark ? '#1e293b' : '#fff'),
                           transition: 'all 0.2s',
                           display: 'flex',
                           flexDirection: 'column',
                           justifyContent: 'space-between'
                         }}
                         onMouseEnter={e => {
-                          if (!hasLog) e.currentTarget.style.background = '#f8fafc';
+                          if (!hasLog) e.currentTarget.style.background = isDark ? '#334155' : '#f8fafc';
                         }}
                         onMouseLeave={e => {
-                          e.currentTarget.style.background = hasLog ? '#eff6ff' : isToday ? '#fef3c7' : '#fff';
+                          e.currentTarget.style.background = hasLog ? (isDark ? '#1e3a5f' : '#eff6ff') : isToday ? (isDark ? '#451a03' : '#fef3c7') : (isDark ? '#1e293b' : '#fff');
                         }}
                       >
-                        <div style={{ fontSize: 13, fontWeight: isToday ? 700 : 500, color: hasLog ? '#2563eb' : isToday ? '#92400e' : '#475569' }}>
+                        <div style={{ fontSize: 13, fontWeight: isToday ? 700 : 500, color: hasLog ? (isDark ? '#60a5fa' : '#2563eb') : isToday ? (isDark ? '#fbbf24' : '#92400e') : (isDark ? '#cbd5e1' : '#475569') }}>
                           {day}
                         </div>
                         {hasLog && (
@@ -1347,14 +1410,14 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           {/* All Entries - Card Layout */}
           <div style={{ marginTop: 8 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#1e293b' }}>
+              <h4 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: isDark ? '#f1f5f9' : '#1e293b' }}>
                 All Entries ({logs.length})
               </h4>
             </div>
             
             {logs.length === 0 ? (
               <div style={{ 
-                border: '2px dashed #e2e8f0', 
+                border: isDark ? '2px dashed #475569' : '2px dashed #e2e8f0', 
                 borderRadius: 12, 
                 padding: 32, 
                 textAlign: 'center',
@@ -1369,14 +1432,14 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                   <div 
                     key={`${entry.date}-${idx}`} 
                     style={{ 
-                      border: '1px solid #e2e8f0', 
+                      border: isDark ? '1px solid #475569' : '1px solid #e2e8f0', 
                       borderRadius: 12, 
                       padding: 16,
-                      background: '#fff',
+                      background: isDark ? '#334155' : '#fff',
                       transition: 'box-shadow 0.2s',
                       cursor: 'pointer'
                     }}
-                    onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'}
+                    onMouseEnter={e => e.currentTarget.style.boxShadow = isDark ? '0 4px 12px rgba(0,0,0,0.3)' : '0 4px 12px rgba(0,0,0,0.08)'}
                     onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
                     onClick={() => handleEditEntry(idx)}
                   >
@@ -1416,9 +1479,9 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                         <button
                           className="fg-btn"
                           style={{ 
-                            background: '#fff', 
-                            border: '1px solid #e2e8f0', 
-                            color: '#475569', 
+                            background: isDark ? '#1e293b' : '#fff', 
+                            border: isDark ? '1px solid #64748b' : '1px solid #e2e8f0', 
+                            color: isDark ? '#cbd5e1' : '#475569', 
                             padding: '6px 12px',
                             fontSize: 12
                           }}
@@ -1432,7 +1495,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                         <button
                           className="fg-btn"
                           style={{ 
-                            background: '#fff', 
+                            background: isDark ? '#1e293b' : '#fff', 
                             border: '1px solid #fecaca', 
                             color: '#ef4444', 
                             padding: '6px 12px',
@@ -1459,7 +1522,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                     {/* Row 3: Location */}
                     {(entry.country || entry.city || entry.detail_location) && (
                       <div style={{ 
-                        background: '#f8fafc', 
+                        background: isDark ? '#1e293b' : '#f8fafc', 
                         borderRadius: 8, 
                         padding: 10,
                         display: 'flex',
@@ -1469,7 +1532,7 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                           <span style={{ fontSize: 14 }}>📍</span>
                           <div>
-                            <div style={{ color: '#1e293b', fontSize: 13, fontWeight: 500 }}>
+                            <div style={{ color: isDark ? '#f1f5f9' : '#1e293b', fontSize: 13, fontWeight: 500 }}>
                               {[entry.country, entry.city].filter(Boolean).join(' / ') || 'Unknown Location'}
                             </div>
                             {entry.detail_location && (
@@ -1515,13 +1578,13 @@ export default function ShotLogModal({ item, isOpen, onClose, onUpdated }) {
           </div>
         </div>
 
-        <div className="fg-modal-footer" style={{ padding: 20, borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: 12, background: '#fff', borderRadius: '0 0 8px 8px' }}>
+        <div className="fg-modal-footer" style={{ padding: 20, borderTop: isDark ? '1px solid #334155' : '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: 12, background: isDark ? '#1e293b' : '#fff', borderRadius: '0 0 8px 8px' }}>
           <button 
             type="button" 
             className="fg-btn" 
             onClick={onClose} 
             disabled={loading}
-            style={{ background: '#fff', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 20px' }}
+            style={{ background: isDark ? '#334155' : '#fff', border: isDark ? '1px solid #64748b' : '1px solid #cbd5e1', color: isDark ? '#f1f5f9' : '#475569', padding: '8px 20px' }}
           >
             Cancel
           </button>

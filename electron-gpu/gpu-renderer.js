@@ -365,40 +365,48 @@ const FS_GL2 = `#version 300 es
     }
     
     // Density Levels (Log domain auto-levels)
-    // Maps detected [Dmin, Dmax] to standard output range [0, targetRange]
-    // targetRange = 2.2 balances 8-bit output capability (~2.4) with typical film range
+    // Maps detected [Dmin, Dmax] to output range based on avgRange
+    // Uses dynamic avgRange (average of channel ranges) to preserve overall contrast
+    // while normalizing channel balance - matches FilmLabWebGL.js implementation
     if (u_densityLevelsEnabled > 0.5) {
       float minT = 0.001;
       float log10 = log(10.0);
-      float targetRange = 2.2;
+      
+      // Calculate average range across channels for output scaling
+      // This preserves overall contrast while normalizing channel balance
+      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+      float avgRange = (rangeR + rangeG + rangeB) / 3.0;
+      // Clamp average range to reasonable bounds
+      avgRange = max(avgRange, 0.5);  // Minimum 0.5 to avoid extreme compression
+      avgRange = min(avgRange, 2.5);  // Maximum 2.5 to avoid extreme expansion
       
       // Red channel
       float Tr = max(c.r, minT);
       float Dr = -log(Tr) / log10;
-      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
       if (rangeR > 0.001) {
+        // Normalize to [0, 1], then scale to avgRange
         float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
-        float DrNew = normR * targetRange;
+        float DrNew = normR * avgRange;
         c.r = pow(10.0, -DrNew);
       }
       
       // Green channel
       float Tg = max(c.g, minT);
       float Dg = -log(Tg) / log10;
-      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
       if (rangeG > 0.001) {
         float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
-        float DgNew = normG * targetRange;
+        float DgNew = normG * avgRange;
         c.g = pow(10.0, -DgNew);
       }
       
       // Blue channel
       float Tb = max(c.b, minT);
       float Db = -log(Tb) / log10;
-      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
       if (rangeB > 0.001) {
         float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
-        float DbNew = normB * targetRange;
+        float DbNew = normB * avgRange;
         c.b = pow(10.0, -DbNew);
       }
       
@@ -708,40 +716,48 @@ const FS_GL1 = `
     }
     
     // Density Levels (Log domain auto-levels)
-    // Maps detected [Dmin, Dmax] to standard output range [0, targetRange]
-    // targetRange = 2.2 balances 8-bit output capability (~2.4) with typical film range
+    // Maps detected [Dmin, Dmax] to output range based on avgRange
+    // Uses dynamic avgRange (average of channel ranges) to preserve overall contrast
+    // while normalizing channel balance - matches FilmLabWebGL.js implementation
     if (u_densityLevelsEnabled > 0.5) {
       float minT = 0.001;
       float log10 = log(10.0);
-      float targetRange = 2.2;
+      
+      // Calculate average range across channels for output scaling
+      // This preserves overall contrast while normalizing channel balance
+      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+      float avgRange = (rangeR + rangeG + rangeB) / 3.0;
+      // Clamp average range to reasonable bounds
+      avgRange = max(avgRange, 0.5);  // Minimum 0.5 to avoid extreme compression
+      avgRange = min(avgRange, 2.5);  // Maximum 2.5 to avoid extreme expansion
       
       // Red channel
       float Tr = max(c.r, minT);
       float Dr = -log(Tr) / log10;
-      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
       if (rangeR > 0.001) {
+        // Normalize to [0, 1], then scale to avgRange
         float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
-        float DrNew = normR * targetRange;
+        float DrNew = normR * avgRange;
         c.r = pow(10.0, -DrNew);
       }
       
       // Green channel
       float Tg = max(c.g, minT);
       float Dg = -log(Tg) / log10;
-      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
       if (rangeG > 0.001) {
         float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
-        float DgNew = normG * targetRange;
+        float DgNew = normG * avgRange;
         c.g = pow(10.0, -DgNew);
       }
       
       // Blue channel
       float Tb = max(c.b, minT);
       float Db = -log(Tb) / log10;
-      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
       if (rangeB > 0.001) {
         float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
-        float DbNew = normB * targetRange;
+        float DbNew = normB * avgRange;
         c.b = pow(10.0, -DbNew);
       }
       

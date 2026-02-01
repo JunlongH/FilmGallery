@@ -100,7 +100,7 @@ export default function SettingsRow({
   };
 
   return (
-    <div className="flex items-center justify-between py-3 border-b border-divider/30 last:border-0">
+    <div className="flex items-center justify-between py-3 border-b border-zinc-200/30 dark:border-zinc-700/30 last:border-0">
       <div className="flex-1 min-w-0 mr-4">
         <p className="text-sm font-medium text-default-700">{label}</p>
         {description && (

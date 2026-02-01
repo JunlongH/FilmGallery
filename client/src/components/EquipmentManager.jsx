@@ -213,12 +213,12 @@ export default function EquipmentManager() {
   };
 
   return (
-    <div className="w-full h-full flex flex-col bg-background text-foreground animate-in fade-in duration-500 overflow-hidden">
+    <div className="w-full h-full flex flex-col bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 animate-in fade-in duration-500 overflow-hidden">
       <div className="flex-1 flex flex-col p-6 lg:p-8 min-h-0 w-full overflow-hidden">
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-divider pb-6 mb-6 flex-shrink-0">
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-700 pb-6 mb-6 flex-shrink-0">
           <div>
              <h2 className="text-3xl font-bold tracking-tight">Equipment Library</h2>
-             <p className="text-default-500 mt-1">Manage your cameras, lenses, flashes, and film formats</p>
+             <p className="text-zinc-500 dark:text-zinc-400 mt-1">Manage your cameras, lenses, flashes, and film formats</p>
           </div>
           <Button 
              color="primary"
@@ -229,7 +229,7 @@ export default function EquipmentManager() {
           </Button>
         </header>
 
-        <div className="flex p-1 bg-content1 rounded-xl border border-divider mb-6 flex-shrink-0">
+        <div className="flex p-1 bg-zinc-100 dark:bg-zinc-800 rounded-xl mb-6 flex-shrink-0">
           {TABS.map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.key;
@@ -240,8 +240,8 @@ export default function EquipmentManager() {
                 className={`
                   flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap
                   ${isActive 
-                    ? 'bg-background text-foreground shadow-sm ring-1 ring-black/5 dark:ring-white/10' 
-                    : 'text-default-500 hover:text-foreground hover:bg-content2'
+                    ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-sm' 
+                    : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-700/50'
                   }
                 `}
               >
@@ -254,8 +254,8 @@ export default function EquipmentManager() {
 
         <div className="flex gap-6 flex-1 min-h-0">
           {/* List Panel - Fixed 320px width */}
-          <div className="w-80 flex-shrink-0 bg-content1 rounded-xl border border-divider shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - 260px)' }}>
-            <div className="p-3 border-b border-divider flex-shrink-0">
+          <div className="w-80 flex-shrink-0 bg-zinc-50 dark:bg-zinc-800 rounded-xl shadow-none flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - 260px)' }}>
+            <div className="p-3 border-b border-zinc-200/50 dark:border-zinc-700/50 flex-shrink-0">
               <SearchInput
                 placeholder={`Search ${activeTab}...`}
                 value={searchQuery}
@@ -267,7 +267,7 @@ export default function EquipmentManager() {
               {loading ? (
                 <div className="py-12 flex justify-center"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>
               ) : filteredItems.length === 0 ? (
-                <div className="py-20 text-center text-default-400">
+                <div className="py-20 text-center text-zinc-400 dark:text-zinc-500">
                    <Package className="w-12 h-12 mx-auto mb-3 opacity-20" />
                    <p>{searchQuery ? 'No matches found' : 'No items found'}</p>
                 </div>
@@ -280,22 +280,22 @@ export default function EquipmentManager() {
                       group p-3 rounded-lg cursor-pointer transition-all flex gap-3 border
                       ${selectedId === item.id 
                         ? 'bg-primary/10 border-primary/30 shadow-sm' 
-                        : 'bg-transparent border-transparent hover:bg-content2'
+                        : 'bg-transparent border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800'
                       }
                     `}
                   >
-                    <div className="w-16 h-16 rounded-lg bg-content2 overflow-hidden flex-shrink-0 flex items-center justify-center relative">
+                    <div className="w-16 h-16 rounded-lg bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex-shrink-0 flex items-center justify-center relative">
                       {(item.image_path || item.thumbPath) ? (
                         <img src={buildUploadUrl(item.image_path || item.thumbPath)} alt={item.name} className="w-full h-full object-cover" />
                       ) : (
-                        (() => { const Icon = TABS.find(t=>t.key===activeTab)?.icon; return Icon ? <Icon className="w-6 h-6 text-default-300" /> : null; })()
+                        (() => { const Icon = TABS.find(t=>t.key===activeTab)?.icon; return Icon ? <Icon className="w-6 h-6 text-zinc-300 dark:text-zinc-600" /> : null; })()
                       )}
                     </div>
                     <div className="flex-1 min-w-0 flex flex-col justify-center">
-                      <h4 className={`font-semibold text-sm truncate ${selectedId === item.id ? 'text-primary' : 'text-foreground'}`}>
+                      <h4 className={`font-semibold text-sm truncate ${selectedId === item.id ? 'text-primary' : 'text-zinc-900 dark:text-zinc-100'}`}>
                         {item.name || 'Unnamed'}
                       </h4>
-                      <p className="text-xs text-default-500 truncate mt-0.5">{item.brand || item.manufacturer || 'Unknown Brand'}</p>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate mt-0.5">{item.brand || item.manufacturer || 'Unknown Brand'}</p>
                       <div className="flex items-center gap-2 mt-2">
                         {item.status && (
                            <span className={`text-[10px] px-1.5 py-0.5 rounded border uppercase tracking-wider font-semibold ${
@@ -311,21 +311,21 @@ export default function EquipmentManager() {
               )}
             </div>
             
-            <div className="p-2 border-t border-divider text-xs text-default-400 text-center flex-shrink-0">
+            <div className="p-2 border-t border-zinc-200/50 dark:border-zinc-700/50 text-xs text-zinc-400 dark:text-zinc-500 text-center flex-shrink-0">
                {searchQuery ? `${filteredItems.length} of ${items.length}` : `${items.length} items`}
             </div>
           </div>
 
           {/* Detail Panel - Takes remaining space */}
-          <div className="flex-1 bg-content1 rounded-xl border border-divider shadow-sm flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - 260px)' }}>
+          <div className="flex-1 bg-zinc-50 dark:bg-zinc-800 rounded-xl shadow-none flex flex-col overflow-hidden" style={{ maxHeight: 'calc(100vh - 260px)' }}>
             {selectedItem ? (
                 <div className="p-6 lg:p-8 overflow-y-auto flex-1 animate-in fade-in slide-in-from-right-4 duration-300">
                    <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 mb-8">
-                      <div className="w-32 h-32 rounded-2xl bg-content2 overflow-hidden flex items-center justify-center shadow-lg relative group">
+                      <div className="w-32 h-32 rounded-2xl bg-zinc-100 dark:bg-zinc-800 overflow-hidden flex items-center justify-center shadow-lg relative group">
                         {(selectedItem.image_path || selectedItem.thumbPath) ? (
                            <img src={buildUploadUrl(selectedItem.image_path || selectedItem.thumbPath)} alt={selectedItem.name} className="w-full h-full object-cover" />
                         ) : (
-                           (() => { const Icon = TABS.find(t=>t.key===activeTab)?.icon; return Icon ? <Icon className="w-12 h-12 text-default-300" /> : null; })()
+                           (() => { const Icon = TABS.find(t=>t.key===activeTab)?.icon; return Icon ? <Icon className="w-12 h-12 text-zinc-300 dark:text-zinc-600" /> : null; })()
                         )}
                         <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white cursor-pointer transition-opacity">
                            <Upload className="w-6 h-6 mb-1" />
@@ -337,14 +337,14 @@ export default function EquipmentManager() {
                       <div className="flex-1 pt-2">
                          <div className="flex justify-between items-start">
                             <div>
-                               <h1 className="text-3xl font-bold text-foreground mb-2">{selectedItem.name}</h1>
-                               <div className="text-xl text-default-500">{selectedItem.brand || selectedItem.manufacturer}</div>
+                               <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">{selectedItem.name}</h1>
+                               <div className="text-xl text-zinc-500 dark:text-zinc-400">{selectedItem.brand || selectedItem.manufacturer}</div>
                             </div>
                             <div className="flex gap-2">
-                               <button onClick={() => setEditItem(selectedItem)} className="p-2 text-default-500 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
+                               <button onClick={() => setEditItem(selectedItem)} className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
                                   <Edit2 className="w-5 h-5" />
                                </button>
-                               <button onClick={() => setConfirmDelete({id: selectedItem.id, name: selectedItem.name})} className="p-2 text-default-500 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors">
+                               <button onClick={() => setConfirmDelete({id: selectedItem.id, name: selectedItem.name})} className="p-2 text-zinc-500 dark:text-zinc-400 hover:text-danger hover:bg-danger/10 rounded-lg transition-colors">
                                   <Trash2 className="w-5 h-5" />
                                </button>
                             </div>
@@ -358,14 +358,14 @@ export default function EquipmentManager() {
                    
                    {/* Related Rolls Section */}
                    {(activeTab === 'cameras' || activeTab === 'lenses' || activeTab === 'films' || activeTab === 'scanners' || activeTab === 'flashes' || activeTab === 'film-backs') && (
-                     <div className="mt-8 pt-6 border-t border-divider">
+                     <div className="mt-8 pt-6 border-t border-zinc-200 dark:border-zinc-700">
                        <div className="flex items-center justify-between mb-4">
-                         <h3 className="text-lg font-semibold text-foreground">
+                         <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                            Related Rolls {!loadingRolls && `(${relatedRolls?.length || 0})`}
                          </h3>
                        </div>
                        {loadingRolls ? (
-                         <div className="text-center py-8 text-default-400">
+                         <div className="text-center py-8 text-zinc-400 dark:text-zinc-500">
                            <p className="text-sm">Loading related rolls...</p>
                          </div>
                        ) : (relatedRolls?.length > 0) ? (
@@ -376,18 +376,18 @@ export default function EquipmentManager() {
                                onClick={() => navigate(`/rolls/${roll.id}`)}
                                className="group cursor-pointer flex flex-col gap-1"
                              >
-                               <div className="aspect-square rounded bg-content2 overflow-hidden relative">
+                               <div className="aspect-square rounded bg-zinc-100 dark:bg-zinc-800 overflow-hidden relative">
                                  {(roll.coverPath || roll.cover_photo) ? (
                                    <img src={addCacheKey(buildUploadUrl(roll.coverPath || roll.cover_photo), roll.updated_at)} alt="" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
                                  ) : (
                                    <div className="w-full h-full flex items-center justify-center">
-                                      <ImageIcon className="w-4 h-4 text-default-300" />
+                                      <ImageIcon className="w-4 h-4 text-zinc-300 dark:text-zinc-600" />
                                    </div>
                                  )}
                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
                                </div>
                                <div className="min-w-0 text-center">
-                                 <div className="text-[12px] font-medium text-foreground/80 truncate group-hover:text-primary transition-colors">
+                                 <div className="text-[12px] font-medium text-zinc-700 dark:text-zinc-300 truncate group-hover:text-primary transition-colors">
                                    {roll.title || `Roll #${roll.id}`}
                                  </div>
                                </div>
@@ -395,7 +395,7 @@ export default function EquipmentManager() {
                            ))}
                          </div>
                        ) : (
-                         <div className="text-center py-8 text-default-400">
+                         <div className="text-center py-8 text-zinc-400 dark:text-zinc-500">
                            <p className="text-sm">No rolls found with this equipment</p>
                          </div>
                        )}
@@ -403,11 +403,11 @@ export default function EquipmentManager() {
                    )}
                 </div>
             ) : (
-               <div className="flex-1 flex flex-col items-center justify-center text-default-400 p-8">
-                  <div className="w-24 h-24 rounded-full bg-content2/50 flex items-center justify-center mb-6">
-                     {(() => { const Icon = TABS.find(t=>t.key===activeTab)?.icon; return Icon ? <Icon className="w-10 h-10 text-default-300" /> : null; })()}
+               <div className="flex-1 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 p-8">
+                  <div className="w-24 h-24 rounded-full bg-zinc-100/50 dark:bg-zinc-800/50 flex items-center justify-center mb-6">
+                     {(() => { const Icon = TABS.find(t=>t.key===activeTab)?.icon; return Icon ? <Icon className="w-10 h-10 text-zinc-300 dark:text-zinc-600" /> : null; })()}
                   </div>
-                  <h3 className="text-xl font-semibold text-foreground mb-2">No Item Selected</h3>
+                  <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">No Item Selected</h3>
                   <p className="max-w-xs text-center">Select an item from the list to view details or click "Add New" to create one.</p>
                </div>
             )}
@@ -450,8 +450,8 @@ function DetailRow({ label, value, capitalize }) {
   if (!value) return null;
   return (
     <div className="flex flex-col gap-1">
-       <span className="text-xs font-semibold text-default-500 uppercase tracking-wide">{label}</span>
-       <span className={`text-sm text-foreground font-medium ${capitalize ? 'capitalize' : ''}`}>{value}</span>
+       <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">{label}</span>
+       <span className={`text-sm text-zinc-900 dark:text-zinc-100 font-medium ${capitalize ? 'capitalize' : ''}`}>{value}</span>
     </div>
   );
 }
@@ -566,7 +566,7 @@ function EquipmentDetails({ item, type }) {
     <div className="space-y-8">
       {/* Technical Specifications */}
       <div>
-        <h4 className="text-xs font-bold text-default-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
           <span className="w-1 h-4 bg-primary/60 rounded-full" />
           Specifications
         </h4>
@@ -579,8 +579,8 @@ function EquipmentDetails({ item, type }) {
       
       {/* Ownership Info */}
       {ownership.length > 0 && (
-        <div className="pt-6 border-t border-divider">
-          <h4 className="text-xs font-bold text-default-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+        <div className="pt-6 border-t border-zinc-200 dark:border-zinc-700">
+          <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-4 flex items-center gap-2">
             <span className="w-1 h-4 bg-primary/60 rounded-full" />
             Ownership
           </h4>
@@ -593,12 +593,12 @@ function EquipmentDetails({ item, type }) {
       )}
       
       {item.notes && (
-        <div className="pt-6 border-t border-divider">
-          <h4 className="text-xs font-bold text-default-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+        <div className="pt-6 border-t border-zinc-200 dark:border-zinc-700">
+          <h4 className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider mb-3 flex items-center gap-2">
             <span className="w-1 h-4 bg-primary/60 rounded-full" />
             Notes
           </h4>
-          <p className="text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed bg-default-50/50 p-4 rounded-xl border border-default-100">{item.notes}</p>
+          <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed bg-zinc-50/50 dark:bg-zinc-800/50 p-4 rounded-xl border border-zinc-200 dark:border-zinc-700">{item.notes}</p>
         </div>
       )}
     </div>

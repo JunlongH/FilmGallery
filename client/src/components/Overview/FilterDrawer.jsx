@@ -191,10 +191,10 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
       }}
       classNames={{
         wrapper: "justify-end !items-start overflow-hidden",
-        base: "h-full max-h-screen rounded-none shadow-2xl border-l border-divider",
-        header: "border-b border-divider/50 p-4 h-[60px] flex items-center",
+        base: "h-full max-h-screen rounded-none shadow-2xl border-l border-zinc-200 dark:border-zinc-700",
+        header: "border-b border-zinc-200/50 dark:border-zinc-700/50 p-4 h-[60px] flex items-center",
         body: "p-0",
-        footer: "border-t border-divider/50 p-4",
+        footer: "border-t border-zinc-200/50 dark:border-zinc-700/50 p-4",
         backdrop: "bg-black/20 backdrop-blur-[2px]"
       }}
       scrollBehavior="inside"
@@ -322,7 +322,7 @@ export default function FilterDrawer({ isOpen, onClose, filters, onChange }) {
                       const isYearActive = (filters.year || []).includes(year);
                       
                       return (
-                        <div key={year} className="bg-content2/50 rounded-lg p-2">
+                        <div key={year} className="bg-zinc-100/50 dark:bg-zinc-800/50 rounded-lg p-2">
                           <div className="flex items-center justify-between mb-2">
                             <span className="font-semibold text-small">{year}</span>
                             <Chip 

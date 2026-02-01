@@ -73,14 +73,14 @@ function Layout() {
     <HeroUIProvider>
       <SidebarProvider>
         <ConflictBanner />
-        <div className="app-shell">
+        <div className="app-shell bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 transition-colors duration-300">
           <TitleBar />
-          <div className="app-body flex">
+          <div className="app-body">
             {/* Modern Sidebar */}
             <Sidebar tags={tags} />
             
             {/* Main Content */}
-            <main className="main flex-1 overflow-auto">
+            <main className="main flex-1 min-w-0 min-h-0 overflow-auto bg-transparent">
               <Routes>
                 <Route path="/" element={<Overview />} />
                 <Route path="/calendar" element={<CalendarView />} />

@@ -4,25 +4,28 @@ import ReactDOM from 'react-dom';
 const ModalDialog = ({ isOpen, type = 'alert', title, message, onConfirm, onCancel, confirmText = 'OK', cancelText = 'Cancel' }) => {
   if (!isOpen) return null;
 
+  const isDark = document.documentElement.classList.contains('dark') || 
+                 document.documentElement.getAttribute('data-theme') === 'dark';
+
   return ReactDOM.createPortal(
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      backgroundColor: isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(0, 0, 0, 0.5)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 11000
     }}>
       <div style={{
-        backgroundColor: '#222',
-        border: '1px solid #444',
+        backgroundColor: isDark ? '#18181b' : '#ffffff',
+        border: isDark ? '1px solid #27272a' : '1px solid #e4e4e7',
         borderRadius: 8,
         padding: 24,
         minWidth: 300,
         maxWidth: 400,
-        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-        color: '#eee'
+        boxShadow: isDark ? '0 4px 12px rgba(0,0,0,0.5)' : '0 4px 12px rgba(0,0,0,0.15)',
+        color: isDark ? '#ECEDEE' : '#11181C'
       }}>
-        {title && <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 18 }}>{title}</h3>}
-        <div style={{ marginBottom: 24, fontSize: 14, lineHeight: 1.5, color: '#ccc' }}>
+        {title && <h3 style={{ marginTop: 0, marginBottom: 12, fontSize: 18, color: isDark ? '#ECEDEE' : '#11181C' }}>{title}</h3>}
+        <div style={{ marginBottom: 24, fontSize: 14, lineHeight: 1.5, color: isDark ? '#a1a1aa' : '#71717a' }}>
           {message}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
@@ -31,8 +34,8 @@ const ModalDialog = ({ isOpen, type = 'alert', title, message, onConfirm, onCanc
               onClick={onCancel}
               style={{
                 background: 'transparent',
-                border: '1px solid #555',
-                color: '#ccc',
+                border: isDark ? '1px solid #3f3f46' : '1px solid #e4e4e7',
+                color: isDark ? '#a1a1aa' : '#71717a',
                 padding: '6px 16px',
                 borderRadius: 4,
                 cursor: 'pointer'

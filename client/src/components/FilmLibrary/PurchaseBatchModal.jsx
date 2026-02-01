@@ -25,6 +25,24 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Trash2, Film, ShoppingCart, Package } from 'lucide-react';
 import { buildUploadUrl } from '../../api';
 
+// 标准化的 Input/Select classNames（确保亮色/暗色模式正确显示）
+// 完全透明背景，仅保留边框
+const inputClassNames = { 
+  base: "bg-transparent",
+  mainWrapper: "bg-transparent",
+  inputWrapper: "h-10 min-h-10 bg-transparent shadow-none",
+  innerWrapper: "bg-transparent",
+  input: "text-sm text-zinc-900 dark:text-zinc-100"
+};
+
+const centerInputClassNames = { 
+  base: "bg-transparent",
+  mainWrapper: "bg-transparent",
+  inputWrapper: "h-10 min-h-10 bg-transparent shadow-none",
+  innerWrapper: "bg-transparent",
+  input: "text-center text-sm text-zinc-900 dark:text-zinc-100"
+};
+
 // 空项模板
 const EMPTY_ITEM = {
   film_id: '',
@@ -145,13 +163,13 @@ export default function PurchaseBatchModal({
       }}
       classNames={{
         backdrop: "bg-black/60",
-        base: "shadow-2xl border border-divider",
-        header: "border-b border-divider px-6 py-4",
+        base: "shadow-2xl border border-zinc-200 dark:border-zinc-700",
+        header: "border-b border-zinc-200 dark:border-zinc-700 px-6 py-4",
         body: "p-6",
-        footer: "border-t border-divider px-6 py-4"
+        footer: "border-t border-zinc-200 dark:border-zinc-700 px-6 py-4"
       }}
     >
-      <ModalContent style={{ backgroundColor: 'var(--heroui-content1)' }}>
+      <ModalContent className="bg-white dark:bg-zinc-800">
         {(onModalClose) => (
           <>
             <ModalHeader className="flex items-center gap-3">
@@ -160,55 +178,55 @@ export default function PurchaseBatchModal({
               </div>
               <div>
                 <h3 className="text-lg font-semibold">Record Purchase</h3>
-                <p className="text-xs text-default-500 font-normal">Add film rolls from a single order</p>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 font-normal">Add film rolls from a single order</p>
               </div>
             </ModalHeader>
 
             <ModalBody className="gap-6">
               {/* 订单信息 - 一行四列，使用stacked label避免重叠 */}
               <div>
-                <p className="text-sm font-semibold text-default-400 uppercase tracking-wide mb-3">Order Details</p>
+                <p className="text-sm font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-3">Order Details</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 1fr 120px', gap: '16px' }}>
                   <div>
-                    <label className="block text-sm text-default-500 mb-2">Date</label>
+                    <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-2">Date</label>
                     <Input
                       type="date"
                       size="md"
                       value={form.order_date}
                       onChange={(e) => updateField('order_date', e.target.value)}
-                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                      classNames={inputClassNames}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-default-500 mb-2">Channel</label>
+                    <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-2">Channel</label>
                     <Input
                       size="md"
                       placeholder="Taobao, eBay..."
                       value={form.channel}
                       onChange={(e) => updateField('channel', e.target.value)}
-                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                      classNames={inputClassNames}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-default-500 mb-2">Vendor</label>
+                    <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-2">Vendor</label>
                     <Input
                       size="md"
                       placeholder="Vendor name"
                       value={form.vendor}
                       onChange={(e) => updateField('vendor', e.target.value)}
-                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                      classNames={inputClassNames}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm text-default-500 mb-2">Shipping</label>
+                    <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-2">Shipping</label>
                     <Input
                       type="number"
                       size="md"
                       placeholder="0.00"
-                      startContent={<span className="text-default-400 text-sm pr-1">¥</span>}
+                      startContent={<span className="text-zinc-400 dark:text-zinc-500 text-sm pr-1">¥</span>}
                       value={form.shipping_cost}
                       onChange={(e) => updateField('shipping_cost', e.target.value)}
-                      classNames={{ inputWrapper: "h-10", input: "text-sm" }}
+                      classNames={inputClassNames}
                     />
                   </div>
                 </div>
@@ -219,7 +237,7 @@ export default function PurchaseBatchModal({
               {/* 胶卷列表 - 表格式一行显示 */}
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm font-semibold text-default-400 uppercase tracking-wide flex items-center gap-2">
+                  <p className="text-sm font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide flex items-center gap-2">
                     <Film size={16} />
                     Films ({form.items.length})
                   </p>
@@ -237,7 +255,7 @@ export default function PurchaseBatchModal({
                     padding: '0 10px',
                     marginBottom: '10px'
                   }}
-                  className="text-xs text-default-400 font-medium"
+                  className="text-xs text-zinc-400 dark:text-zinc-500 font-medium"
                 >
                   <div>Film Type</div>
                   <div style={{ textAlign: 'center' }}>Qty</div>
@@ -270,7 +288,7 @@ export default function PurchaseBatchModal({
                               borderRadius: '8px',
                               background: 'rgba(255,255,255,0.03)'
                             }}
-                            className="hover:bg-default-100 transition-colors"
+                            className="hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                           >
                             {/* 胶片选择器 - 带缩略图 */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -286,7 +304,7 @@ export default function PurchaseBatchModal({
                                   <img src={thumbUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                 ) : (
                                   <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    <Film size={16} className="text-default-400" />
+                                    <Film size={16} className="text-zinc-400 dark:text-zinc-500" />
                                   </div>
                                 )}
                               </div>
@@ -300,16 +318,17 @@ export default function PurchaseBatchModal({
                                   updateItem(index, 'film_id', val);
                                 }}
                                 classNames={{
-                                  trigger: "h-10 min-h-10",
-                                  value: "text-sm pr-6",
-                                  innerWrapper: "pr-6",
-                                  selectorIcon: "right-2",
-                                  popoverContent: "bg-content1 border border-default-200 shadow-xl",
-                                  listbox: "bg-content1"
+                                  base: "bg-transparent",
+                                  trigger: "h-10 min-h-10 bg-transparent dark:bg-zinc-700/50 border-zinc-300 dark:border-zinc-600",
+                                  value: "text-sm pr-6 text-zinc-900 dark:text-zinc-100",
+                                  innerWrapper: "pr-6 bg-transparent",
+                                  selectorIcon: "right-2 text-zinc-500 dark:text-zinc-400",
+                                  popoverContent: "bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-xl",
+                                  listbox: "bg-white dark:bg-zinc-800"
                                 }}
                                 popoverProps={{
                                   classNames: {
-                                    content: "bg-zinc-900 border border-zinc-700 shadow-2xl"
+                                    content: "bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-2xl"
                                   }
                                 }}
                                 style={{ flex: 1, minWidth: 0 }}
@@ -339,7 +358,7 @@ export default function PurchaseBatchModal({
                                             </div>
                                           )}
                                         </div>
-                                        <span className="text-sm text-foreground">{f.brand ? `${f.brand} ` : ''}{f.name}</span>
+                                        <span className="text-sm text-zinc-900 dark:text-zinc-100">{f.brand ? `${f.brand} ` : ''}{f.name}</span>
                                       </div>
                                     </SelectItem>
                                   );
@@ -355,7 +374,7 @@ export default function PurchaseBatchModal({
                                 min={1}
                                 value={String(item.quantity)}
                                 onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                                classNames={{ input: "text-center text-sm", inputWrapper: "h-10 min-h-10" }}
+                                classNames={centerInputClassNames}
                               />
                             </div>
 
@@ -365,10 +384,10 @@ export default function PurchaseBatchModal({
                                 type="number"
                                 size="md"
                                 placeholder="0.00"
-                                startContent={<span className="text-default-400 text-sm pr-1">¥</span>}
+                                startContent={<span className="text-zinc-400 dark:text-zinc-500 text-sm pr-1">¥</span>}
                                 value={item.unit_price}
                                 onChange={(e) => updateItem(index, 'unit_price', e.target.value)}
-                                classNames={{ inputWrapper: "h-10 min-h-10", input: "text-sm" }}
+                                classNames={inputClassNames}
                               />
                             </div>
 
@@ -379,7 +398,7 @@ export default function PurchaseBatchModal({
                                 size="md"
                                 value={item.expiry_date}
                                 onChange={(e) => updateItem(index, 'expiry_date', e.target.value)}
-                                classNames={{ inputWrapper: "h-10 min-h-10", input: "text-sm" }}
+                                classNames={inputClassNames}
                               />
                             </div>
 
@@ -390,7 +409,7 @@ export default function PurchaseBatchModal({
                                 placeholder="#"
                                 value={item.batch_code}
                                 onChange={(e) => updateItem(index, 'batch_code', e.target.value)}
-                                classNames={{ inputWrapper: "h-10 min-h-10", input: "text-sm" }}
+                                classNames={inputClassNames}
                               />
                             </div>
 
@@ -419,14 +438,14 @@ export default function PurchaseBatchModal({
 
             <ModalFooter>
               <div className="flex-1 flex items-center gap-6 text-sm">
-                <span className="flex items-center gap-2 text-default-500">
+                <span className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400">
                   <Package size={16} />
-                  <span className="font-medium text-foreground">{totalQuantity}</span> rolls
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">{totalQuantity}</span> rolls
                 </span>
-                <span className="text-default-500">
+                <span className="text-zinc-500 dark:text-zinc-400">
                   ¥{perItemShipping.toFixed(2)}/roll shipping
                 </span>
-                <span className="font-semibold text-lg text-foreground">
+                <span className="font-semibold text-lg text-zinc-900 dark:text-zinc-100">
                   Total: ¥{totalCost.toFixed(2)}
                 </span>
               </div>

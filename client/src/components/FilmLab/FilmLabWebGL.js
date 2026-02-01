@@ -145,10 +145,13 @@ export function processImageWebGL(canvas, image, params = {}) {
   const scaledH = srcH * scale;
   
   // Dimensions of the rotated bounding box
+  // IMPORTANT: Use floating-point for intermediate calculations to avoid cumulative rounding errors
+  // during rotation. This matches CPU canvas path which uses floating-point transforms.
+  // Only round at the final output canvas size stage.
   const absCos = Math.abs(Math.cos(rad));
   const absSin = Math.abs(Math.sin(rad));
-  const rotW = Math.round(scaledW * absCos + scaledH * absSin);
-  const rotH = Math.round(scaledW * absSin + scaledH * absCos);
+  const rotW = scaledW * absCos + scaledH * absSin;  // Keep as float for UV precision
+  const rotH = scaledW * absSin + scaledH * absCos;  // Keep as float for UV precision
   
   // Crop rectangle (normalized 0-1 in rotated space)
   const crop = params.cropRect || { x: 0, y: 0, w: 1, h: 1 };
@@ -158,6 +161,7 @@ export function processImageWebGL(canvas, image, params = {}) {
   const cropH = Math.max(0, Math.min(1 - cropY, crop.h || 1));
   
   // Output canvas dimensions (Crop is relative to the Rotated Image)
+  // Only apply rounding at the final output stage
   const outW = Math.max(1, Math.round(rotW * cropW));
   const outH = Math.max(1, Math.round(rotH * cropH));
   

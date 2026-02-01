@@ -112,7 +112,7 @@ export function HeroUIProvider({ children }) {
   return (
     <ThemeContext.Provider value={themeContextValue}>
       <BaseHeroUIProvider navigate={navigate}>
-        <div className="heroui-provider h-full bg-background text-foreground">
+        <div className="heroui-provider h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 transition-colors duration-200">
           {children}
         </div>
       </BaseHeroUIProvider>

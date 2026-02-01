@@ -20,6 +20,7 @@ export default function FilmLabCanvas({
   setCropRect, // New prop
   image, // New prop
   orientation, // New prop
+  rotationOffset, // New prop (for total rotation validity check)
   ratioMode, // New prop
   ratioSwap, // New prop
   compareMode,
@@ -90,7 +91,7 @@ export default function FilmLabCanvas({
         
         const candidate = { x, y, w, h };
         // Validate
-        if (isRectValid(candidate, image.width, image.height, rotation + orientation)) {
+        if (isRectValid(candidate, image.width, image.height, rotation + orientation + rotationOffset)) {
            setLocalCropRect(candidate);
         } else {
            // Binary search for closest valid rect
@@ -104,7 +105,7 @@ export default function FilmLabCanvas({
                  w: (valid.w + invalid.w) / 2,
                  h: (valid.h + invalid.h) / 2
               };
-              if (isRectValid(mid, image.width, image.height, rotation + orientation)) {
+              if (isRectValid(mid, image.width, image.height, rotation + orientation + rotationOffset)) {
                  valid = mid;
               } else {
                  invalid = mid;
@@ -137,7 +138,7 @@ export default function FilmLabCanvas({
         // Aspect Ratio Constraint
         const aspect = getPresetRatio(ratioMode, image, orientation, ratioSwap);
         if (aspect) {
-            const rad = ((rotation + orientation) * Math.PI) / 180;
+            const rad = ((rotation + orientation + rotationOffset) * Math.PI) / 180;
             const sin = Math.abs(Math.sin(rad));
             const cos = Math.abs(Math.cos(rad));
             const rotW = image.width * cos + image.height * sin;
@@ -176,7 +177,7 @@ export default function FilmLabCanvas({
         }
 
         const candidate = { x, y, w, h };
-        if (isRectValid(candidate, image.width, image.height, rotation + orientation)) {
+        if (isRectValid(candidate, image.width, image.height, rotation + orientation + rotationOffset)) {
            setLocalCropRect(candidate);
         } else {
            // Binary search
@@ -190,7 +191,7 @@ export default function FilmLabCanvas({
                  w: (valid.w + invalid.w) / 2,
                  h: (valid.h + invalid.h) / 2
               };
-              if (isRectValid(mid, image.width, image.height, rotation + orientation)) {
+              if (isRectValid(mid, image.width, image.height, rotation + orientation + rotationOffset)) {
                  valid = mid;
               } else {
                  invalid = mid;
@@ -239,7 +240,7 @@ export default function FilmLabCanvas({
       window.removeEventListener('mousemove', handleWindowMove);
       window.removeEventListener('mouseup', handleWindowUp);
     };
-  }, [dragState, localCropRect, canvasRef, image, rotation, orientation, ratioMode, ratioSwap, setCropRect, setRotation, pushToHistory, onRotateEnd]);
+  }, [dragState, localCropRect, canvasRef, image, rotation, orientation, rotationOffset, ratioMode, ratioSwap, setCropRect, setRotation, pushToHistory, onRotateEnd]);
 
   const startCropDrag = (e, type, handle) => {
     e.stopPropagation();

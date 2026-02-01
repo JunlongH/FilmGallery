@@ -50,8 +50,9 @@ export function Sidebar({ tags = [] }) {
   return (
     <motion.nav
       className={`
-        flex flex-col h-full
-        bg-content1
+        flex flex-col h-full flex-shrink-0
+        bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100
+        border-r border-zinc-200 dark:border-zinc-800
         overflow-hidden
       `}
       initial={false}

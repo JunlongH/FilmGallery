@@ -76,18 +76,17 @@ export default function GlassModal({
         backdrop: 'bg-black/60',
         base: `max-h-[90vh] ${className}`,
         wrapper: 'items-center justify-center',
-        header: 'border-b border-divider/50 pb-4',
+        header: 'border-b border-zinc-200/50 dark:border-zinc-700/50 pb-4',
         body: 'py-6',
-        footer: 'border-t border-divider/50 pt-4',
-        closeButton: 'hover:bg-default-100 active:bg-default-200 rounded-full'
+        footer: 'border-t border-zinc-200/50 dark:border-zinc-700/50 pt-4',
+        closeButton: 'hover:bg-zinc-100 dark:hover:bg-zinc-800 active:bg-zinc-200 dark:active:bg-zinc-700 rounded-full'
       }}
       hideCloseButton={hideCloseButton}
       {...props}
     >
       <ModalContent 
-        className="shadow-2xl border border-divider/30"
+        className="shadow-2xl border border-zinc-200/30 dark:border-zinc-700/30 bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100"
         style={{
-          backgroundColor: 'var(--heroui-content1)',
           backdropFilter: 'blur(16px)'
         }}
       >
@@ -98,16 +97,16 @@ export default function GlassModal({
               <ModalHeader className="flex flex-col gap-1">
                 <div className="flex items-center gap-3">
                   {icon && (
-                    <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <span className="text-primary">{icon}</span>
+                    <div className="flex-shrink-0 w-8 h-8 rounded-lg bg-blue-500/10 dark:bg-blue-400/10 flex items-center justify-center">
+                      <span className="text-blue-600 dark:text-blue-400">{icon}</span>
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold text-foreground truncate">
+                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 truncate">
                       {title}
                     </h3>
                     {subtitle && (
-                      <p className="text-sm text-default-500 truncate">
+                      <p className="text-sm text-zinc-500 dark:text-zinc-400 truncate">
                         {subtitle}
                       </p>
                     )}
@@ -146,11 +145,11 @@ export function GlassModalHeader({ icon, title, subtitle, className = '' }) {
         </div>
       )}
       <div className="flex-1 min-w-0">
-        <h3 className="text-lg font-semibold text-foreground">
+        <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
           {title}
         </h3>
         {subtitle && (
-          <p className="text-sm text-default-500">
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
             {subtitle}
           </p>
         )}
@@ -166,9 +165,9 @@ export function GlassCard({ children, className = '', hoverable = false }) {
   return (
     <div 
       className={`
-        rounded-xl border border-divider 
-        bg-default-50 dark:bg-default-100 
-        ${hoverable ? 'transition-all duration-200 hover:bg-default-100 dark:hover:bg-default-200 hover:shadow-md' : ''}
+        rounded-xl border border-zinc-200 dark:border-zinc-700 
+        bg-white dark:bg-zinc-700/50 
+        ${hoverable ? 'transition-all duration-200 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:shadow-md' : ''}
         ${className}
       `}
     >

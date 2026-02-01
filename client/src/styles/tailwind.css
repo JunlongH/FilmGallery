@@ -8,14 +8,22 @@
 /* 导入 Tailwind CSS v4 */
 @import "tailwindcss";
 
-/* 导入 HeroUI 主题（如果需要的话，使用 tailwind-variants） */
+/**
+ * 强制 Dark Mode 使用 CSS Class 策略
+ * 默认 Tailwind v4 使用系统偏好 (media)，这会导致与 App 内的主题 Toggle 不同步。
+ * 我们强制它监听 HTML 元素上的 .dark 类。
+ */
+@variant dark (&:where(.dark, .dark *));
 
 /**
  * 主题配置 - Tailwind v4 方式
  * 使用 @theme 定义设计令牌
+ * 
+ * 注意：HeroUI 使用 RGB 空格分隔格式，所以我们直接使用 HEX 颜色
+ * 让 HeroUI 组件使用它自己的主题系统
  */
 @theme {
-  /* 颜色系统 - 映射到现有 CSS 变量 */
+  /* 基础颜色系统 */
   --color-bg: #f5f7fa;
   --color-bg-alt: #ffffff;
   --color-border: #e2e8f0;
@@ -39,6 +47,19 @@
   --color-danger: #dc2626;
   --color-warning: #f59e0b;
   --color-success: #10b981;
+  
+  /* Zinc 色阶（用于 dark: 前缀的明确颜色） */
+  --color-zinc-50: #fafafa;
+  --color-zinc-100: #f4f4f5;
+  --color-zinc-200: #e4e4e7;
+  --color-zinc-300: #d4d4d8;
+  --color-zinc-400: #a1a1aa;
+  --color-zinc-500: #71717a;
+  --color-zinc-600: #52525b;
+  --color-zinc-700: #3f3f46;
+  --color-zinc-800: #27272a;
+  --color-zinc-900: #18181b;
+  --color-zinc-950: #09090b;
   
   /* 圆角 */
   --radius-sm: 4px;
@@ -326,29 +347,6 @@
   .heroui-provider {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
     min-height: 100vh;
-    background-color: var(--color-bg);
-    color: var(--color-text);
-  }
-  
-  /* Dark mode select/option styling */
-  [data-theme="dark"] select,
-  :root.dark select {
-    background-color: var(--heroui-default-100, #27272a);
-    color: var(--heroui-foreground, #fafafa);
-    border-color: var(--heroui-divider, #3f3f46);
-  }
-  
-  [data-theme="dark"] select option,
-  :root.dark select option {
-    background-color: #27272a;
-    color: #fafafa;
-  }
-  
-  [data-theme="dark"] select:focus,
-  :root.dark select:focus {
-    border-color: var(--heroui-primary, #6366f1);
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
   }
   
   /* 链接样式 */
@@ -378,4 +376,127 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/**
+ * HeroUI 语义类暗色模式修复
+ * 
+ * 问题：HeroUI 的语义类 (text-default-*, text-foreground, bg-default-*, bg-background)
+ * 使用 CSS 变量，但这些变量在 Tailwind v4 + .dark class 模式下不自动更新。
+ * 
+ * 解决方案：直接覆盖这些类在 .dark 模式下的颜色值。
+ */
+@layer utilities {
+  /* text-foreground 暗色模式修复 */
+  .dark .text-foreground {
+    color: #f4f4f5 !important; /* zinc-100 */
+  }
+  
+  /* text-default-* 系列暗色模式修复 */
+  .dark .text-default-100 {
+    color: #f4f4f5 !important; /* zinc-100 */
+  }
+  .dark .text-default-200 {
+    color: #e4e4e7 !important; /* zinc-200 */
+  }
+  .dark .text-default-300 {
+    color: #71717a !important; /* zinc-500 - 暗色模式需要更亮的颜色 */
+  }
+  .dark .text-default-400 {
+    color: #a1a1aa !important; /* zinc-400 */
+  }
+  .dark .text-default-500 {
+    color: #a1a1aa !important; /* zinc-400 */
+  }
+  .dark .text-default-600 {
+    color: #d4d4d8 !important; /* zinc-300 */
+  }
+  .dark .text-default-700 {
+    color: #e4e4e7 !important; /* zinc-200 */
+  }
+  .dark .text-default-800 {
+    color: #f4f4f5 !important; /* zinc-100 */
+  }
+  .dark .text-default-900 {
+    color: #fafafa !important; /* zinc-50 */
+  }
+  
+  /* bg-default-* 系列暗色模式修复 */
+  .dark .bg-default-50 {
+    background-color: #27272a !important; /* zinc-800 */
+  }
+  .dark .bg-default-100 {
+    background-color: #27272a !important; /* zinc-800 */
+  }
+  .dark .bg-default-200 {
+    background-color: #3f3f46 !important; /* zinc-700 */
+  }
+  
+  /* bg-background 暗色模式修复 - 与 App shell 统一为 zinc-900 */
+  .dark .bg-background {
+    background-color: #18181b !important; /* zinc-900 */
+  }
+  
+  /* bg-content* 系列暗色模式修复 - 卡片用 zinc-800 保持对比度 */
+  .dark .bg-content1 {
+    background-color: #27272a !important; /* zinc-800 */
+  }
+  .dark .bg-content2 {
+    background-color: #3f3f46 !important; /* zinc-700 */
+  }
+  .dark .bg-content3 {
+    background-color: #52525b !important; /* zinc-600 */
+  }
+}
+
+/**
+ * HeroUI Input/Select 组件背景修复
+ * 
+ * 问题：即使设置了 classNames 的 bg-transparent，HeroUI 的默认样式可能仍然覆盖
+ * 解决方案：使用 [data-slot] 选择器强制设置合适的背景
+ * 注意：inputWrapper 和 trigger 需要显式背景色以保证可读性
+ */
+
+/* 全局 - 基础 slots 保持透明 */
+[data-slot="base"],
+[data-slot="mainWrapper"],
+[data-slot="main-wrapper"],
+[data-slot="innerWrapper"],
+[data-slot="inner-wrapper"],
+[data-slot="input"] {
+  background-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* Input Wrapper 和 Trigger - 亮色模式使用白色背景 */
+[data-slot="inputWrapper"],
+[data-slot="input-wrapper"],
+[data-slot="trigger"] {
+  background-color: rgba(255, 255, 255, 0.85) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(228, 228, 231, 0.5) !important;
+}
+
+/* 暗色模式 - 基础 slots 透明 */
+.dark [data-slot="base"],
+.dark [data-slot="mainWrapper"],
+.dark [data-slot="main-wrapper"],
+.dark [data-slot="innerWrapper"],
+.dark [data-slot="inner-wrapper"],
+.dark [data-slot="input"] {
+  background-color: transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* 暗色模式 - Input Wrapper 和 Trigger 使用深色背景 */
+.dark [data-slot="inputWrapper"],
+.dark [data-slot="input-wrapper"],
+.dark [data-slot="trigger"] {
+  background-color: rgba(39, 39, 42, 0.6) !important;
+  background: rgba(39, 39, 42, 0.6) !important;
+  box-shadow: none !important;
+  border: 1px solid rgba(63, 63, 70, 0.5) !important;
 }

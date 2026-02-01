@@ -106,11 +106,11 @@ html.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
 }
 
 html.dark .main::-webkit-scrollbar-thumb {
-  background-color: rgba(200, 200, 210, 0.15);
+  background-color: rgba(80, 80, 90, 0.5);
 }
 
 html.dark .main::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(200, 200, 210, 0.3);
+  background-color: rgba(80, 80, 90, 0.7);
 }
 
 /* ========================================
@@ -142,15 +142,15 @@ html.dark .main::-webkit-scrollbar-thumb:hover {
 }
 
 html.dark * {
-  scrollbar-color: rgba(200, 200, 210, 0.2) transparent;
+  scrollbar-color: rgba(80, 80, 90, 0.5) transparent;
 }
 
 html.dark *::-webkit-scrollbar-thumb {
-  background-color: rgba(200, 200, 210, 0.2);
+  background-color: rgba(80, 80, 90, 0.5);
 }
 
 html.dark *::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(200, 200, 210, 0.4);
+  background-color: rgba(80, 80, 90, 0.7);
 }
 
 /* Reset */
@@ -159,7 +159,7 @@ body, html, #root {
   padding: 0;
   height: 100%;
   font-family: "Segoe UI", Arial, sans-serif;
-  background: var(--heroui-background, #fdfdfd);
+  background: #ffffff; /* White - matches sidebar in light mode */
   color: var(--heroui-foreground, #333);
 }
 
@@ -167,7 +167,7 @@ body, html, #root {
 html.dark body, 
 html.dark #root,
 html.dark .app-shell {
-  background-color: var(--heroui-background, #000000);
+  background-color: #18181b; /* Zinc 900 - matches sidebar in dark mode */
   color: var(--heroui-foreground, #ECEDEE);
 }
 html.dark .title-bar {
@@ -198,14 +198,20 @@ input, textarea, select, button {
 
 /* Layout */
 .app-shell {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
 }
 
 .title-bar {
+  flex-shrink: 0;
   height: 32px;
   background: var(--heroui-content1, #f5f0e6);
   display: flex;
@@ -215,6 +221,7 @@ input, textarea, select, button {
   user-select: none;
   border-bottom: 1px solid var(--heroui-divider, #e0d8cc);
   padding-left: 12px;
+  z-index: 100;
 }
 
 .title-bar-title {
@@ -266,6 +273,7 @@ input, textarea, select, button {
   flex: 1;
   width: 100%;
   min-width: 0;
+  min-height: 0;
   overflow: hidden; /* Prevent body scroll from affecting layout */
 }
 
@@ -367,11 +375,11 @@ input, textarea, select, button {
   padding: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  background-color: var(--heroui-background, #fdfdfd);
+  background-color: #ffffff; /* White - matches sidebar in light mode */
 }
 
 html.dark .main {
-  background-color: #000000;
+  background-color: #18181b; /* Zinc 900 - matches sidebar in dark mode */
 }
 
 /* Roll cards */
@@ -451,7 +459,10 @@ form label {
   color: #444;
 }
 
-form input, form select, form textarea {
+/* Fix: Prevent global form styles from affecting HeroUI components */
+form input:not([data-slot="input"]):not([class*="heroui-"]), 
+form select:not([data-slot="select"]):not([class*="heroui-"]), 
+form textarea:not([data-slot="input"]):not([class*="heroui-"]) {
   width: 100%;
   padding: 6px;
   margin-bottom: 12px;
@@ -1360,37 +1371,68 @@ form button:hover {
 /* ========================================
    HeroUI Components - Electron Compatibility
    Solid backgrounds to fix transparency issues in Electron
+   Theme-aware: only apply dark backgrounds in dark mode
    ======================================== */
 
-/* Dropdown Menu */
-[data-slot="content"][data-open="true"],
-[role="listbox"],
-[role="menu"] {
+/* Dropdown Menu - Dark Mode Only */
+html.dark [data-slot="content"][data-open="true"],
+html.dark [role="listbox"],
+html.dark [role="menu"] {
   background-color: #18181b !important;
   border: 1px solid #27272a !important;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* Popover / Tooltip */
-[data-slot="base"][data-open="true"],
-.heroui-popover-content,
-[data-heroui-popover] {
+/* Light Mode - Use white backgrounds */
+html:not(.dark) [data-slot="content"][data-open="true"],
+html:not(.dark) [role="listbox"],
+html:not(.dark) [role="menu"] {
+  background-color: #ffffff !important;
+  border: 1px solid #e4e4e7 !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Popover / Tooltip - Dark Mode Only */
+html.dark [data-slot="base"][data-open="true"],
+html.dark .heroui-popover-content,
+html.dark [data-heroui-popover] {
   background-color: #18181b !important;
   border: 1px solid #27272a !important;
 }
 
-/* Autocomplete Listbox */
-[data-slot="listbox"] {
+/* Popover / Tooltip - Light Mode */
+html:not(.dark) [data-slot="base"][data-open="true"],
+html:not(.dark) .heroui-popover-content,
+html:not(.dark) [data-heroui-popover] {
+  background-color: #ffffff !important;
+  border: 1px solid #e4e4e7 !important;
+}
+
+/* Autocomplete Listbox - Dark Mode Only */
+html.dark [data-slot="listbox"] {
   background-color: #18181b !important;
 }
 
-/* Modal Content (backup for custom modals) */
-[data-slot="wrapper"] [data-slot="base"] {
+html:not(.dark) [data-slot="listbox"] {
+  background-color: #ffffff !important;
+}
+
+/* Modal Content (backup for custom modals) - Dark Mode Only */
+html.dark [data-slot="wrapper"] [data-slot="base"] {
   background-color: #18181b !important;
 }
 
-/* Select dropdown */
-[data-slot="listboxWrapper"] {
+html:not(.dark) [data-slot="wrapper"] [data-slot="base"] {
+  background-color: #ffffff !important;
+}
+
+/* Select dropdown - Dark Mode Only */
+html.dark [data-slot="listboxWrapper"] {
   background-color: #18181b !important;
   border: 1px solid #27272a !important;
+}
+
+html:not(.dark) [data-slot="listboxWrapper"] {
+  background-color: #ffffff !important;
+  border: 1px solid #e4e4e7 !important;
 }

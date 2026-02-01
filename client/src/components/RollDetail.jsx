@@ -299,7 +299,7 @@ export default function RollDetail() {
   }
 
   return (
-    <div className="roll-detail-page flex flex-col min-h-full bg-background text-foreground">
+    <div className="roll-detail-page flex flex-col min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
       <ModalDialog 
         isOpen={dialog.isOpen} 
         type={dialog.type} 

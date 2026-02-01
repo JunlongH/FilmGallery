@@ -92,13 +92,13 @@ export default function Statistics({ mode = 'stats' }) {
   const handleModeChange = (mode) => navigate(mode === 'spending' ? '/spending' : '/stats');
 
   return (
-    <div className="w-full min-h-full bg-background p-6 lg:p-8 space-y-8 animate-in fade-in duration-500 pb-20">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-divider pb-6">
+    <div className="w-full min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-6 lg:p-8 space-y-8 animate-in fade-in duration-500 pb-20">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-zinc-200 dark:border-zinc-700 pb-6">
         <div>
-          <h2 className="text-3xl font-bold text-foreground tracking-tight">
+          <h2 className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
             {isSpending ? 'Spending Analysis' : 'Statistics Dashboard'}
           </h2>
-          <p className="text-default-500 mt-1">
+          <p className="text-zinc-500 dark:text-zinc-400 mt-1">
              {isSpending ? 'Track your film photography expenses and investment' : 'Comprehensive overview of your photography journey'}
           </p>
         </div>
@@ -148,7 +148,7 @@ export default function Statistics({ mode = 'stats' }) {
 
           {/* Inventory Section */}
           <div className="space-y-4">
-            <h3 className="text-xl font-semibold text-foreground px-1 flex items-center gap-2">
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 px-1 flex items-center gap-2">
               <Package className="w-5 h-5 text-primary" /> Inventory Status
             </h3>
             <div style={{

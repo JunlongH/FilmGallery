@@ -80,7 +80,7 @@ const PhotoCard = memo(function PhotoCard({
         onMouseEnter={() => setIsHovered(true)}
         onMouseLeave={() => setIsHovered(false)}
         className={`
-          group overflow-hidden border border-divider/50
+          group overflow-hidden border border-zinc-200/50 dark:border-zinc-700/50
           hover:border-primary/30 hover:shadow-lg
           transition-all duration-300
           ${sizeClasses[size]}

@@ -3,9 +3,15 @@
  * 
  * 当连接到 NAS 服务器时，计算密集型任务需要在本地执行。
  * 此模块检测服务器能力并智能路由请求。
+ * 
+ * 渲染回退顺序：
+ * 1. 服务器渲染（standalone 模式）
+ * 2. 本地 GPU 渲染（Electron + WebGL）
+ * 3. 本地 CPU 渲染（RenderCore 纯 JavaScript）
  */
 
 import { getApiBase } from '../api';
+import CpuRenderService from './CpuRenderService';
 
 // 缓存服务器能力
 let serverCapabilities = null;
@@ -154,47 +160,52 @@ export async function smartFilmlabPreview({ photoId, params, maxWidth = 1400, so
 }
 
 /**
- * 本地 GPU 预览处理
+ * 本地预览处理（GPU 优先，CPU 回退）
+ * 
+ * 渲染顺序：
+ * 1. 尝试 Electron GPU 渲染（最快）
+ * 2. 失败则回退到 CPU 渲染（RenderCore）
  */
 async function localGpuPreview({ photoId, params, maxWidth, sourceType = 'original' }) {
+  // 获取图片 URL
+  const imageUrl = await getPhotoImageUrl(photoId, sourceType);
+  if (!imageUrl) {
+    return { ok: false, error: `Cannot get photo image URL for sourceType: ${sourceType}` };
+  }
+  
   const gpuProcessor = getLocalGpuProcessor();
   
-  if (!gpuProcessor) {
-    return { 
-      ok: false, 
-      error: '本地 GPU 处理不可用。请在 Electron 桌面客户端中使用混合模式。' 
-    };
+  // 尝试 GPU 渲染
+  if (gpuProcessor) {
+    try {
+      const result = await gpuProcessor({ 
+        params, 
+        photoId, 
+        imageUrl,
+        previewMode: true,
+        maxWidth,
+        sourceType 
+      });
+      
+      if (result?.ok) {
+        return { 
+          ok: true, 
+          blob: result.blob, 
+          source: 'local-gpu' 
+        };
+      }
+      
+      console.warn('[ComputeService] GPU preview failed, falling back to CPU:', result?.error);
+    } catch (e) {
+      console.warn('[ComputeService] GPU preview exception, falling back to CPU:', e.message);
+    }
+  } else {
+    console.log('[ComputeService] GPU processor not available, using CPU fallback');
   }
   
-  try {
-    // 需要获取图片 URL (根据 sourceType)
-    const imageUrl = await getPhotoImageUrl(photoId, sourceType);
-    if (!imageUrl) {
-      return { ok: false, error: `Cannot get photo image URL for sourceType: ${sourceType}` };
-    }
-    
-    const result = await gpuProcessor({ 
-      params, 
-      photoId, 
-      imageUrl,
-      previewMode: true,
-      maxWidth,
-      sourceType 
-    });
-    
-    if (result?.ok) {
-      return { 
-        ok: true, 
-        blob: result.blob, 
-        source: 'local-gpu' 
-      };
-    }
-    
-    return { ok: false, error: result?.error || 'Local GPU processing failed' };
-  } catch (e) {
-    console.error('[ComputeService] Local GPU preview failed:', e);
-    return { ok: false, error: e.message || 'Local GPU processing failed' };
-  }
+  // CPU 回退
+  console.log('[ComputeService] Using CPU fallback for preview');
+  return await CpuRenderService.localCpuPreview({ imageUrl, params, maxWidth });
 }
 
 /**
@@ -270,47 +281,53 @@ export async function smartRenderPositive(photoId, params, { format = 'jpeg', so
 }
 
 /**
- * 本地渲染正片
+ * 本地渲染正片（GPU 优先，CPU 回退）
+ * 
+ * 渲染顺序：
+ * 1. 尝试 Electron GPU 渲染
+ * 2. 失败则回退到 CPU 渲染（RenderCore）
  */
 async function localRenderPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
+  // 获取图片 URL
+  const imageUrl = await getPhotoImageUrl(photoId, sourceType);
+  if (!imageUrl) {
+    return { ok: false, error: `Cannot get photo image URL for sourceType: ${sourceType}` };
+  }
+  
   const gpuProcessor = getLocalGpuProcessor();
   
-  if (!gpuProcessor) {
-    return { 
-      ok: false, 
-      error: '本地 GPU 处理不可用。请在 Electron 桌面客户端中使用混合模式。' 
-    };
+  // 尝试 GPU 渲染
+  if (gpuProcessor) {
+    try {
+      const result = await gpuProcessor({ 
+        params, 
+        photoId, 
+        imageUrl,
+        previewMode: false,
+        outputFormat: format,
+        sourceType
+      });
+      
+      if (result?.ok) {
+        return { 
+          ok: true, 
+          blob: result.blob,
+          contentType: format === 'tiff16' ? 'image/tiff' : 'image/jpeg',
+          source: 'local-gpu' 
+        };
+      }
+      
+      console.warn('[ComputeService] GPU render failed, falling back to CPU:', result?.error);
+    } catch (e) {
+      console.warn('[ComputeService] GPU render exception, falling back to CPU:', e.message);
+    }
+  } else {
+    console.log('[ComputeService] GPU processor not available, using CPU fallback');
   }
   
-  try {
-    const imageUrl = await getPhotoImageUrl(photoId, sourceType);
-    if (!imageUrl) {
-      return { ok: false, error: `Cannot get photo image URL for sourceType: ${sourceType}` };
-    }
-    
-    const result = await gpuProcessor({ 
-      params, 
-      photoId, 
-      imageUrl,
-      previewMode: false,
-      outputFormat: format,
-      sourceType
-    });
-    
-    if (result?.ok) {
-      return { 
-        ok: true, 
-        blob: result.blob,
-        contentType: format === 'tiff16' ? 'image/tiff' : 'image/jpeg',
-        source: 'local-gpu' 
-      };
-    }
-    
-    return { ok: false, error: result?.error || 'Local GPU processing failed' };
-  } catch (e) {
-    console.error('[ComputeService] Local render failed:', e);
-    return { ok: false, error: e.message || 'Local GPU processing failed' };
-  }
+  // CPU 回退
+  console.log('[ComputeService] Using CPU fallback for render, format:', format);
+  return await CpuRenderService.localCpuRender({ imageUrl, params, format });
 }
 
 /**
@@ -369,55 +386,62 @@ export async function smartExportPositive(photoId, params, { format = 'jpeg', so
 }
 
 /**
- * 本地导出正片（本地渲染 + 上传到服务器）
+ * 本地导出正片（GPU 优先，CPU 回退 + 上传到服务器）
+ * 
+ * 渲染顺序：
+ * 1. 尝试 Electron GPU 渲染（自动上传）
+ * 2. 失败则回退到 CPU 渲染 + 手动上传
  */
 async function localExportPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
-  const gpuProcessor = getLocalGpuProcessor();
-  
-  if (!gpuProcessor) {
+  // 获取图片 URL
+  const imageUrl = await getPhotoImageUrl(photoId, sourceType);
+  if (!imageUrl) {
     return createError(
-      ComputeErrorCodes.NO_GPU_PROCESSOR,
-      '本地 GPU 处理不可用。请在 Electron 桌面客户端中使用混合模式。'
+      ComputeErrorCodes.PHOTO_NOT_FOUND,
+      `Cannot get photo image URL for sourceType: ${sourceType}`
     );
   }
   
-  try {
-    // 获取图片 URL
-    const imageUrl = await getPhotoImageUrl(photoId, sourceType);
-    if (!imageUrl) {
-      return createError(
-        ComputeErrorCodes.PHOTO_NOT_FOUND,
-        `Cannot get photo image URL for sourceType: ${sourceType}`
-      );
+  const gpuProcessor = getLocalGpuProcessor();
+  
+  // 尝试 GPU 渲染
+  if (gpuProcessor) {
+    try {
+      console.log('[ComputeService] Attempting GPU export, photoId:', photoId);
+      
+      const result = await gpuProcessor({ 
+        params, 
+        photoId, 
+        imageUrl,
+        previewMode: false,
+        outputFormat: format,
+        sourceType
+      });
+      
+      if (result?.ok) {
+        console.log('[ComputeService] GPU export successful');
+        return { 
+          ok: true, 
+          photo: result.photo,
+          filePath: result.filePath,
+          source: 'local-gpu' 
+        };
+      }
+      
+      console.warn('[ComputeService] GPU export failed, falling back to CPU:', result?.error);
+    } catch (e) {
+      console.warn('[ComputeService] GPU export exception, falling back to CPU:', e.message);
     }
-    
-    console.log('[ComputeService] Local GPU export starting, photoId:', photoId);
-    
-    // 使用 Electron GPU 处理（这会自动上传到服务器）
-    const result = await gpuProcessor({ 
-      params, 
-      photoId, 
-      imageUrl,
-      previewMode: false,
-      outputFormat: format,
-      sourceType
-    });
-    
-    if (result?.ok) {
-      console.log('[ComputeService] Local GPU export successful:', result);
-      return { 
-        ok: true, 
-        photo: result.photo,
-        filePath: result.filePath,
-        source: 'local-gpu' 
-      };
-    }
-    
-    return { ok: false, error: result?.error || 'Local GPU export failed' };
-  } catch (e) {
-    console.error('[ComputeService] Local export failed:', e);
-    return { ok: false, error: e.message || 'Local GPU export failed' };
+  } else {
+    console.log('[ComputeService] GPU processor not available, using CPU fallback');
   }
+  
+  // CPU 回退 + 上传
+  console.log('[ComputeService] Using CPU fallback for export');
+  return await CpuRenderService.localCpuExport(
+    { photoId, imageUrl, params, format },
+    uploadProcessedResult
+  );
 }
 
 // ========================================

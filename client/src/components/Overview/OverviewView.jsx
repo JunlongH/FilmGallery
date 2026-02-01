@@ -39,7 +39,7 @@ export default function OverviewView() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3, duration: 0.5 }}
         >
-          <h2 className="text-xl font-semibold text-foreground mb-4">
+          <h2 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
             Browse Your Collection
           </h2>
           <BrowseSection />

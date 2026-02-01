@@ -31,7 +31,7 @@ export function SidebarSection({ title, divider = false, children }) {
       {/* 标题 */}
       {title && !isCollapsed && (
         <div className="px-3 py-2">
-          <span className="text-xs font-semibold uppercase tracking-wider text-default-400">
+          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
             {title}
           </span>
         </div>

@@ -26,6 +26,7 @@
 
 ### ❌ 问题代码
 ```jsx
+// 错误：使用 HeroUI 语义类（bg-content1）不能正确响应主题
 <Select
   size="sm"
   variant="bordered"
@@ -41,19 +42,20 @@
 
 ### ✅ 解决方案
 ```jsx
+// 正确：使用明确的 Tailwind 颜色类配合 dark: 前缀
 <Select
   size="sm"
   variant="bordered"
   classNames={{
-    trigger: "h-10 min-h-10 bg-content1",
-    value: "text-sm truncate",
-    selectorIcon: "right-2",
-    listbox: "bg-content1",
-    popoverContent: "bg-content1 dark:bg-content1 border border-divider"
+    trigger: "h-10 min-h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700",
+    value: "text-sm truncate text-zinc-900 dark:text-zinc-100",
+    selectorIcon: "right-2 text-zinc-500 dark:text-zinc-400",
+    listbox: "bg-white dark:bg-zinc-900",
+    popoverContent: "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700"
   }}
   popoverProps={{
     classNames: {
-      content: "min-w-[180px] bg-content1 dark:bg-zinc-900 border border-divider shadow-lg"
+      content: "min-w-[180px] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg"
     }
   }}
 >
@@ -64,10 +66,14 @@
 ```
 
 ### 关键要点
+- **不要使用**: `bg-content1`, `bg-content2`, `border-divider` 等 HeroUI 语义类
+- **应该使用**: 明确的 Tailwind 类配合 `dark:` 前缀
+  - 亮色背景: `bg-white` → 暗色背景: `dark:bg-zinc-900`
+  - 亮色边框: `border-zinc-200` → 暗色边框: `dark:border-zinc-700`
+  - 亮色文字: `text-zinc-900` → 暗色文字: `dark:text-zinc-100`
 - `listbox`: 设置下拉列表背景
 - `popoverContent`: 设置弹出容器背景
 - `popoverProps.classNames.content`: 设置弹出内容背景和边框
-- 同时设置 `dark:bg-zinc-900` 确保深色模式下有不透明背景
 - `selectorIcon: "right-2"`: **下拉箭头移到右侧**，避免和文字重叠
 - `value: "text-sm truncate pr-6"`: 给值文本添加右侧 padding，防止被箭头遮挡
 
@@ -104,7 +110,7 @@ Checkbox 的勾选框和文字标签间距太近，导致视觉重叠。
 <Input
   type="date"
   value={value}
-  classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+  classNames={{ inputWrapper: "h-10 min-h-10" }}
 />
 ```
 
@@ -114,14 +120,15 @@ Checkbox 的勾选框和文字标签间距太近，导致视觉重叠。
   type="date"
   value={value}
   classNames={{ 
-    inputWrapper: "h-10 min-h-10 bg-content1",
-    input: "dark:[color-scheme:dark]"
+    inputWrapper: "h-10 min-h-10 bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700",
+    input: "text-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
   }}
 />
 ```
 
 ### 关键要点
 - `color-scheme: dark` 告诉浏览器使用深色模式的原生控件样式
+- 使用明确的颜色类而非 `bg-content1`
 - 使用 Tailwind 的 `dark:` 前缀只在深色模式下应用
 - 这会让日历图标、下拉箭头等浏览器原生控件显示为浅色
 
@@ -312,12 +319,46 @@ function SectionTitle({ icon: Icon, children }) {
 
 ---
 
+## 内联样式覆盖 CSS 变量问题
+
+### 问题描述
+使用内联样式硬编码颜色（如 `style={{ background: '#fff' }}`）会覆盖 CSS 变量，导致暗色模式失效。
+
+### ❌ 问题代码
+```jsx
+<input
+  type="text"
+  className="fg-input"
+  value={value}
+  style={{ background: '#fff' }}  // ❌ 覆盖了 CSS 变量
+/>
+```
+
+### ✅ 解决方案
+```jsx
+<input
+  type="text"
+  className="fg-input"
+  value={value}
+  style={{ background: '#fff', color: '#1f2937' }}  // ✅ 同时设置文字颜色
+/>
+```
+
+### 关键要点
+- 如果必须使用内联样式设置背景色，**必须同时设置文字颜色**
+- 背景色和文字颜色要有足够对比度（WCAG AA 标准）
+- 白色背景 `#fff` 应配深色文字 `#1f2937`
+- 深色背景 `#1e293b` 应配浅色文字 `#f1f5f9`
+
+---
+
 ## 📝 调试技巧
 
 1. **检查深色模式**: 使用浏览器 DevTools 切换深色模式测试
 2. **检查 z-index**: 模态框内的下拉菜单可能需要更高的 z-index
 3. **使用内联样式**: 当 Tailwind 类不生效时，优先使用内联 `style`
 4. **检查 HeroUI classNames**: 查阅 HeroUI 文档确认可用的 slot 名称
+5. **检查内联样式**: 内联样式会覆盖 CSS 变量，同时设置背景和文字颜色
 
 ---
 

@@ -13,6 +13,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { getCameras, getLenses, getFlashes, getScanners, getFilmBacks, getCompatibleLenses, createCamera, createLens, createFlash, createScanner, createFilmBack } from '../api';
 import { buildUploadUrl } from '../api';
+import { Popover, PopoverTrigger, PopoverContent } from "@heroui/react";
 import '../styles/forms.css';
 import '../styles/equipment-selector.css';
 
@@ -233,104 +234,116 @@ export default function EquipmentSelector({
 
   return (
     <div className={`equip-selector ${className}`} style={style} ref={dropdownRef}>
-      {/* Main trigger button */}
-      <div 
-        className={`equip-trigger ${isOpen ? 'open' : ''} ${disabled ? 'disabled' : ''}`}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+      <Popover 
+        isOpen={isOpen} 
+        onOpenChange={(open) => !disabled && setIsOpen(open)}
+        placement="bottom"
+        triggerScaleOnOpen={false}
+        offset={4}
+        classNames={{
+          content: "bg-transparent p-0 shadow-none border-none overflow-visible"
+        }}
       >
-        {loading ? (
-          <span className="equip-loading">Loading...</span>
-        ) : selectedItem ? (
-          <>
-            {renderItemDisplay(selectedItem)}
-            <button className="equip-clear" onClick={handleClear} title="Clear">×</button>
-          </>
-        ) : (
-          <span className="equip-placeholder">{config.placeholder}</span>
-        )}
-        <span className="equip-arrow">{isOpen ? '▲' : '▼'}</span>
-      </div>
-
-      {/* Dropdown */}
-      {isOpen && !disabled && (
-        <div className="equip-dropdown">
-          {/* Search input */}
-          <input
-            type="text"
-            className="equip-search"
-            placeholder={`Search ${config.label.toLowerCase()}...`}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            autoFocus
-          />
-
-          {/* Adapter toggle for lens selection with camera */}
-          {type === 'lens' && cameraId && cameraMount && (
-            <div className="equip-adapter-toggle">
-              <label className="equip-adapter-label">
-                <input
-                  type="checkbox"
-                  checked={useAdapter}
-                  onChange={(e) => setUseAdapter(e.target.checked)}
-                />
-                <span>Use Adapter (show all lenses)</span>
-              </label>
-              <span className="equip-mount-info">
-                Camera mount: {cameraMount}
-              </span>
-            </div>
-          )}
-
-          {/* Items list */}
-          <div className="equip-list">
-            {filteredItems.length === 0 ? (
-              <div className="equip-empty">
-                {search ? `No ${config.label.toLowerCase()} found` : `No ${config.label.toLowerCase()} in library`}
-              </div>
+        <PopoverTrigger>
+          <div 
+            className={`equip-trigger ${isOpen ? 'open' : ''} ${disabled ? 'disabled' : ''}`}
+            role="button"
+            tabIndex={0}
+          >
+            {loading ? (
+              <span className="equip-loading">Loading...</span>
+            ) : selectedItem ? (
+              <>
+                {renderItemDisplay(selectedItem)}
+                <button className="equip-clear" onClick={handleClear} title="Clear">×</button>
+              </>
             ) : (
-              filteredItems.map(item => (
-                <div 
-                  key={item.id} 
-                  className={`equip-option ${item.id === value ? 'selected' : ''} ${type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount ? 'adapted' : ''}`}
-                  onClick={() => handleSelect(item)}
-                >
-                  {renderItemDisplay(item, true)}
-                  {type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount && (
-                    <span className="equip-adapter-badge">Adapter</span>
-                  )}
-                </div>
-              ))
+              <span className="equip-placeholder">{config.placeholder}</span>
             )}
+            <span className="equip-arrow">{isOpen ? '▲' : '▼'}</span>
           </div>
+        </PopoverTrigger>
 
-          {/* Quick add */}
-          {showQuickAdd && (
-            <div className="equip-add-section">
-              {showAddForm ? (
-                <div className="equip-add-form">
+        <PopoverContent className="w-[300px]">
+          <div className="equip-dropdown" style={{ position: 'relative', top: 0, width: '100%', maxWidth: '100%', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+            {/* Search input */}
+            <input
+              type="text"
+              className="equip-search"
+              placeholder={`Search ${config.label.toLowerCase()}...`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoFocus
+            />
+
+            {/* Adapter toggle for lens selection with camera */}
+            {type === 'lens' && cameraId && cameraMount && (
+              <div className="equip-adapter-toggle">
+                <label className="equip-adapter-label">
                   <input
-                    type="text"
-                    className="equip-add-input"
-                    placeholder={`New ${config.label.toLowerCase()} name...`}
-                    value={newName}
-                    onChange={(e) => setNewName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleQuickAdd()}
+                    type="checkbox"
+                    checked={useAdapter}
+                    onChange={(e) => setUseAdapter(e.target.checked)}
                   />
-                  <button className="equip-add-btn" onClick={handleQuickAdd}>Add</button>
-                  <button className="equip-add-cancel" onClick={() => setShowAddForm(false)}>×</button>
+                  <span>Use Adapter (show all lenses)</span>
+                </label>
+                <span className="equip-mount-info">
+                  Camera mount: {cameraMount}
+                </span>
+              </div>
+            )}
+
+            {/* Items list */}
+            <div className="equip-list">
+              {filteredItems.length === 0 ? (
+                <div className="equip-empty">
+                  {search ? `No ${config.label.toLowerCase()} found` : `No ${config.label.toLowerCase()} in library`}
                 </div>
               ) : (
-                <button 
-                  className="equip-add-trigger"
-                  onClick={() => setShowAddForm(true)}
-                >
-                  + Add New {config.label}
-                </button>
+                filteredItems.map(item => (
+                  <div 
+                    key={item.id} 
+                    className={`equip-option ${item.id === value ? 'selected' : ''} ${type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount ? 'adapted' : ''}`}
+                    onClick={() => handleSelect(item)}
+                  >
+                    {renderItemDisplay(item, true)}
+                    {type === 'lens' && useAdapter && item.mount && item.mount !== cameraMount && (
+                      <span className="equip-adapter-badge">Adapter</span>
+                    )}
+                  </div>
+                ))
               )}
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Quick add */}
+            {showQuickAdd && (
+              <div className="equip-add-section">
+                {showAddForm ? (
+                  <div className="equip-add-form">
+                    <input
+                      type="text"
+                      className="equip-add-input"
+                      placeholder={`New ${config.label.toLowerCase()} name...`}
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleQuickAdd()}
+                    />
+                    <button className="equip-add-btn" onClick={handleQuickAdd}>Add</button>
+                    <button className="equip-add-cancel" onClick={() => setShowAddForm(false)}>×</button>
+                  </div>
+                ) : (
+                  <button 
+                    className="equip-add-trigger"
+                    onClick={() => setShowAddForm(true)}
+                  >
+                    + Add New {config.label}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

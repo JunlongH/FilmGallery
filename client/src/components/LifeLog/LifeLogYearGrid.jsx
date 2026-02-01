@@ -93,12 +93,12 @@ export default function LifeLogYearGrid() {
             <Card
               isPressable
               onPress={() => switchToMonth(index)}
-              className="w-full h-full bg-content1 hover:shadow-lg transition-all"
+              className="w-full h-full bg-white dark:bg-zinc-900 hover:shadow-lg transition-all"
             >
               <CardBody className="p-3 h-full flex flex-col">
                 {/* Month Header */}
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-bold text-foreground">{name}</h3>
+                  <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{name}</h3>
                   {photoCount > 0 && (
                     <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded-full">
                       {photoCount}
@@ -112,7 +112,7 @@ export default function LifeLogYearGrid() {
                     <div 
                       key={i}
                       className={`text-center text-[10px] font-medium ${
-                        i === 0 || i === 6 ? 'text-primary' : 'text-default-400'
+                        i === 0 || i === 6 ? 'text-primary' : 'text-zinc-400 dark:text-zinc-500'
                       }`}
                     >
                       {d}
@@ -149,7 +149,7 @@ export default function LifeLogYearGrid() {
                                 flex items-center justify-center
                                 ${hasPhotos ? 'ring-1 ring-primary/50' : ''}
                                 ${isToday ? 'ring-2 ring-primary' : ''}
-                                ${isToday ? 'bg-primary/20' : 'bg-content2/40'}
+                                ${isToday ? 'bg-primary/20' : 'bg-zinc-100/40 dark:bg-zinc-800/40'}
                               `}
                             >
                               {hasPhotos && cover ? (
@@ -160,7 +160,7 @@ export default function LifeLogYearGrid() {
                                   loading="lazy"
                                 />
                               ) : (
-                                <span className={`text-[9px] ${isToday ? 'text-primary font-bold' : 'text-default-500'}`}>
+                                <span className={`text-[9px] ${isToday ? 'text-primary font-bold' : 'text-zinc-500 dark:text-zinc-400'}`}>
                                   {format(day, 'd')}
                                 </span>
                               )}

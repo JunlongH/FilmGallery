@@ -68,7 +68,7 @@ export default function EquipmentList({
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b border-divider">
+      <div className="flex items-center justify-between p-3 border-b border-zinc-200 dark:border-zinc-700">
         <span className="text-sm text-default-500">
           {items.length} {items.length === 1 ? 'item' : 'items'}
         </span>

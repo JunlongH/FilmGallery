@@ -150,9 +150,9 @@ export default function LutLibrary() {
           <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : luts.length === 0 ? (
-        <Card className="bg-content1">
+        <Card className="bg-white dark:bg-zinc-800">
           <CardBody className="text-center py-24">
-            <div className="w-16 h-16 bg-content2 rounded-full flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mx-auto mb-4">
               <FileType className="w-8 h-8 text-default-400" />
             </div>
             <h3 className="text-lg font-medium">No LUTs found</h3>

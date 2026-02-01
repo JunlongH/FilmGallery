@@ -10,7 +10,7 @@ import ReactDOM from 'react-dom';
  * - Interaction: Click a log, then click files to assign (or drag log to file)
  * - Each log can be assigned to multiple files (up to its count)
  */
-export default function ShotLogMapper({ onClose, onSave, files = [], shotLogs = [] }) {
+export default function ShotLogMapper({ onClose, onSave, files = [], shotLogs = [], initialAssignments = null }) {
   // Sort files by name to match NewRollForm behavior
   const sortedFiles = useMemo(() => 
     [...files].sort((a, b) => a.name.localeCompare(b.name)), 
@@ -25,6 +25,11 @@ export default function ShotLogMapper({ onClose, onSave, files = [], shotLogs = 
 
   // Assignment state: { [filename]: logIndex }
   const [assignments, setAssignments] = useState(() => {
+    // Use previous assignments if available
+    if (initialAssignments && Object.keys(initialAssignments).length > 0) {
+      return { ...initialAssignments };
+    }
+
     // Initialize with sequential assignment
     const initial = {};
     let fileIdx = 0;
@@ -143,6 +148,7 @@ export default function ShotLogMapper({ onClose, onSave, files = [], shotLogs = 
           detail_location: log.detail_location || '',
           latitude: log.latitude,
           longitude: log.longitude,
+          caption: log.caption || '',
           logIndex: logIdx
         };
       }
@@ -282,6 +288,11 @@ export default function ShotLogMapper({ onClose, onSave, files = [], shotLogs = 
                     <div style={styles.logLocation}>
                       {[log.city, log.detail_location].filter(Boolean).join(' · ') || '—'}
                     </div>
+                    {log.caption && (
+                      <div style={styles.logCaption}>
+                        💬 {log.caption}
+                      </div>
+                    )}
                     {isSelected && (
                       <div style={styles.selectedBadge}>
                         SELECTED - Click files to assign
@@ -515,6 +526,14 @@ const styles = {
     fontSize: 11,
     color: '#555',
     fontStyle: 'italic'
+  },
+  logCaption: {
+    fontSize: 11,
+    color: '#6366f1',
+    marginTop: 2,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap'
   },
   selectedBadge: {
     marginTop: 8,

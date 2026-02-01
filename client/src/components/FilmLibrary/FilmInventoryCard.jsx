@@ -67,6 +67,10 @@ export default function FilmInventoryCard({
   const filmName = film?.name || 'Unknown Film';
   const format = film?.format || '135';
 
+  // Detect theme for action panel
+  const isDark = document.documentElement.classList.contains('dark') || 
+                 document.documentElement.getAttribute('data-theme') === 'dark';
+
   // 状态显示逻辑
   const statusLabel = item.status === 'loaded' && item.loaded_camera
     ? `Loaded on ${item.loaded_camera}`
@@ -244,8 +248,8 @@ export default function FilmInventoryCard({
           style={{
             width: isExpanded ? '50%' : '0%',
             height: '100%',
-            background: '#18181b',
-            borderLeft: isExpanded ? '1px solid rgba(255,255,255,0.05)' : 'none',
+            background: isDark ? '#18181b' : '#f4f4f5',
+            borderLeft: isExpanded ? `1px solid ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.08)'}` : 'none',
             overflow: 'hidden',
             flexShrink: 0,
             opacity: isExpanded ? 1 : 0,

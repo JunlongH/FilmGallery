@@ -183,6 +183,24 @@ export default function BatchDownloadModal({
   
   if (!isOpen) return null;
   
+  // Theme detection
+  const isDark = document.documentElement.classList.contains('dark') || 
+                 document.documentElement.getAttribute('data-theme') === 'dark';
+  
+  // Theme-aware colors
+  const colors = {
+    overlay: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.5)',
+    modalBg: isDark ? '#18181b' : '#ffffff',
+    modalBorder: isDark ? '#27272a' : '#e4e4e7',
+    text: isDark ? '#ECEDEE' : '#11181C',
+    textMuted: isDark ? '#71717a' : '#a1a1aa',
+    textSecondary: isDark ? '#d4d4d8' : '#3f3f46',
+    inputBg: isDark ? '#27272a' : '#f4f4f5',
+    inputBorder: isDark ? '#3f3f46' : '#e4e4e7',
+    buttonSecondary: isDark ? '#27272a' : '#f4f4f5',
+    buttonSecondaryText: isDark ? '#ECEDEE' : '#11181C'
+  };
+  
   return (
     <div style={{
       position: 'fixed',
@@ -190,14 +208,15 @@ export default function BatchDownloadModal({
       left: 0,
       right: 0,
       bottom: 0,
-      background: 'rgba(0,0,0,0.8)',
+      background: colors.overlay,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 10000
     }}>
       <div style={{
-        background: '#1e1e1e',
+        background: colors.modalBg,
+        border: `1px solid ${colors.modalBorder}`,
         borderRadius: 12,
         padding: 24,
         minWidth: 500,
@@ -212,13 +231,13 @@ export default function BatchDownloadModal({
           alignItems: 'center',
           marginBottom: 20
         }}>
-          <h2 style={{ margin: 0, color: '#fff' }}>批量下载</h2>
+          <h2 style={{ margin: 0, color: colors.text }}>批量下载</h2>
           <button
             onClick={handleClose}
             style={{
               background: 'none',
               border: 'none',
-              color: '#888',
+              color: colors.textMuted,
               fontSize: 24,
               cursor: 'pointer'
             }}
@@ -239,10 +258,11 @@ export default function BatchDownloadModal({
         ) : (
           <>
             {/* 下载类型 */}
-            <Section title="下载类型">
+            <Section title="下载类型" colors={colors}>
               <RadioGroup
                 value={downloadType}
                 onChange={setDownloadType}
+                colors={colors}
                 options={[
                   { value: DOWNLOAD_TYPE.POSITIVE, label: '正片 (渲染后的图像)' },
                   { value: DOWNLOAD_TYPE.NEGATIVE, label: '底片 (原始扫描)' },
@@ -252,7 +272,7 @@ export default function BatchDownloadModal({
               
               {/* 可用性信息 */}
               {loadingAvailability ? (
-                <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+                <div style={{ marginTop: 8, color: colors.textMuted, fontSize: 12 }}>
                   检查可用数量...
                 </div>
               ) : availability && (
@@ -263,7 +283,7 @@ export default function BatchDownloadModal({
                 }}>
                   可下载: {availability.available} / {availability.total} 张
                   {availability.available < availability.total && (
-                    <span style={{ color: '#888', marginLeft: 8 }}>
+                    <span style={{ color: colors.textMuted, marginLeft: 8 }}>
                       ({availability.total - availability.available} 张文件不存在)
                     </span>
                   )}
@@ -272,10 +292,11 @@ export default function BatchDownloadModal({
             </Section>
             
             {/* 照片范围 */}
-            <Section title="照片范围">
+            <Section title="照片范围" colors={colors}>
               <RadioGroup
                 value={scope}
                 onChange={setScope}
+                colors={colors}
                 options={[
                   { 
                     value: SCOPE.SELECTED, 
@@ -291,7 +312,7 @@ export default function BatchDownloadModal({
             </Section>
             
             {/* 输出目录 */}
-            <Section title="输出目录">
+            <Section title="输出目录" colors={colors}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   type="text"
@@ -301,20 +322,20 @@ export default function BatchDownloadModal({
                   style={{
                     flex: 1,
                     padding: '8px 12px',
-                    background: '#252525',
-                    border: '1px solid #333',
+                    background: colors.inputBg,
+                    border: `1px solid ${colors.inputBorder}`,
                     borderRadius: 4,
-                    color: '#fff'
+                    color: colors.text
                   }}
                 />
                 <button
                   onClick={handleSelectDir}
                   style={{
                     padding: '8px 16px',
-                    background: '#333',
-                    border: 'none',
+                    background: colors.buttonSecondary,
+                    border: `1px solid ${colors.inputBorder}`,
                     borderRadius: 4,
-                    color: '#fff',
+                    color: colors.buttonSecondaryText,
                     cursor: 'pointer'
                   }}
                 >
@@ -324,17 +345,17 @@ export default function BatchDownloadModal({
             </Section>
             
             {/* 命名规则 */}
-            <Section title="命名规则">
+            <Section title="命名规则" colors={colors}>
               <select
                 value={namingPattern}
                 onChange={e => setNamingPattern(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '8px 12px',
-                  background: '#252525',
-                  border: '1px solid #333',
+                  background: colors.inputBg,
+                  border: `1px solid ${colors.inputBorder}`,
                   borderRadius: 4,
-                  color: '#fff'
+                  color: colors.text
                 }}
               >
                 {NAMING_PATTERNS.map(p => (
@@ -343,14 +364,14 @@ export default function BatchDownloadModal({
               </select>
               
               {/* 命名预览 */}
-              <div style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+              <div style={{ marginTop: 8, color: colors.textMuted, fontSize: 12 }}>
                 预览: {generateNamingPreview(namingPattern, rollName)}
               </div>
             </Section>
             
             {/* EXIF 选项 (仅正片) */}
             {downloadType === DOWNLOAD_TYPE.POSITIVE && (
-              <Section title="EXIF 元数据">
+              <Section title="EXIF 元数据" colors={colors}>
                 <label style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -363,7 +384,7 @@ export default function BatchDownloadModal({
                     onChange={e => setIncludeExif(e.target.checked)}
                     style={{ accentColor: '#2196F3' }}
                   />
-                  <span style={{ color: '#ddd' }}>
+                  <span style={{ color: colors.textSecondary }}>
                     写入 EXIF 元数据（相机、镜头、光圈、快门、ISO等）
                   </span>
                 </label>
@@ -372,10 +393,10 @@ export default function BatchDownloadModal({
             
             {/* 格式设置 (仅正片) */}
             {downloadType === DOWNLOAD_TYPE.POSITIVE && (
-              <Section title="输出格式">
+              <Section title="输出格式" colors={colors}>
                 <div style={{ display: 'flex', gap: 16 }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', color: '#888', fontSize: 12, marginBottom: 4 }}>
+                    <label style={{ display: 'block', color: colors.textMuted, fontSize: 12, marginBottom: 4 }}>
                       格式
                     </label>
                     <select
@@ -384,10 +405,10 @@ export default function BatchDownloadModal({
                       style={{
                         width: '100%',
                         padding: '8px 12px',
-                        background: '#252525',
-                        border: '1px solid #333',
+                        background: colors.inputBg,
+                        border: `1px solid ${colors.inputBorder}`,
                         borderRadius: 4,
-                        color: '#fff'
+                        color: colors.text
                       }}
                     >
                       <option value="jpeg">JPEG</option>
@@ -397,7 +418,7 @@ export default function BatchDownloadModal({
                   
                   {format === 'jpeg' && (
                     <div style={{ flex: 1 }}>
-                      <label style={{ display: 'block', color: '#888', fontSize: 12, marginBottom: 4 }}>
+                      <label style={{ display: 'block', color: colors.textMuted, fontSize: 12, marginBottom: 4 }}>
                         质量
                       </label>
                       <input
@@ -409,10 +430,10 @@ export default function BatchDownloadModal({
                         style={{
                           width: '100%',
                           padding: '8px 12px',
-                          background: '#252525',
-                          border: '1px solid #333',
+                          background: colors.inputBg,
+                          border: `1px solid ${colors.inputBorder}`,
                           borderRadius: 4,
-                          color: '#fff'
+                          color: colors.text
                         }}
                       />
                     </div>
@@ -432,10 +453,10 @@ export default function BatchDownloadModal({
                 onClick={handleClose}
                 style={{
                   padding: '10px 24px',
-                  background: '#333',
+                  background: colors.inputBorder,
                   border: 'none',
                   borderRadius: 6,
-                  color: '#fff',
+                  color: colors.text,
                   cursor: 'pointer'
                 }}
               >
@@ -447,7 +468,7 @@ export default function BatchDownloadModal({
                 style={{
                   padding: '10px 24px',
                   background: (isSubmitting || (availability && availability.available === 0)) 
-                    ? '#666' : '#4CAF50',
+                    ? colors.textMuted : '#4CAF50',
                   border: 'none',
                   borderRadius: 6,
                   color: '#fff',
@@ -489,11 +510,11 @@ function generateNamingPreview(pattern, rollName) {
 // 子组件
 // ============================================================================
 
-function Section({ title, children }) {
+function Section({ title, children, colors }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{
-        color: '#888',
+        color: colors?.textMuted || '#888',
         fontSize: 12,
         fontWeight: 600,
         marginBottom: 10,
@@ -506,7 +527,7 @@ function Section({ title, children }) {
   );
 }
 
-function RadioGroup({ value, onChange, options }) {
+function RadioGroup({ value, onChange, options, colors }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {options.map(opt => (
@@ -527,7 +548,7 @@ function RadioGroup({ value, onChange, options }) {
             disabled={opt.disabled}
             style={{ accentColor: '#2196F3' }}
           />
-          <span style={{ color: '#ddd' }}>{opt.label}</span>
+          <span style={{ color: colors?.textSecondary || '#ddd' }}>{opt.label}</span>
         </label>
       ))}
     </div>

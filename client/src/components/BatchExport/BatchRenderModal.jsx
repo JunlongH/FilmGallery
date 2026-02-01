@@ -347,6 +347,25 @@ export default function BatchRenderModal({
   
   if (!isOpen) return null;
   
+  // Theme detection
+  const isDark = document.documentElement.classList.contains('dark') || 
+                 document.documentElement.getAttribute('data-theme') === 'dark';
+  
+  // Theme-aware colors
+  const colors = {
+    overlay: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.5)',
+    modalBg: isDark ? '#18181b' : '#ffffff',
+    modalBorder: isDark ? '#27272a' : '#e4e4e7',
+    text: isDark ? '#ECEDEE' : '#11181C',
+    textMuted: isDark ? '#71717a' : '#a1a1aa',
+    textSecondary: isDark ? '#d4d4d8' : '#3f3f46',
+    inputBg: isDark ? '#27272a' : '#f4f4f5',
+    inputBorder: isDark ? '#3f3f46' : '#e4e4e7',
+    cardBg: isDark ? '#27272a' : '#f4f4f5',
+    buttonSecondary: isDark ? '#27272a' : '#f4f4f5',
+    buttonSecondaryText: isDark ? '#ECEDEE' : '#11181C'
+  };
+  
   return (
     <>
       {/* Remote File Browser Modal */}
@@ -364,14 +383,15 @@ export default function BatchRenderModal({
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0,0,0,0.8)',
+        background: colors.overlay,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         zIndex: 10000
       }}>
         <div style={{
-          background: '#1e1e1e',
+          background: colors.modalBg,
+          border: `1px solid ${colors.modalBorder}`,
           borderRadius: 12,
           padding: 24,
           minWidth: 500,
@@ -386,13 +406,13 @@ export default function BatchRenderModal({
             alignItems: 'center',
             marginBottom: 20
           }}>
-            <h2 style={{ margin: 0, color: '#fff' }}>批量渲染</h2>
+            <h2 style={{ margin: 0, color: colors.text }}>批量渲染</h2>
             <button
             onClick={handleClose}
             style={{
               background: 'none',
               border: 'none',
-              color: '#888',
+              color: colors.textMuted,
               fontSize: 24,
               cursor: 'pointer'
             }}
@@ -415,10 +435,11 @@ export default function BatchRenderModal({
         ) : (
           <>
             {/* 输出模式 */}
-            <Section title="输出模式">
+            <Section title="输出模式" colors={colors}>
               <RadioGroup
                 value={outputMode}
                 onChange={setOutputMode}
+                colors={colors}
                 options={[
                   { value: OUTPUT_MODE.LIBRARY, label: '写入库 (更新正片和缩略图)' },
                   { value: OUTPUT_MODE.DOWNLOAD, label: '渲染后下载到本地' }
@@ -435,20 +456,20 @@ export default function BatchRenderModal({
                     style={{
                       flex: 1,
                       padding: '8px 12px',
-                      background: '#252525',
-                      border: '1px solid #333',
+                      background: colors.inputBg,
+                      border: `1px solid ${colors.inputBorder}`,
                       borderRadius: 4,
-                      color: '#fff'
+                      color: colors.text
                     }}
                   />
                   <button
                     onClick={handleSelectDir}
                     style={{
                       padding: '8px 16px',
-                      background: '#333',
-                      border: 'none',
+                      background: colors.buttonSecondary,
+                      border: `1px solid ${colors.inputBorder}`,
                       borderRadius: 4,
-                      color: '#fff',
+                      color: colors.buttonSecondaryText,
                       cursor: 'pointer'
                     }}
                   >
@@ -459,10 +480,11 @@ export default function BatchRenderModal({
             </Section>
             
             {/* 照片范围 */}
-            <Section title="照片范围">
+            <Section title="照片范围" colors={colors}>
               <RadioGroup
                 value={scope}
                 onChange={setScope}
+                colors={colors}
                 options={[
                   { 
                     value: SCOPE.SELECTED, 
@@ -483,10 +505,11 @@ export default function BatchRenderModal({
             </Section>
             
             {/* 处理参数 */}
-            <Section title="处理参数">
+            <Section title="处理参数" colors={colors}>
               <RadioGroup
                 value={paramsSource}
                 onChange={setParamsSource}
+                colors={colors}
                 options={[
                   { value: PARAMS_SOURCE.PRESET, label: '使用预设' },
                   { value: PARAMS_SOURCE.CUSTOM, label: '使用 FilmLab 调参', disabled: !onOpenFilmLab },
@@ -502,10 +525,10 @@ export default function BatchRenderModal({
                     style={{
                       width: '100%',
                       padding: '8px 12px',
-                      background: '#252525',
-                      border: '1px solid #333',
+                      background: colors.inputBg,
+                      border: `1px solid ${colors.inputBorder}`,
                       borderRadius: 4,
-                      color: '#fff'
+                      color: colors.text
                     }}
                   >
                     {presets.length === 0 && (
@@ -547,16 +570,17 @@ export default function BatchRenderModal({
                   lutIntensity={lutIntensity}
                   onLutSelect={(name) => setLutFileName(name)}
                   onIntensityChange={(v) => setLutIntensity(v)}
+                  colors={colors}
                 />
               )}
             </Section>
             
             {/* 输出设置 (仅下载模式) */}
             {outputMode === OUTPUT_MODE.DOWNLOAD && (
-              <Section title="输出设置">
+              <Section title="输出设置" colors={colors}>
                 <div style={{ display: 'flex', gap: 16 }}>
                   <div style={{ flex: 1 }}>
-                    <label style={{ display: 'block', color: '#888', fontSize: 12, marginBottom: 4 }}>
+                    <label style={{ display: 'block', color: colors.textMuted, fontSize: 12, marginBottom: 4 }}>
                       格式
                     </label>
                     <select
@@ -565,10 +589,10 @@ export default function BatchRenderModal({
                       style={{
                         width: '100%',
                         padding: '8px 12px',
-                        background: '#252525',
-                        border: '1px solid #333',
+                        background: colors.inputBg,
+                        border: `1px solid ${colors.inputBorder}`,
                         borderRadius: 4,
-                        color: '#fff'
+                        color: colors.text
                       }}
                     >
                       <option value="jpeg">JPEG</option>
@@ -578,7 +602,7 @@ export default function BatchRenderModal({
                   
                   {format === 'jpeg' && (
                     <div style={{ flex: 1 }}>
-                      <label style={{ display: 'block', color: '#888', fontSize: 12, marginBottom: 4 }}>
+                      <label style={{ display: 'block', color: colors.textMuted, fontSize: 12, marginBottom: 4 }}>
                         质量
                       </label>
                       <input
@@ -590,10 +614,10 @@ export default function BatchRenderModal({
                         style={{
                           width: '100%',
                           padding: '8px 12px',
-                          background: '#252525',
-                          border: '1px solid #333',
+                          background: colors.inputBg,
+                          border: `1px solid ${colors.inputBorder}`,
                           borderRadius: 4,
-                          color: '#fff'
+                          color: colors.text
                         }}
                       />
                     </div>
@@ -613,10 +637,10 @@ export default function BatchRenderModal({
                 onClick={handleClose}
                 style={{
                   padding: '10px 24px',
-                  background: '#333',
+                  background: colors.inputBorder,
                   border: 'none',
                   borderRadius: 6,
-                  color: '#fff',
+                  color: colors.text,
                   cursor: 'pointer'
                 }}
               >
@@ -627,7 +651,7 @@ export default function BatchRenderModal({
                 disabled={isSubmitting}
                 style={{
                   padding: '10px 24px',
-                  background: isSubmitting ? '#666' : '#2196F3',
+                  background: isSubmitting ? colors.textMuted : '#2196F3',
                   border: 'none',
                   borderRadius: 6,
                   color: '#fff',
@@ -649,11 +673,11 @@ export default function BatchRenderModal({
 // 子组件
 // ============================================================================
 
-function Section({ title, children }) {
+function Section({ title, children, colors }) {
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{
-        color: '#888',
+        color: colors?.textMuted || '#888',
         fontSize: 12,
         fontWeight: 600,
         marginBottom: 10,
@@ -666,7 +690,7 @@ function Section({ title, children }) {
   );
 }
 
-function RadioGroup({ value, onChange, options }) {
+function RadioGroup({ value, onChange, options, colors }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {options.map(opt => (
@@ -687,7 +711,7 @@ function RadioGroup({ value, onChange, options }) {
             disabled={opt.disabled}
             style={{ accentColor: '#2196F3' }}
           />
-          <span style={{ color: '#ddd' }}>{opt.label}</span>
+          <span style={{ color: colors?.textSecondary || '#ddd' }}>{opt.label}</span>
         </label>
       ))}
     </div>
@@ -697,7 +721,7 @@ function RadioGroup({ value, onChange, options }) {
 /**
  * LUT 选择器组件
  */
-function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange }) {
+function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange, colors }) {
   const [luts, setLuts] = useState([]);
   // const [loading, setLoading] = useState(false); // unused
   const fileInputRef = React.useRef(null);
@@ -777,10 +801,10 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
           style={{
             flex: 1,
             padding: '8px 12px',
-            background: '#252525',
-            border: '1px solid #333',
+            background: colors?.inputBg || '#252525',
+            border: `1px solid ${colors?.inputBorder || '#333'}`,
             borderRadius: 4,
-            color: '#fff'
+            color: colors?.text || '#fff'
           }}
         >
           <option value="">选择 LUT 文件...</option>
@@ -801,10 +825,10 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
           onClick={() => fileInputRef.current?.click()}
           style={{
             padding: '8px 12px',
-            background: '#333',
+            background: colors?.inputBorder || '#333',
             border: 'none',
             borderRadius: 4,
-            color: '#fff',
+            color: colors?.text || '#fff',
             cursor: 'pointer',
             whiteSpace: 'nowrap'
           }}
@@ -815,7 +839,7 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
       
       {/* 强度滑块 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <label style={{ color: '#888', fontSize: 12, minWidth: 40 }}>强度</label>
+        <label style={{ color: colors?.textMuted || '#888', fontSize: 12, minWidth: 40 }}>强度</label>
         <input
           type="range"
           min={0}
@@ -825,7 +849,7 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
           onChange={e => onIntensityChange(parseFloat(e.target.value))}
           style={{ flex: 1 }}
         />
-        <span style={{ color: '#fff', fontSize: 12, minWidth: 40, textAlign: 'right' }}>
+        <span style={{ color: colors?.text || '#fff', fontSize: 12, minWidth: 40, textAlign: 'right' }}>
           {Math.round(lutIntensity * 100)}%
         </span>
       </div>

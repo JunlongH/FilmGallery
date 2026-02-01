@@ -102,8 +102,8 @@ export default function TimelineMonthGrid() {
 
   if (labels.length === 0) {
     return (
-      <Card className="bg-content1">
-        <CardBody className="p-6 text-center text-default-500">
+      <Card className="bg-white dark:bg-zinc-900 shadow-none border-none">
+        <CardBody className="p-6 text-center text-zinc-500 dark:text-zinc-400">
           No timeline data available
         </CardBody>
       </Card>
@@ -111,14 +111,14 @@ export default function TimelineMonthGrid() {
   }
 
   return (
-    <Card className="bg-content1 shadow-sm">
+    <Card className="bg-white dark:bg-zinc-900 shadow-none border-none">
       <CardBody className="p-4 w-full overflow-hidden">
         {/* Month Headers */}
         <div 
-          className="grid gap-1 mb-4 w-full items-end pb-2 border-b border-divider/50"
+          className="grid gap-1 mb-4 w-full items-end pb-2 border-b border-zinc-200/50 dark:border-zinc-700/50"
           style={{ gridTemplateColumns: `220px repeat(${labels.length}, 1fr)` }}
         >
-          <div className="font-semibold text-default-600 text-sm px-2">
+          <div className="font-semibold text-zinc-600 dark:text-zinc-300 text-sm px-2">
             {selectedYear ? `Year ${selectedYear}` : 'Recent Activity'}
           </div>
           {labels.map(label => (
@@ -126,8 +126,8 @@ export default function TimelineMonthGrid() {
               key={label.idx}
               className="text-center"
             >
-              <div className="text-[10px] text-default-400 leading-tight">{label.year}</div>
-              <div className="text-xs font-semibold text-default-600">{label.monthName}</div>
+              <div className="text-[10px] text-zinc-400 dark:text-zinc-500 leading-tight">{label.year}</div>
+              <div className="text-xs font-semibold text-zinc-600 dark:text-zinc-300">{label.monthName}</div>
             </div>
           ))}
         </div>
@@ -146,7 +146,7 @@ export default function TimelineMonthGrid() {
               {/* Roll Label */}
               <div 
                 className="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer
-                           hover:bg-default-100 transition-colors"
+                           hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                 onClick={() => navigate(`/rolls/${row.id}`)}
               >
                 <Chip 
@@ -157,7 +157,7 @@ export default function TimelineMonthGrid() {
                 >
                   #{row.displaySeq ?? row.id}
                 </Chip>
-                <span className="text-sm text-default-700 truncate group-hover:text-primary transition-colors font-medium">
+                <span className="text-sm text-zinc-700 dark:text-zinc-200 truncate group-hover:text-primary transition-colors font-medium">
                   {row.title || 'Untitled'}
                 </span>
               </div>

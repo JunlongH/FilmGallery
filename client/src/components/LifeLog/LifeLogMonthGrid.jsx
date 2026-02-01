@@ -43,18 +43,18 @@ export default function LifeLogMonthGrid() {
   }, [currentDate]);
 
   return (
-    <Card className="bg-content1 shadow-lg overflow-hidden border border-divider">
+    <Card className="bg-white dark:bg-zinc-900 shadow-none overflow-hidden border-none">
       <CardBody className="p-0">
         <table className="w-full border-collapse table-fixed">
           {/* Weekday Headers */}
           <thead>
-            <tr className="bg-content2/50 border-b border-divider">
+            <tr className="bg-zinc-100/50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-700">
               {WEEKDAYS.map((day, idx) => (
                 <th 
                   key={day}
                   className={`
                     py-3 text-center text-xs font-semibold uppercase tracking-wide
-                    ${idx === 0 || idx === 6 ? 'text-primary' : 'text-default-500'}
+                    ${idx === 0 || idx === 6 ? 'text-primary' : 'text-zinc-500 dark:text-zinc-400'}
                   `}
                   style={{ width: '14.2857%' }}
                 >
@@ -67,7 +67,7 @@ export default function LifeLogMonthGrid() {
           {/* Calendar Weeks */}
           <tbody>
             {weeks.map((week, weekIndex) => (
-              <tr key={weekIndex} className="border-b border-divider/50 last:border-b-0">
+              <tr key={weekIndex} className="border-b border-zinc-200/50 dark:border-zinc-700/50 last:border-b-0">
                 {week.map((day, dayIndex) => {
                   const dateKey = format(day, 'yyyy-MM-dd');
                   const dayPhotos = photosByDay.get(dateKey) || [];
@@ -85,8 +85,8 @@ export default function LifeLogMonthGrid() {
                       key={day.toString()}
                       className={`
                         relative p-0 align-top
-                        border-r border-divider/50 last:border-r-0
-                        ${isCurrentMonth ? 'bg-content1' : 'bg-content2/30'}
+                        border-r border-zinc-200/50 dark:border-zinc-700/50 last:border-r-0
+                        ${isCurrentMonth ? 'bg-white dark:bg-zinc-800' : 'bg-zinc-100/30 dark:bg-zinc-800/30'}
                         ${hasPhotos ? 'cursor-pointer hover:ring-2 hover:ring-primary hover:ring-inset' : ''}
                         transition-all duration-200 group
                       `}
@@ -102,7 +102,7 @@ export default function LifeLogMonthGrid() {
                         ${!isCurrentMonth ? 'opacity-40' : ''}
                         ${cover ? 'text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]' : ''}
                         ${isToday ? 'bg-primary text-primary-foreground rounded-full w-6 h-6 flex items-center justify-center' : ''}
-                        ${!isToday && !cover ? 'text-default-500' : ''}
+                        ${!isToday && !cover ? 'text-zinc-500 dark:text-zinc-400' : ''}
                       `}>
                         {format(day, 'd')}
                       </div>

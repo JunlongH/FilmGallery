@@ -36,7 +36,7 @@ const itemVariants = {
 // Skeleton loading card - 1:1 grid style
 function SkeletonCard() {
   return (
-    <div className="rounded-xl overflow-hidden bg-content1">
+    <div className="rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
       <Skeleton className="aspect-square w-full" />
     </div>
   );

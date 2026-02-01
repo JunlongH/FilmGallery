@@ -15,7 +15,7 @@ export default function SettingsSection({
   action
 }) {
   return (
-    <Card className="border border-divider bg-content1">
+    <Card className="border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800">
       <CardHeader className="flex justify-between items-start gap-4">
         <div className="flex items-start gap-3">
           {Icon && (

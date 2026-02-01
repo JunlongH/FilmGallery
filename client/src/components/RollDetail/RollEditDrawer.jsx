@@ -47,6 +47,32 @@ import EquipmentSelector from '../EquipmentSelector';
 
 const PROCESS_PRESETS = ['C-41', 'E-6', 'BW', 'ECN-2'];
 
+// SKILL: HeroUI transparent background pattern
+const inputClassNames = {
+  base: "bg-transparent",
+  mainWrapper: "bg-transparent",
+  inputWrapper: "h-10 min-h-10 bg-transparent shadow-none",
+  innerWrapper: "bg-transparent",
+  input: "text-zinc-900 dark:text-zinc-100"
+};
+
+const selectClassNames = {
+  base: "bg-transparent",
+  trigger: "h-10 min-h-10 bg-transparent shadow-none",
+  innerWrapper: "bg-transparent",
+  value: "text-sm text-zinc-900 dark:text-zinc-100",
+  selectorIcon: "text-zinc-500 dark:text-zinc-400",
+  listbox: "bg-white dark:bg-zinc-800",
+  popoverContent: "bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700"
+};
+
+const textareaClassNames = {
+  base: "bg-transparent",
+  inputWrapper: "bg-transparent shadow-none",
+  innerWrapper: "bg-transparent",
+  input: "text-zinc-900 dark:text-zinc-100"
+};
+
 /**
  * Section wrapper for consistent styling
  */
@@ -54,7 +80,7 @@ function FormSection({ title, icon: Icon, children }) {
   return (
     <div className="space-y-4">
       {title && (
-        <div className="flex items-center gap-2 text-default-600 font-medium mb-3">
+        <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-medium mb-3">
           {Icon && <Icon size={18} />}
           <span>{title}</span>
         </div>
@@ -71,7 +97,7 @@ function FormField({ label, children, className = '' }) {
   return (
     <div className={`space-y-1 ${className}`}>
       {label && (
-        <label className="text-xs font-semibold text-default-500 uppercase tracking-wider">
+        <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">
           {label}
         </label>
       )}
@@ -183,10 +209,10 @@ export default function RollEditDrawer({
       }}
       classNames={{
         wrapper: "justify-end !items-start overflow-hidden",
-        base: "h-full max-h-screen rounded-none shadow-2xl bg-content1 border-l border-divider",
-        header: "border-b border-divider/50 p-4",
+        base: "h-full max-h-screen rounded-none shadow-2xl bg-white dark:bg-zinc-800 border-l border-zinc-200 dark:border-zinc-700",
+        header: "border-b border-zinc-200/50 dark:border-zinc-700/50 p-4",
         body: "p-0",
-        footer: "border-t border-divider/50 p-4",
+        footer: "border-t border-zinc-200/50 dark:border-zinc-700/50 p-4",
         backdrop: "bg-black/20 backdrop-blur-[2px]"
       }}
       scrollBehavior="inside"
@@ -198,7 +224,7 @@ export default function RollEditDrawer({
           </Button>
           <div className="flex flex-col flex-1">
             <span className="text-lg font-bold leading-tight">Edit Roll</span>
-            <span className="text-xs text-default-500 font-normal">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 font-normal">
               #{roll.display_seq || roll.id} · {roll.title || 'Untitled'}
             </span>
           </div>
@@ -217,7 +243,7 @@ export default function RollEditDrawer({
                 key="basic"
                 aria-label="Basic Information"
                 title={
-                  <div className="flex items-center gap-2 text-default-600 font-medium">
+                  <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-medium">
                     <Settings2 size={18} />
                     <span>Basic Information</span>
                   </div>
@@ -231,6 +257,7 @@ export default function RollEditDrawer({
                       placeholder="Roll title..."
                       variant="bordered"
                       size="sm"
+                      classNames={inputClassNames}
                     />
                   </FormField>
 
@@ -242,6 +269,7 @@ export default function RollEditDrawer({
                         onValueChange={(v) => updateField('start_date', v)}
                         variant="bordered"
                         size="sm"
+                        classNames={inputClassNames}
                         startContent={<Calendar size={14} className="text-default-400" />}
                       />
                     </FormField>
@@ -252,7 +280,8 @@ export default function RollEditDrawer({
                         onValueChange={(v) => updateField('end_date', v)}
                         variant="bordered"
                         size="sm"
-                        startContent={<Calendar size={14} className="text-default-400" />}
+                        classNames={inputClassNames}
+                        startContent={<Calendar size={14} className="text-zinc-400 dark:text-zinc-500" />}
                       />
                     </FormField>
                   </div>
@@ -268,7 +297,7 @@ export default function RollEditDrawer({
                     </FormField>
                     <FormField label="Lens">
                       {selectedCamera?.has_fixed_lens ? (
-                        <div className="h-10 px-3 flex items-center bg-default-100 rounded-medium text-default-500 text-sm">
+                        <div className="h-10 px-3 flex items-center bg-zinc-100 dark:bg-zinc-800 rounded-medium text-zinc-500 dark:text-zinc-400 text-sm">
                           Fixed: {selectedCamera.fixed_lens_focal_length || 'Built-in'}
                           {selectedCamera.fixed_lens_max_aperture && ` f/${selectedCamera.fixed_lens_max_aperture}`}
                         </div>
@@ -291,7 +320,8 @@ export default function RollEditDrawer({
                       placeholder="Photographer name..."
                       variant="bordered"
                       size="sm"
-                      startContent={<User size={14} className="text-default-400" />}
+                      classNames={inputClassNames}
+                      startContent={<User size={14} className="text-zinc-400 dark:text-zinc-500" />}
                       list="photographer-suggestions"
                     />
                     <datalist id="photographer-suggestions">
@@ -313,7 +343,8 @@ export default function RollEditDrawer({
                       placeholder="Select film..."
                       variant="bordered"
                       size="sm"
-                      startContent={<Film size={14} className="text-default-400" />}
+                      classNames={selectClassNames}
+                      startContent={<Film size={14} className="text-zinc-400 dark:text-zinc-500" />}
                     >
                       {availableFilms.map(f => (
                         <SelectItem key={String(f.id)} value={String(f.id)}>
@@ -330,6 +361,7 @@ export default function RollEditDrawer({
                       placeholder="Additional notes..."
                       variant="bordered"
                       size="sm"
+                      classNames={textareaClassNames}
                       minRows={2}
                       maxRows={4}
                     />
@@ -342,7 +374,7 @@ export default function RollEditDrawer({
                 key="locations"
                 aria-label="Shooting Locations"
                 title={
-                  <div className="flex items-center gap-2 text-default-600 font-medium">
+                  <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-medium">
                     <MapPin size={18} />
                     <span>Locations</span>
                     {selectedLocations.length > 0 && (
@@ -370,7 +402,7 @@ export default function RollEditDrawer({
                       </Chip>
                     ))}
                     {selectedLocations.length === 0 && (
-                      <span className="text-sm text-default-400 italic">No locations added</span>
+                      <span className="text-sm text-zinc-400 dark:text-zinc-500 italic">No locations added</span>
                     )}
                   </div>
                 </div>
@@ -381,7 +413,7 @@ export default function RollEditDrawer({
                 key="development"
                 aria-label="Development Info"
                 title={
-                  <div className="flex items-center gap-2 text-default-600 font-medium">
+                  <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-300 font-medium">
                     <Beaker size={18} />
                     <span>Development</span>
                   </div>
@@ -396,7 +428,8 @@ export default function RollEditDrawer({
                         placeholder="Lab name..."
                         variant="bordered"
                         size="sm"
-                        startContent={<Building2 size={14} className="text-default-400" />}
+                        classNames={inputClassNames}
+                        startContent={<Building2 size={14} className="text-zinc-400 dark:text-zinc-500" />}
                       />
                     </FormField>
                     <FormField label="Process">
@@ -406,6 +439,7 @@ export default function RollEditDrawer({
                         placeholder="Select..."
                         variant="bordered"
                         size="sm"
+                        classNames={selectClassNames}
                       >
                         {PROCESS_PRESETS.map(p => (
                           <SelectItem key={p} value={p}>{p}</SelectItem>
@@ -422,6 +456,7 @@ export default function RollEditDrawer({
                         onValueChange={(v) => updateField('develop_date', v)}
                         variant="bordered"
                         size="sm"
+                        classNames={inputClassNames}
                       />
                     </FormField>
                     <FormField label="Develop Cost">
@@ -432,7 +467,8 @@ export default function RollEditDrawer({
                         placeholder="0.00"
                         variant="bordered"
                         size="sm"
-                        startContent={<DollarSign size={14} className="text-default-400" />}
+                        classNames={inputClassNames}
+                        startContent={<DollarSign size={14} className="text-zinc-400 dark:text-zinc-500" />}
                       />
                     </FormField>
                   </div>
@@ -445,6 +481,7 @@ export default function RollEditDrawer({
                         placeholder="Where purchased..."
                         variant="bordered"
                         size="sm"
+                        classNames={inputClassNames}
                       />
                     </FormField>
                     <FormField label="Purchase Cost">
@@ -455,7 +492,8 @@ export default function RollEditDrawer({
                         placeholder="0.00"
                         variant="bordered"
                         size="sm"
-                        startContent={<DollarSign size={14} className="text-default-400" />}
+                        classNames={inputClassNames}
+                        startContent={<DollarSign size={14} className="text-zinc-400 dark:text-zinc-500" />}
                       />
                     </FormField>
                   </div>
@@ -466,6 +504,7 @@ export default function RollEditDrawer({
                       onValueChange={(v) => updateField('develop_note', v)}
                       placeholder="Development notes..."
                       variant="bordered"
+                      classNames={textareaClassNames}
                       size="sm"
                       minRows={2}
                     />
@@ -501,6 +540,7 @@ export default function RollEditDrawer({
                         placeholder="Lab name..."
                         variant="bordered"
                         size="sm"
+                        classNames={inputClassNames}
                       />
                     </FormField>
                   </div>
@@ -513,6 +553,7 @@ export default function RollEditDrawer({
                         onValueChange={(v) => updateField('scan_date', v)}
                         variant="bordered"
                         size="sm"
+                        classNames={inputClassNames}
                       />
                     </FormField>
                     <FormField label="Resolution (DPI)">
@@ -523,6 +564,7 @@ export default function RollEditDrawer({
                         placeholder="e.g. 3200"
                         variant="bordered"
                         size="sm"
+                        classNames={inputClassNames}
                       />
                     </FormField>
                   </div>
@@ -535,6 +577,7 @@ export default function RollEditDrawer({
                         placeholder="e.g. SilverFast"
                         variant="bordered"
                         size="sm"
+                        classNames={inputClassNames}
                       />
                     </FormField>
                     <FormField label="Scan Cost">
@@ -545,7 +588,8 @@ export default function RollEditDrawer({
                         placeholder="0.00"
                         variant="bordered"
                         size="sm"
-                        startContent={<DollarSign size={14} className="text-default-400" />}
+                        classNames={inputClassNames}
+                        startContent={<DollarSign size={14} className="text-zinc-400 dark:text-zinc-500" />}
                       />
                     </FormField>
                   </div>
@@ -557,6 +601,7 @@ export default function RollEditDrawer({
                       placeholder="Scan parameters, issues..."
                       variant="bordered"
                       size="sm"
+                      classNames={textareaClassNames}
                       minRows={2}
                     />
                   </FormField>

@@ -1,0 +1,463 @@
+/**
+ * CPU Render Service - 本地 CPU 渲染服务
+ * 
+ * 当 GPU 不可用时，使用 RenderCore 进行纯 JavaScript CPU 渲染。
+ * 此模块提供与 GPU 渲染相同的接口，确保渲染结果一致性。
+ * 
+ * @module CpuRenderService
+ * @since 2026-01-31
+ */
+
+import { RenderCore } from '@filmgallery/shared';
+import { getApiBase } from '../api';
+
+// ============================================================================
+// 常量定义
+// ============================================================================
+
+const PREVIEW_MAX_WIDTH = 1400;
+const EXPORT_MAX_WIDTH = 4000;
+const JPEG_QUALITY = 0.95;
+const JPEG_HQ_QUALITY = 1.0;
+
+// ============================================================================
+// 图像加载工具
+// ============================================================================
+
+/**
+ * 加载图片到 Canvas
+ * @param {string} imageUrl - 图片 URL
+ * @param {number|null} maxWidth - 最大宽度限制（null 表示不限制）
+ * @returns {Promise<{canvas, ctx, width, height, originalWidth, originalHeight, image}>}
+ */
+export async function loadImageToCanvas(imageUrl, maxWidth = null) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    
+    img.onload = () => {
+      const scale = maxWidth ? Math.min(1, maxWidth / img.width) : 1;
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, w, h);
+      
+      resolve({ 
+        canvas, 
+        ctx, 
+        width: w, 
+        height: h, 
+        originalWidth: img.width, 
+        originalHeight: img.height,
+        image: img
+      });
+    };
+    
+    img.onerror = (e) => {
+      reject(new Error(`Failed to load image: ${imageUrl}`));
+    };
+    
+    // 设置超时
+    const timeout = setTimeout(() => {
+      reject(new Error('Image load timeout'));
+    }, 30000);
+    
+    img.onload = function() {
+      clearTimeout(timeout);
+      const scale = maxWidth ? Math.min(1, maxWidth / img.width) : 1;
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, 0, 0, w, h);
+      
+      resolve({ 
+        canvas, 
+        ctx, 
+        width: w, 
+        height: h, 
+        originalWidth: img.width, 
+        originalHeight: img.height,
+        image: img
+      });
+    };
+    
+    img.src = imageUrl;
+  });
+}
+
+// ============================================================================
+// 几何变换工具
+// ============================================================================
+
+/**
+ * 应用几何变换（旋转 + 裁剪）
+ * @param {HTMLCanvasElement} sourceCanvas - 源 Canvas
+ * @param {Object} params - 参数对象
+ * @returns {HTMLCanvasElement} 变换后的 Canvas
+ */
+export function applyGeometry(sourceCanvas, params) {
+  const rotation = (params.rotation || 0) + (params.orientation || 0);
+  const cropRect = params.cropRect || { x: 0, y: 0, w: 1, h: 1 };
+  
+  // 无需变换的情况
+  if (rotation === 0 && 
+      cropRect.x === 0 && cropRect.y === 0 && 
+      cropRect.w === 1 && cropRect.h === 1) {
+    return sourceCanvas;
+  }
+  
+  const rad = (rotation * Math.PI) / 180;
+  const sin = Math.abs(Math.sin(rad));
+  const cos = Math.abs(Math.cos(rad));
+  
+  const srcW = sourceCanvas.width;
+  const srcH = sourceCanvas.height;
+  const rotatedW = srcW * cos + srcH * sin;
+  const rotatedH = srcW * sin + srcH * cos;
+  
+  // 计算裁剪区域（像素坐标）
+  let cropX = Math.round(cropRect.x * rotatedW);
+  let cropY = Math.round(cropRect.y * rotatedH);
+  let cropW = Math.max(1, Math.round(cropRect.w * rotatedW));
+  let cropH = Math.max(1, Math.round(cropRect.h * rotatedH));
+  
+  // 边界检查
+  cropX = Math.max(0, Math.min(cropX, Math.round(rotatedW) - 1));
+  cropY = Math.max(0, Math.min(cropY, Math.round(rotatedH) - 1));
+  cropW = Math.min(cropW, Math.round(rotatedW) - cropX);
+  cropH = Math.min(cropH, Math.round(rotatedH) - cropY);
+  
+  const outCanvas = document.createElement('canvas');
+  outCanvas.width = cropW;
+  outCanvas.height = cropH;
+  const ctx = outCanvas.getContext('2d');
+  
+  ctx.save();
+  ctx.translate(-cropX, -cropY);
+  ctx.translate(rotatedW / 2, rotatedH / 2);
+  ctx.rotate(rad);
+  ctx.drawImage(sourceCanvas, -srcW / 2, -srcH / 2);
+  ctx.restore();
+  
+  return outCanvas;
+}
+
+// ============================================================================
+// RenderCore 像素处理
+// ============================================================================
+
+/**
+ * 使用 RenderCore 处理 Canvas 像素
+ * @param {HTMLCanvasElement} canvas - 要处理的 Canvas
+ * @param {Object} params - RenderCore 参数
+ * @returns {HTMLCanvasElement} 处理后的 Canvas（同一个）
+ */
+export function processCanvasWithRenderCore(canvas, params) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  
+  // 创建 RenderCore 实例并预计算 LUT
+  const core = new RenderCore(params);
+  core.prepareLUTs();
+  
+  // 像素处理
+  const length = data.length;
+  for (let i = 0; i < length; i += 4) {
+    // 跳过透明像素
+    if (data[i + 3] === 0) continue;
+    
+    const [r, g, b] = core.processPixel(data[i], data[i + 1], data[i + 2]);
+    data[i] = r;
+    data[i + 1] = g;
+    data[i + 2] = b;
+  }
+  
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
+// ============================================================================
+// Canvas 转 Blob
+// ============================================================================
+
+/**
+ * 将 Canvas 转换为 Blob
+ * @param {HTMLCanvasElement} canvas - 源 Canvas
+ * @param {string} format - 输出格式: 'jpeg' | 'png' | 'tiff16'
+ * @param {number} quality - JPEG 质量 (0-1)
+ * @returns {Promise<{blob: Blob, contentType: string, warning?: string}>}
+ */
+export async function canvasToBlob(canvas, format = 'jpeg', quality = JPEG_QUALITY) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (format === 'jpeg') {
+        canvas.toBlob(
+          blob => {
+            if (blob) {
+              resolve({ blob, contentType: 'image/jpeg' });
+            } else {
+              reject(new Error('Failed to create JPEG blob'));
+            }
+          },
+          'image/jpeg',
+          quality
+        );
+      } else if (format === 'png') {
+        canvas.toBlob(
+          blob => {
+            if (blob) {
+              resolve({ blob, contentType: 'image/png' });
+            } else {
+              reject(new Error('Failed to create PNG blob'));
+            }
+          },
+          'image/png'
+        );
+      } else if (format === 'tiff16') {
+        // Canvas 不支持 TIFF，使用 PNG 作为无损替代
+        canvas.toBlob(
+          blob => {
+            if (blob) {
+              resolve({ 
+                blob, 
+                contentType: 'image/png',
+                warning: 'TIFF16 not supported in CPU mode, using PNG as lossless alternative'
+              });
+            } else {
+              reject(new Error('Failed to create PNG blob (TIFF fallback)'));
+            }
+          },
+          'image/png'
+        );
+      } else {
+        reject(new Error(`Unsupported format: ${format}`));
+      }
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+// ============================================================================
+// 完整渲染流程
+// ============================================================================
+
+/**
+ * 本地 CPU 预览渲染
+ * @param {Object} options - 渲染选项
+ * @returns {Promise<{ok: boolean, blob?: Blob, error?: string, source: string}>}
+ */
+export async function localCpuPreview({ imageUrl, params, maxWidth = PREVIEW_MAX_WIDTH }) {
+  try {
+    console.log('[CpuRenderService] Starting CPU preview render');
+    const startTime = performance.now();
+    
+    // 加载图片
+    const { canvas, width, height } = await loadImageToCanvas(imageUrl, maxWidth);
+    console.log(`[CpuRenderService] Image loaded: ${width}x${height}`);
+    
+    // 像素处理
+    processCanvasWithRenderCore(canvas, params);
+    
+    // 应用几何变换
+    const finalCanvas = applyGeometry(canvas, params);
+    
+    // 转换为 Blob
+    const { blob } = await canvasToBlob(finalCanvas, 'jpeg', JPEG_QUALITY);
+    
+    const elapsed = performance.now() - startTime;
+    console.log(`[CpuRenderService] CPU preview completed in ${elapsed.toFixed(0)}ms`);
+    
+    return { ok: true, blob, source: 'local-cpu' };
+  } catch (e) {
+    console.error('[CpuRenderService] CPU preview failed:', e);
+    return { ok: false, error: e.message || 'CPU preview failed', source: 'local-cpu' };
+  }
+}
+
+/**
+ * 本地 CPU 高质量渲染
+ * @param {Object} options - 渲染选项
+ * @returns {Promise<{ok: boolean, blob?: Blob, contentType?: string, error?: string, source: string, warning?: string}>}
+ */
+export async function localCpuRender({ imageUrl, params, format = 'jpeg', maxWidth = null }) {
+  try {
+    console.log('[CpuRenderService] Starting CPU render, format:', format);
+    const startTime = performance.now();
+    
+    // 加载图片（不限制宽度以保持原始分辨率）
+    const effectiveMaxWidth = maxWidth || EXPORT_MAX_WIDTH;
+    const { canvas, width, height } = await loadImageToCanvas(imageUrl, effectiveMaxWidth);
+    console.log(`[CpuRenderService] Image loaded: ${width}x${height}`);
+    
+    // 像素处理
+    processCanvasWithRenderCore(canvas, params);
+    
+    // 应用几何变换
+    const finalCanvas = applyGeometry(canvas, params);
+    
+    // 转换为 Blob
+    const quality = format === 'jpeg' ? JPEG_HQ_QUALITY : undefined;
+    const { blob, contentType, warning } = await canvasToBlob(finalCanvas, format, quality);
+    
+    const elapsed = performance.now() - startTime;
+    console.log(`[CpuRenderService] CPU render completed in ${elapsed.toFixed(0)}ms, size: ${(blob.size / 1024).toFixed(0)}KB`);
+    
+    return { 
+      ok: true, 
+      blob, 
+      contentType, 
+      source: 'local-cpu',
+      ...(warning && { warning })
+    };
+  } catch (e) {
+    console.error('[CpuRenderService] CPU render failed:', e);
+    return { ok: false, error: e.message || 'CPU render failed', source: 'local-cpu' };
+  }
+}
+
+/**
+ * 本地 CPU 导出渲染（含上传）
+ * @param {Object} options - 渲染选项
+ * @param {Function} uploadFn - 上传函数
+ * @returns {Promise<{ok: boolean, photo?: object, filePath?: string, error?: string, source: string}>}
+ */
+export async function localCpuExport({ photoId, imageUrl, params, format = 'jpeg' }, uploadFn) {
+  try {
+    console.log('[CpuRenderService] Starting CPU export, photoId:', photoId);
+    
+    // 渲染图片
+    const renderResult = await localCpuRender({ imageUrl, params, format });
+    
+    if (!renderResult.ok) {
+      return renderResult;
+    }
+    
+    // 上传到服务器
+    if (uploadFn) {
+      const ext = format === 'tiff16' ? 'png' : (format === 'jpeg' ? 'jpg' : format);
+      const uploadResult = await uploadFn(renderResult.blob, {
+        photoId,
+        filename: `filmlab_${photoId}_${Date.now()}.${ext}`,
+        type: 'positive'
+      });
+      
+      if (!uploadResult.ok) {
+        // 上传失败但渲染成功
+        return { 
+          ok: false, 
+          error: uploadResult.error || 'Upload failed',
+          blob: renderResult.blob,
+          source: 'local-cpu-no-upload'
+        };
+      }
+      
+      return {
+        ok: true,
+        photo: uploadResult.photo,
+        filePath: uploadResult.filePath,
+        source: 'local-cpu-uploaded'
+      };
+    }
+    
+    // 无上传函数，仅返回渲染结果
+    return {
+      ok: true,
+      blob: renderResult.blob,
+      contentType: renderResult.contentType,
+      source: 'local-cpu'
+    };
+  } catch (e) {
+    console.error('[CpuRenderService] CPU export failed:', e);
+    return { ok: false, error: e.message || 'CPU export failed', source: 'local-cpu' };
+  }
+}
+
+// ============================================================================
+// 辅助函数
+// ============================================================================
+
+/**
+ * 获取照片的图片 URL
+ * @param {number} photoId - 照片 ID
+ * @param {string} sourceType - 源类型: 'original' | 'negative' | 'positive'
+ * @returns {Promise<string|null>}
+ */
+export async function getPhotoImageUrl(photoId, sourceType = 'original') {
+  try {
+    const apiBase = getApiBase();
+    const res = await fetch(`${apiBase}/api/photos/${photoId}`);
+    if (res.ok) {
+      const photo = await res.json();
+      switch (sourceType) {
+        case 'positive':
+          return photo.positive_rel_path ? `${apiBase}/uploads/${photo.positive_rel_path}` : null;
+        case 'negative':
+          return photo.negative_rel_path ? `${apiBase}/uploads/${photo.negative_rel_path}` :
+                 photo.original_rel_path ? `${apiBase}/uploads/${photo.original_rel_path}` :
+                 photo.full_rel_path ? `${apiBase}/uploads/${photo.full_rel_path}` : null;
+        case 'original':
+        default:
+          return photo.original_rel_path ? `${apiBase}/uploads/${photo.original_rel_path}` :
+                 photo.negative_rel_path ? `${apiBase}/uploads/${photo.negative_rel_path}` :
+                 photo.full_rel_path ? `${apiBase}/uploads/${photo.full_rel_path}` : null;
+      }
+    }
+  } catch (e) {
+    console.error('[CpuRenderService] Failed to get photo info:', e);
+  }
+  return null;
+}
+
+/**
+ * 检查 CPU 渲染是否可用
+ * @returns {boolean}
+ */
+export function isCpuRenderAvailable() {
+  // CPU 渲染在所有支持 Canvas 的环境中可用
+  if (typeof document === 'undefined') return false;
+  
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    return !!ctx;
+  } catch {
+    return false;
+  }
+}
+
+// ============================================================================
+// 导出
+// ============================================================================
+
+const CpuRenderService = {
+  // 核心渲染函数
+  localCpuPreview,
+  localCpuRender,
+  localCpuExport,
+  
+  // 工具函数
+  loadImageToCanvas,
+  applyGeometry,
+  processCanvasWithRenderCore,
+  canvasToBlob,
+  getPhotoImageUrl,
+  isCpuRenderAvailable,
+  
+  // 常量
+  PREVIEW_MAX_WIDTH,
+  EXPORT_MAX_WIDTH,
+  JPEG_QUALITY,
+  JPEG_HQ_QUALITY
+};
+
+export default CpuRenderService;

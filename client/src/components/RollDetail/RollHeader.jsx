@@ -59,12 +59,12 @@ function InfoItem({ icon: Icon, label, children, isEmpty }) {
   if (isEmpty) return null;
   return (
     <div className="flex items-start gap-3">
-      <div className="p-2 rounded-lg bg-white/5 text-default-400 shrink-0">
+      <div className="p-2 rounded-lg bg-white/5 text-zinc-400 dark:text-zinc-500 shrink-0">
         <Icon size={18} />
       </div>
       <div className="min-w-0">
-        <p className="text-[11px] font-medium text-default-500 uppercase tracking-wider mb-1">{label}</p>
-        <div className="text-sm text-foreground">{children}</div>
+        <p className="text-[11px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">{label}</p>
+        <div className="text-sm text-zinc-900 dark:text-zinc-100">{children}</div>
       </div>
     </div>
   );
@@ -90,7 +90,7 @@ export default function RollHeader({ roll, onEdit, coverUrl }) {
 
   return (
     <div className="mb-6">
-      <div className="relative rounded-2xl overflow-hidden bg-content1 border border-divider">
+      <div className="relative rounded-2xl overflow-hidden bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
         {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5" />
         
@@ -121,7 +121,7 @@ export default function RollHeader({ roll, onEdit, coverUrl }) {
             <div className={coverUrl ? 'hidden lg:flex justify-between items-start mb-6' : 'flex justify-between items-start mb-6'}>
               <div>
                 <span className="text-primary font-bold text-base opacity-80">#{displaySeq}</span>
-                <h1 className="text-2xl font-bold text-foreground mt-1 leading-tight">
+                <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100 mt-1 leading-tight">
                   {roll.title || 'Untitled Roll'}
                 </h1>
               </div>
@@ -174,7 +174,7 @@ export default function RollHeader({ roll, onEdit, coverUrl }) {
               </InfoItem>
 
               <InfoItem icon={FileText} label="Notes" isEmpty={!roll?.notes}>
-                <span className="text-sm text-default-400">{roll.notes}</span>
+                <span className="text-sm text-zinc-400 dark:text-zinc-500">{roll.notes}</span>
               </InfoItem>
             </div>
           </div>

@@ -37,7 +37,7 @@ export default function GeneralSettings({
   // Section Component using HeroUI Card
   const Section = ({ title, icon: Icon, children, variant = "default", className = "" }) => {
     const variants = {
-      default: "bg-content1 border-divider",
+      default: "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700",
       primary: "bg-primary/5 border-primary/20",
       warning: "bg-warning/5 border-warning/20"
     };
@@ -69,7 +69,7 @@ export default function GeneralSettings({
             Use the following information to connect your Mobile or Watch app to this PC.
           </p>
           <div className="flex flex-wrap gap-4">
-            <Card shadow="none" className="bg-background border border-divider min-w-[120px]">
+            <Card shadow="none" className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 min-w-[120px]">
               <CardBody className="p-3">
                 <div className="text-xs text-default-500 uppercase tracking-wider mb-1">Port</div>
                 <div className="text-xl font-bold font-mono">
@@ -77,16 +77,16 @@ export default function GeneralSettings({
                 </div>
               </CardBody>
             </Card>
-            <Card shadow="none" className="bg-background border border-divider flex-1 min-w-[200px]">
+            <Card shadow="none" className="bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex-1 min-w-[200px]">
               <CardBody className="p-3">
-                <div className="text-xs text-default-500 uppercase tracking-wider mb-1">API Address</div>
-                <code className="text-sm font-mono text-foreground break-all">
+                <div className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wider mb-1">API Address</div>
+                <code className="text-sm font-mono text-zinc-900 dark:text-zinc-100 break-all">
                   {window.__electron?.API_BASE || 'http://127.0.0.1:4000'}
                 </code>
               </CardBody>
             </Card>
           </div>
-          <div className="mt-4 flex gap-2 text-sm text-primary/80 bg-background/50 p-3 rounded-lg border border-primary/10">
+          <div className="mt-4 flex gap-2 text-sm text-primary/80 bg-zinc-50/50 dark:bg-zinc-900/50 p-3 rounded-lg border border-primary/10">
             <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <p>On your mobile device, enter this computer's IP address. The app will automatically discover the service port.</p>
           </div>
@@ -94,8 +94,8 @@ export default function GeneralSettings({
       )}
 
       {!isElectron && (
-        <Card shadow="sm" className="bg-content2 border border-divider">
-          <CardBody className="p-4 text-center text-sm text-default-500">
+        <Card shadow="sm" className="bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+          <CardBody className="p-4 text-center text-sm text-zinc-500 dark:text-zinc-400">
             Storage path settings are managed by the host environment (Docker/Server).
           </CardBody>
         </Card>
@@ -110,11 +110,11 @@ export default function GeneralSettings({
           
           {actualPaths && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-content2 p-3 rounded-lg border border-divider">
+              <div className="bg-zinc-100 dark:bg-zinc-800 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
                 <div className="text-xs text-default-500 mb-1">Database Location</div>
                 <code className="text-xs font-mono break-all">{actualPaths.databasePath}</code>
               </div>
-              <div className="bg-content2 p-3 rounded-lg border border-divider">
+              <div className="bg-zinc-100 dark:bg-zinc-800 p-3 rounded-lg border border-zinc-200 dark:border-zinc-700">
                 <div className="text-xs text-default-500 mb-1">Photos Location</div>
                 <code className="text-xs font-mono break-all">{actualPaths.uploadsDir}</code>
               </div>
@@ -122,7 +122,7 @@ export default function GeneralSettings({
           )}
           
           {serverInfo && (
-            <div className="mt-4 flex gap-6 text-sm text-default-600 border-t border-divider pt-4">
+            <div className="mt-4 flex gap-6 text-sm text-default-600 border-t border-zinc-200 dark:border-zinc-700 pt-4">
               <div>
                 <span className="text-default-400 mr-2">Mode:</span>
                 <span className="font-medium">{serverInfo.serverMode || 'unknown'}</span>
@@ -149,7 +149,7 @@ export default function GeneralSettings({
             Moving this to a <strong>OneDrive</strong> or <strong>Dropbox</strong> folder enables syncing across devices.
           </p>
           
-          <Card shadow="none" className="bg-content2/50 border border-divider">
+          <Card shadow="none" className="bg-zinc-100/50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
             <CardBody className="p-4 flex flex-col sm:flex-row gap-3 items-start sm:items-center">
               <div className="flex-1 min-w-0">
                 <div className="text-xs text-default-500 mb-1">Current Root Path</div>
@@ -187,7 +187,7 @@ export default function GeneralSettings({
       {/* Write-Through Mode */}
       {!isRemoteServer && (
         <Section title="Cloud Sync Optimization" icon={Shield}>
-          <div className="flex items-start justify-between gap-4 p-4 bg-content2/50 rounded-xl border border-divider">
+          <div className="flex items-start justify-between gap-4 p-4 bg-zinc-100/50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700">
             <div className="flex-1">
               <h4 className="font-medium text-foreground">Database Write-through</h4>
               <p className="text-sm text-default-500 mt-1">
@@ -229,7 +229,7 @@ export default function GeneralSettings({
               </Button>
           </div>
           <div className="mt-2">
-             <code className="text-xs bg-content2 px-2 py-1 rounded text-default-500">
+             <code className="text-xs bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded text-default-500">
                 {config.uploadsRoot || '(Default)'}
              </code>
           </div>

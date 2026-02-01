@@ -85,6 +85,10 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
   const canvasRef = useRef(null);
   const abortControllerRef = useRef(null);
 
+  // Theme detection
+  const isDark = document.documentElement.classList.contains('dark') || 
+                 document.documentElement.getAttribute('data-theme') === 'dark';
+
   // Helper to get image path based on selected source
   const getImagePath = useCallback((photo) => {
     switch (imageSource) {
@@ -440,8 +444,8 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           )}
 
           {/* Info */}
-          <div style={{ marginBottom: 20, padding: 16, background: '#f8f9fa', borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: '#666' }}>
+          <div style={{ marginBottom: 20, padding: 16, background: isDark ? '#27272a' : '#f8f9fa', borderRadius: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: isDark ? '#a1a1aa' : '#666' }}>
               <span><strong>{photos.length}</strong> photos</span>
               <span><strong>{COLUMNS}</strong> columns × <strong>{rows}</strong> rows</span>
               <span>Max size: <strong>4000px</strong></span>
@@ -450,7 +454,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
           {/* Preview */}
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: '#333' }}>
+            <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: isDark ? '#ECEDEE' : '#333' }}>
               Preview
             </label>
             <div style={{ 
@@ -475,7 +479,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
           {/* Style selector */}
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, color: '#333' }}>
+            <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, color: isDark ? '#ECEDEE' : '#333' }}>
               Choose Style
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
@@ -486,9 +490,9 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
                   disabled={isGenerating}
                   style={{
                     padding: 16,
-                    border: selectedStyle === key ? `3px solid ${preset.preview}` : '2px solid #ddd',
+                    border: selectedStyle === key ? `3px solid ${preset.preview}` : (isDark ? '2px solid #3f3f46' : '2px solid #ddd'),
                     borderRadius: 8,
-                    background: selectedStyle === key ? '#f0f9ff' : '#fff',
+                    background: selectedStyle === key ? (isDark ? '#1e3a5f' : '#f0f9ff') : (isDark ? '#27272a' : '#fff'),
                     cursor: isGenerating ? 'not-allowed' : 'pointer',
                     textAlign: 'left',
                     transition: 'all 0.2s',
@@ -502,12 +506,12 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
                         height: 20, 
                         borderRadius: 4, 
                         background: preset.preview,
-                        border: '1px solid #ccc'
+                        border: isDark ? '1px solid #52525b' : '1px solid #ccc'
                       }}
                     />
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{preset.name}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: isDark ? '#ECEDEE' : '#333' }}>{preset.name}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: '#666' }}>{preset.description}</div>
+                  <div style={{ fontSize: 12, color: isDark ? '#a1a1aa' : '#666' }}>{preset.description}</div>
                 </button>
               ))}
             </div>
@@ -515,7 +519,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
           {/* Image source selector */}
           <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, color: '#333' }}>
+            <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, color: isDark ? '#ECEDEE' : '#333' }}>
               Image Source
             </label>
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -526,16 +530,16 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
                   disabled={isGenerating}
                   style={{
                     padding: '10px 16px',
-                    border: imageSource === key ? '2px solid #0ea5e9' : '2px solid #ddd',
+                    border: imageSource === key ? '2px solid #0ea5e9' : (isDark ? '2px solid #3f3f46' : '2px solid #ddd'),
                     borderRadius: 8,
-                    background: imageSource === key ? '#f0f9ff' : '#fff',
+                    background: imageSource === key ? (isDark ? '#1e3a5f' : '#f0f9ff') : (isDark ? '#27272a' : '#fff'),
                     cursor: isGenerating ? 'not-allowed' : 'pointer',
                     transition: 'all 0.2s',
                     opacity: isGenerating ? 0.6 : 1
                   }}
                 >
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>{source.name}</div>
-                  <div style={{ fontSize: 11, color: '#666', marginTop: 2 }}>{source.description}</div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: isDark ? '#ECEDEE' : '#333' }}>{source.name}</div>
+                  <div style={{ fontSize: 11, color: isDark ? '#a1a1aa' : '#666', marginTop: 2 }}>{source.description}</div>
                 </button>
               ))}
             </div>
@@ -545,7 +549,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           {isGenerating && (
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 14, color: '#666' }}>{progress.message}</span>
+                <span style={{ fontSize: 14, color: isDark ? '#a1a1aa' : '#666' }}>{progress.message}</span>
                 <span style={{ fontSize: 14, fontWeight: 600, color: '#0ea5e9' }}>
                   {progress.percentage}%
                 </span>
@@ -553,7 +557,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
               <div style={{ 
                 width: '100%', 
                 height: 8, 
-                background: '#e5e7eb', 
+                background: isDark ? '#27272a' : '#e5e7eb', 
                 borderRadius: 4,
                 overflow: 'hidden'
               }}>
@@ -569,7 +573,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           )}
         </div>
 
-        <div className="fg-modal-footer" style={{ padding: 20, borderTop: '1px solid #e5e7eb' }}>
+        <div className="fg-modal-footer" style={{ padding: 20, borderTop: isDark ? '1px solid #27272a' : '1px solid #e5e7eb' }}>
           <button 
             className="fg-btn" 
             onClick={isGenerating ? handleCancel : onClose}

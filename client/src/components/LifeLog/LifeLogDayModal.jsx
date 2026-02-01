@@ -46,12 +46,11 @@ export default function LifeLogDayModal() {
         }}
       >
         <div 
-          className="border border-divider shadow-2xl rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col"
-          style={{ backgroundColor: '#18181b' }}
+          className="border border-zinc-200 dark:border-zinc-700 shadow-2xl rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col bg-white dark:bg-zinc-800"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between gap-3 p-4 border-b border-divider">
+          <div className="flex items-center justify-between gap-3 p-4 border-b border-zinc-200 dark:border-zinc-700">
             <div className="flex items-center gap-3">
               <span className="text-xl font-semibold">
                 {format(selectedDay, 'MMMM d, yyyy')}
@@ -159,7 +158,7 @@ export default function LifeLogDayModal() {
           </div>
 
           {/* Footer */}
-          <div className="p-4 border-t border-divider flex justify-end">
+          <div className="p-4 border-t border-zinc-200 dark:border-zinc-700 flex justify-end">
             <Button 
               color="default" 
               variant="flat" 

@@ -4,12 +4,18 @@
  * 封装 FilmLabWebGL 渲染交互
  * 提供渲染控制、缓存管理和性能优化
  * 
+ * 渲染路径：
+ * 1. WebGL GPU 渲染（优先，最快）
+ * 2. CPU 渲染（RenderCore，当 WebGL 不可用时）
+ * 
  * @module hooks/useFilmLabRenderer
  * @since 2026-01-29
+ * @updated 2026-01-31 - 添加完整的 CPU 渲染回退支持
  */
 
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import FilmLabWebGL, { isWebGLAvailable } from '../FilmLabWebGL';
+import { RenderCore } from '@filmgallery/shared';
 
 // ============================================================================
 // Constants
@@ -114,14 +120,35 @@ export function useFilmLabRenderer(options = {}) {
         FilmLabWebGL.processImageWebGL(canvas, image, params);
         processedCanvasRef.current = canvas;
       } else {
-        // CPU 渲染路径（回退）
-        // TODO: 实现 CPU 渲染或使用 RenderCore
-        console.warn('[useFilmLabRenderer] CPU rendering not implemented, falling back to direct draw');
-        const ctx = canvas.getContext('2d');
+        // CPU 渲染路径（使用 RenderCore）
+        console.log('[useFilmLabRenderer] Using CPU rendering (RenderCore)');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         if (ctx) {
+          // 设置 canvas 尺寸并绘制原始图像
           canvas.width = image.width;
           canvas.height = image.height;
           ctx.drawImage(image, 0, 0);
+          
+          // 使用 RenderCore 处理像素
+          const core = new RenderCore(params);
+          core.prepareLUTs();
+          
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = imageData.data;
+          const length = data.length;
+          
+          for (let i = 0; i < length; i += 4) {
+            // 跳过透明像素
+            if (data[i + 3] === 0) continue;
+            
+            const [r, g, b] = core.processPixel(data[i], data[i + 1], data[i + 2]);
+            data[i] = r;
+            data[i + 1] = g;
+            data[i + 2] = b;
+          }
+          
+          ctx.putImageData(imageData, 0, 0);
+          processedCanvasRef.current = canvas;
         }
       }
 

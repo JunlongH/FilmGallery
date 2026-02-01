@@ -62,12 +62,12 @@ export default function QuickStats() {
           className="h-full"
         >
           <Card 
-            className="bg-content1 shadow-sm hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 group h-full border-none ring-0"
+            className="bg-white dark:bg-zinc-900 shadow-none hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group h-full border-none"
             isPressable
             onPress={() => item.path && navigate(item.path)}
           >
             <CardBody className="p-4 flex flex-row items-center gap-5">
-              <div className={`p-4 rounded-2xl shadow-lg bg-gradient-to-br from-content2 to-content3 ${item.color} group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
+              <div className={`p-4 rounded-2xl bg-zinc-100 dark:bg-zinc-800 ${item.color} group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
                 <item.icon size={28} />
               </div>
               <div className="flex-1">
@@ -78,10 +78,10 @@ export default function QuickStats() {
                   </>
                 ) : (
                   <div className="flex flex-col items-start">
-                    <span className="text-3xl font-black text-foreground tracking-tight">
+                    <span className="text-3xl font-black text-zinc-900 dark:text-zinc-100 tracking-tight">
                       {stats?.[item.key]?.toLocaleString() || 0}
                     </span>
-                    <span className="text-xs text-default-400 font-medium uppercase tracking-wider">{item.label}</span>
+                    <span className="text-xs text-zinc-400 dark:text-zinc-500 font-medium uppercase tracking-wider">{item.label}</span>
                   </div>
                 )}
               </div>

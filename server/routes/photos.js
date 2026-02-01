@@ -552,9 +552,9 @@ router.post('/:id/ingest-positive', uploadDefault.single('image'), async (req, r
       fs.mkdirSync(thumbDir, { recursive: true });
     }
 
-    // GPU export always generates JPG, so we use a distinct suffix to avoid conflicts
-    // This way we don't overwrite the original JPG/jpg file
-    const exportName = `${rollId}_${frameNum}_positive.jpg`;
+    // Use stable filename consistent with HQ Export (export-positive)
+    // This ensures GPU Export, HQ Export, and Save all use the same naming convention
+    const exportName = `${rollId}_${frameNum}.jpg`;
     const newFullRelPath = path.join('rolls', folderName, 'full', exportName).replace(/\\/g, '/');
     const newFullPath = path.join(fullDir, exportName);
 
@@ -600,8 +600,8 @@ router.post('/:id/ingest-positive', uploadDefault.single('image'), async (req, r
       return res.status(500).json({ error: 'File was saved but has 0 size' });
     }
 
-    // Generate/update positive thumbnail
-    const thumbName = `${rollId}_${frameNum}_positive-thumb.jpg`;
+    // Generate/update positive thumbnail (consistent naming with HQ Export)
+    const thumbName = `${rollId}_${frameNum}-thumb.jpg`;
     const thumbPath = path.join(thumbDir, thumbName);
     console.log('[INGEST-POSITIVE] Generating thumbnail:', thumbPath);
     

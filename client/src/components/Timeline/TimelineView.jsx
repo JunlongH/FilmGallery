@@ -66,7 +66,7 @@ export default function TimelineView() {
     <TimelineProvider>
       <div className="p-6 space-y-6">
         {/* Header with Filters */}
-        <Card className="bg-content1 shadow-sm">
+        <Card className="bg-white dark:bg-zinc-900 shadow-none border-none">
           <CardBody className="p-4">
             <TimelineFilters />
           </CardBody>

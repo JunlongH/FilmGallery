@@ -193,7 +193,7 @@ export default function ServerSettings() {
       `}
     >
       <CardBody className="flex flex-col items-center text-center gap-3 p-5">
-        <div className={`p-3 rounded-lg ${serverMode === mode ? 'bg-primary text-primary-foreground' : 'bg-content2 text-default-500'}`}>
+        <div className={`p-3 rounded-lg ${serverMode === mode ? 'bg-primary text-primary-foreground' : 'bg-zinc-100 dark:bg-zinc-800 text-default-500'}`}>
           <Icon className="w-6 h-6" />
         </div>
         <div className="flex-1">
@@ -322,7 +322,7 @@ export default function ServerSettings() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-sm w-full">
             <div className="space-y-1">
               <span className="text-default-500 block text-xs uppercase tracking-wider">API Endpoint</span>
-              <code className="bg-content2 px-2 py-1 rounded border border-divider text-xs font-mono break-all block w-full">
+              <code className="bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded border border-zinc-200 dark:border-zinc-700 text-xs font-mono break-all block w-full">
                 {currentApiBase}
               </code>
             </div>
@@ -354,7 +354,7 @@ export default function ServerSettings() {
       </Card>
 
       {/* Actions */}
-      <div className="flex flex-col sm:flex-row justify-end gap-4 pt-4 border-t border-divider w-full">
+      <div className="flex flex-col sm:flex-row justify-end gap-4 pt-4 border-t border-zinc-200 dark:border-zinc-700 w-full">
         {serverMode !== 'local' && (
           <Button
             onPress={switchToLocal}

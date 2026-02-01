@@ -149,10 +149,11 @@ export default function NewRollForm({ onCreated }) {
       const detail_location = log.detail_location || '';
       const latitude = log.latitude;
       const longitude = log.longitude;
+      const caption = log.caption || '';
       for (let i = 0; i < count; i++) {
         if (fileIndex >= sortedFiles.length) break;
         const name = sortedFiles[fileIndex].name;
-        metaMap[name] = { date, lens: lensFromLog, focal_length, country, city, detail_location, aperture, shutter_speed, latitude, longitude, logIndex: shotLogs.indexOf(log) };
+        metaMap[name] = { date, lens: lensFromLog, focal_length, country, city, detail_location, aperture, shutter_speed, latitude, longitude, caption, logIndex: shotLogs.indexOf(log) };
         if (date) dateMap[name] = date;
         fileIndex++;
       }
@@ -232,7 +233,8 @@ export default function NewRollForm({ onCreated }) {
         const shutter_speed = entry.shutter_speed;
         const latitude = entry.latitude;
         const longitude = entry.longitude;
-        if (date || lensFromMeta || Number.isFinite(focal_length) || country || city || detail_location || Number.isFinite(aperture) || !!shutter_speed || Number.isFinite(latitude) || Number.isFinite(longitude)) {
+        const caption = entry.caption || '';
+        if (date || lensFromMeta || Number.isFinite(focal_length) || country || city || detail_location || Number.isFinite(aperture) || !!shutter_speed || Number.isFinite(latitude) || Number.isFinite(longitude) || caption) {
           metaToSend[k] = {
             ...(date ? { date } : {}),
             ...(lensFromMeta ? { lens: lensFromMeta } : {}),
@@ -243,7 +245,8 @@ export default function NewRollForm({ onCreated }) {
             ...(city ? { city } : {}),
             ...(detail_location ? { detail_location } : {}),
             ...(Number.isFinite(latitude) ? { latitude } : {}),
-            ...(Number.isFinite(longitude) ? { longitude } : {})
+            ...(Number.isFinite(longitude) ? { longitude } : {}),
+            ...(caption ? { caption } : {})
           };
         }
       });
@@ -874,6 +877,10 @@ export default function NewRollForm({ onCreated }) {
         <ShotLogMapper 
           files={files.map((f, i) => ({ name: f.name, preview: previews[i] ? previews[i].url : null }))}
           shotLogs={shotLogs}
+          initialAssignments={Object.keys(fileMeta).reduce((acc, key) => {
+            if (fileMeta[key]?.logIndex !== undefined) acc[key] = fileMeta[key].logIndex;
+            return acc;
+          }, {})}
           onSave={handleMapperSave}
           onClose={() => setShowMapper(false)}
         />

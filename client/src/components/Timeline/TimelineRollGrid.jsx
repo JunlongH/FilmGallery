@@ -50,7 +50,7 @@ export default function TimelineRollGrid() {
     return (
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 mt-6">
         {[...Array(8)].map((_, i) => (
-          <div key={i} className="rounded-xl overflow-hidden bg-content1">
+          <div key={i} className="rounded-xl overflow-hidden bg-white dark:bg-zinc-900">
             <Skeleton className="aspect-square" />
           </div>
         ))}
@@ -63,7 +63,7 @@ export default function TimelineRollGrid() {
 
   if (thumbs.length === 0) {
     return (
-      <div className="text-center py-12 text-default-500">
+      <div className="text-center py-12 text-zinc-500 dark:text-zinc-400">
         <Camera size={48} className="mx-auto mb-4 opacity-50" />
         <p>No rolls found for this period (selectedRolls: {selectedRolls?.length || 0})</p>
       </div>
@@ -84,7 +84,7 @@ export default function TimelineRollGrid() {
             key={item.id} 
             onClick={() => navigate(`/rolls/${item.id}`)}
             className="rounded-xl overflow-hidden cursor-pointer 
-                       bg-content1
+                       bg-white dark:bg-zinc-900
                        hover:shadow-lg hover:scale-[1.02]
                        transition-all duration-200"
           >
@@ -102,7 +102,7 @@ export default function TimelineRollGrid() {
                   className="w-full h-full flex items-center justify-center"
                   style={{ backgroundColor: color + '30' }}
                 >
-                  <Camera size={32} className="text-default-400" />
+                  <Camera size={32} className="text-zinc-400 dark:text-zinc-500" />
                 </div>
               )}
               

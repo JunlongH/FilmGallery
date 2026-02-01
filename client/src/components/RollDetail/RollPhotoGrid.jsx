@@ -107,8 +107,8 @@ function PhotoCard({
 
   if (!urls.thumb) {
     return (
-      <Card className="aspect-square bg-default-100">
-        <CardBody className="flex items-center justify-center text-default-400 text-sm">
+      <Card className="aspect-square bg-zinc-100 dark:bg-zinc-800">
+        <CardBody className="flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-sm">
           No image
         </CardBody>
       </Card>
@@ -273,14 +273,14 @@ function PhotoGridSkeleton({ count = 12 }) {
  */
 function EmptyState({ viewMode, hasOtherPhotos, onSwitchView }) {
   return (
-    <Card className="border-2 border-dashed border-default-200 bg-default-50/50">
+    <Card className="border-2 border-dashed border-zinc-200 dark:border-zinc-700 bg-zinc-50/50 dark:bg-zinc-800/50">
       <CardBody className="py-16 flex flex-col items-center justify-center gap-4 text-center">
         <div className="text-4xl">📷</div>
         <div className="space-y-1">
-          <p className="text-lg font-medium text-default-600">
+          <p className="text-lg font-medium text-zinc-600 dark:text-zinc-300">
             {viewMode === 'positive' ? 'No positive photos' : 'No negative scans'}
           </p>
-          <p className="text-sm text-default-400">
+          <p className="text-sm text-zinc-400 dark:text-zinc-500">
             {viewMode === 'positive' 
               ? 'Upload processed photos or switch to negative view' 
               : 'Upload negative scans or switch to positive view'}

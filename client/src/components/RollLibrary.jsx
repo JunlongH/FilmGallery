@@ -16,10 +16,10 @@ export default function RollLibrary() {
     keepPreviousData: true,
   });
 
-  if (isLoading) return <div className="p-10 text-center text-default-500">Loading rolls...</div>;
+  if (isLoading) return <div className="p-10 text-center text-zinc-500 dark:text-zinc-400">Loading rolls...</div>;
 
   return (
-    <div className="flex flex-col min-h-full bg-background text-foreground p-6">
+    <div className="flex flex-col min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-6">
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-2xl font-bold">Roll Library</h3>
         <div>

@@ -33,7 +33,7 @@ export default function TimelineFilters() {
     <div className="space-y-4">
       {/* Year Filters */}
       <div className="flex items-center gap-2 flex-wrap">
-        <CalendarDays className="text-default-400" size={18} />
+        <CalendarDays className="text-zinc-400 dark:text-zinc-500" size={18} />
         
         <Button
           size="sm"
@@ -83,7 +83,7 @@ export default function TimelineFilters() {
             className="overflow-hidden"
           >
             <div className="flex items-center gap-2 flex-wrap pl-6">
-              <ChevronRight className="text-default-400" size={16} />
+              <ChevronRight className="text-zinc-400 dark:text-zinc-500" size={16} />
               
               <Button
                 size="sm"

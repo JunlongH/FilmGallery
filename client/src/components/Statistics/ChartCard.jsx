@@ -48,15 +48,15 @@ export default function ChartCard({
   return (
     <Card 
       ref={cardRef}
-      className={`overflow-hidden border border-divider/50 min-w-0 ${className}`}
+      className={`overflow-hidden border border-zinc-200/50 dark:border-zinc-700/50 min-w-0 ${className}`}
     >
       <CardHeader className="flex justify-between items-start pb-0">
         <div>
-          <h3 className="text-base font-semibold text-foreground">
+          <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
             {title}
           </h3>
           {subtitle && (
-            <p className="text-xs text-default-400 mt-0.5">{subtitle}</p>
+            <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">{subtitle}</p>
           )}
         </div>
         {action && <div>{action}</div>}

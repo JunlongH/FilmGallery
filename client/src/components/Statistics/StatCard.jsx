@@ -209,11 +209,11 @@ export default function StatCard({
     >
       <Card 
         ref={cardRef}
-        className="overflow-hidden border border-divider/50 hover:shadow-lg transition-shadow duration-300 h-full"
+        className="overflow-hidden border border-zinc-200/50 dark:border-zinc-700/50 hover:shadow-lg transition-shadow duration-300 h-full"
       >
         <CardBody className="p-5 gap-2 flex flex-col justify-between h-full">
           <div className="flex items-start justify-between">
-            <p className="text-xs text-default-500 dark:text-default-400 uppercase tracking-wider font-semibold">
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 uppercase tracking-wider font-semibold">
               {title}
             </p>
             {Icon && (
@@ -227,16 +227,16 @@ export default function StatCard({
           </div>
           
           <div className="flex items-baseline gap-1">
-            {prefix && <span className="text-xl text-default-600 dark:text-default-300">{prefix}</span>}
-            <span className="text-3xl font-bold text-foreground tracking-tight">
+            {prefix && <span className="text-xl text-zinc-600 dark:text-zinc-300">{prefix}</span>}
+            <span className="text-3xl font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">
               {typeof value === 'number' ? formatStat(value) : value}
             </span>
-            {suffix && <span className="text-lg text-default-600 dark:text-default-300">{suffix}</span>}
+            {suffix && <span className="text-lg text-zinc-600 dark:text-zinc-300">{suffix}</span>}
           </div>
           
           <div className="flex items-center justify-between mt-auto">
             {sub ? (
-              <p className="text-xs text-default-400 dark:text-default-500">{sub}</p>
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">{sub}</p>
             ) : (
               <span className="text-xs text-transparent select-none">&nbsp;</span>
             )}

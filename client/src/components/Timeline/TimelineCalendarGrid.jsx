@@ -97,14 +97,14 @@ export default function TimelineCalendarGrid() {
   };
 
   return (
-    <Card className="bg-content1 shadow-sm">
+    <Card className="bg-white dark:bg-zinc-900 shadow-none border-none">
       <CardBody className="p-4">
         {/* Weekday Header */}
         <div className="grid grid-cols-7 gap-1 mb-2">
           {WEEKDAYS.map(day => (
             <div 
               key={day} 
-              className="text-center text-xs font-semibold text-default-500 py-2"
+              className="text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400 py-2"
             >
               {day}
             </div>
@@ -125,7 +125,7 @@ export default function TimelineCalendarGrid() {
                     whileHover={{ scale: hasActivity ? 1.05 : 1 }}
                     className={`
                       relative aspect-square rounded-lg p-1 flex flex-col
-                      ${cell.inMonth ? 'bg-default-100' : 'bg-default-50 opacity-50'}
+                      ${cell.inMonth ? 'bg-zinc-100 dark:bg-zinc-800' : 'bg-zinc-50 dark:bg-zinc-900 opacity-50'}
                       ${hasActivity ? 'cursor-pointer hover:bg-default-200' : ''}
                       transition-colors duration-150
                     `}
@@ -138,7 +138,7 @@ export default function TimelineCalendarGrid() {
                     {/* Day Number */}
                     <span className={`
                       text-xs font-medium
-                      ${cell.inMonth ? 'text-default-700' : 'text-default-400'}
+                      ${cell.inMonth ? 'text-zinc-700 dark:text-zinc-200' : 'text-zinc-400 dark:text-zinc-500'}
                     `}>
                       {cell.day}
                     </span>
@@ -161,7 +161,7 @@ export default function TimelineCalendarGrid() {
                           />
                         ))}
                         {activeRolls.length > 4 && (
-                          <span className="text-[10px] text-default-500">
+                          <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
                             +{activeRolls.length - 4}
                           </span>
                         )}

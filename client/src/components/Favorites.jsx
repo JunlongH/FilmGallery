@@ -45,14 +45,14 @@ export default function Favorites() {
   // Empty state
   if (!isLoading && photos.length === 0) {
     return (
-      <div className="flex flex-col min-h-full bg-background text-foreground p-6 md:p-8">
+      <div className="flex flex-col min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-6 md:p-8">
         <h2 className="text-3xl font-bold mb-8 tracking-tight">Favorites</h2>
         <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <div className="w-24 h-24 rounded-full bg-content2/50 flex items-center justify-center mb-6">
-            <Heart className="w-12 h-12 text-default-300" />
+          <div className="w-24 h-24 rounded-full bg-zinc-100/50 dark:bg-zinc-800/50 flex items-center justify-center mb-6">
+            <Heart className="w-12 h-12 text-zinc-300 dark:text-zinc-600" />
           </div>
-          <h3 className="text-xl font-semibold text-foreground mb-2">No Favorites Yet</h3>
-          <p className="text-default-500 max-w-md">
+          <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">No Favorites Yet</h3>
+          <p className="text-zinc-500 dark:text-zinc-400 max-w-md">
             Photos you mark as favorites will appear here. Click the heart icon on any photo to add it to your collection.
           </p>
           <Button
@@ -69,12 +69,12 @@ export default function Favorites() {
   }
 
   return (
-    <div className="flex flex-col min-h-full bg-background text-foreground p-6 md:p-8">
+    <div className="flex flex-col min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-6 md:p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Favorites</h2>
-          <p className="text-default-500 mt-1">{photos.length} photos</p>
+          <p className="text-zinc-500 dark:text-zinc-400 mt-1">{photos.length} photos</p>
         </div>
       </div>
       

@@ -56,10 +56,10 @@ export function prefetchCommonRoutes() {
  */
 export function FullPageLoading() {
   return (
-    <div className="flex items-center justify-center h-screen w-full bg-background">
+    <div className="flex items-center justify-center h-screen w-full bg-gray-50 dark:bg-zinc-950">
       <div className="flex flex-col items-center gap-4">
         <Spinner size="lg" color="primary" />
-        <p className="text-default-500 text-sm">Loading...</p>
+        <p className="text-zinc-500 dark:text-zinc-400 text-sm">Loading...</p>
       </div>
     </div>
   );
@@ -81,7 +81,7 @@ export function ContentLoading() {
  */
 export function CardLoading() {
   return (
-    <div className="flex items-center justify-center h-40 w-full bg-content1 rounded-xl">
+    <div className="flex items-center justify-center h-40 w-full bg-zinc-100 dark:bg-zinc-800 rounded-xl">
       <Spinner size="sm" color="primary" />
     </div>
   );

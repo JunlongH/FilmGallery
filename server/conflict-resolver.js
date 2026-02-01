@@ -6,6 +6,11 @@ const sqlite3 = require('sqlite3').verbose();
 
 /**
  * Detect OneDrive conflict copies (e.g., film-DESKTOP-XXX.db)
+ * OneDrive creates these when:
+ * 1. Same file modified on multiple devices before sync completes
+ * 2. File modified while OneDrive was syncing (common with WAL mode)
+ * 3. File was locked when OneDrive tried to update it
+ * 
  * @param {string} dataDir - Directory containing film.db
  * @returns {Array<{path: string, mtime: Date, hostname: string}>}
  */
@@ -13,12 +18,20 @@ function detectConflictCopies(dataDir) {
   const files = fs.readdirSync(dataDir);
   const conflicts = [];
   
+  // Match OneDrive conflict pattern: film-HOSTNAME.db or film-HOSTNAME (1).db
   const pattern = /^film-(.+)\.db$/;
   files.forEach(f => {
     const match = f.match(pattern);
     if (match) {
       const fullPath = path.join(dataDir, f);
       const stat = fs.statSync(fullPath);
+      
+      // Log diagnostic info for debugging
+      console.log(`[CONFLICT-RESOLVER] Detected conflict: ${f}`);
+      console.log(`  - Hostname: ${match[1]}`);
+      console.log(`  - Modified: ${stat.mtime.toISOString()}`);
+      console.log(`  - Size: ${stat.size} bytes`);
+      
       conflicts.push({
         path: fullPath,
         filename: f,

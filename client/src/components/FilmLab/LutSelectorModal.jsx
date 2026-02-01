@@ -10,49 +10,50 @@ import ReactDOM from 'react-dom';
 import { listLuts, uploadLut, loadLutFromLibrary } from '../../api';
 
 // ============================================================================
-// 样式
+// 样式 - 支持亮色/暗色模式
 // ============================================================================
 
-const styles = {
+const getStyles = (isDark) => ({
   overlay: {
     position: 'fixed',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'rgba(0,0,0,0.8)',
+    background: isDark ? 'rgba(0,0,0,0.8)' : 'rgba(0,0,0,0.5)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10000
   },
   modal: {
-    background: '#1e1e1e',
+    background: isDark ? '#18181b' : '#ffffff',
     borderRadius: 12,
     width: '90%',
     maxWidth: 700,
     maxHeight: '80vh',
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden'
+    overflow: 'hidden',
+    border: isDark ? '1px solid #27272a' : '1px solid #e4e4e7'
   },
   header: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: '16px 20px',
-    borderBottom: '1px solid #333'
+    borderBottom: isDark ? '1px solid #27272a' : '1px solid #e4e4e7'
   },
   title: {
     fontSize: 18,
     fontWeight: 600,
-    color: '#fff',
+    color: isDark ? '#ECEDEE' : '#11181C',
     margin: 0
   },
   closeBtn: {
     background: 'transparent',
     border: 'none',
-    color: '#888',
+    color: isDark ? '#71717a' : '#a1a1aa',
     fontSize: 24,
     cursor: 'pointer',
     padding: 4
@@ -61,23 +62,23 @@ const styles = {
     display: 'flex',
     gap: 8,
     padding: '12px 20px',
-    borderBottom: '1px solid #333',
+    borderBottom: isDark ? '1px solid #27272a' : '1px solid #e4e4e7',
     alignItems: 'center'
   },
   searchInput: {
     flex: 1,
     padding: '8px 12px',
-    background: '#252525',
-    border: '1px solid #333',
+    background: isDark ? '#27272a' : '#f4f4f5',
+    border: isDark ? '1px solid #3f3f46' : '1px solid #e4e4e7',
     borderRadius: 6,
-    color: '#fff',
+    color: isDark ? '#ECEDEE' : '#11181C',
     fontSize: 14
   },
   uploadBtn: {
     padding: '8px 16px',
-    background: '#333',
-    color: '#fff',
-    border: '1px solid #444',
+    background: isDark ? '#27272a' : '#f4f4f5',
+    color: isDark ? '#ECEDEE' : '#11181C',
+    border: isDark ? '1px solid #3f3f46' : '1px solid #e4e4e7',
     borderRadius: 6,
     cursor: 'pointer',
     fontSize: 13
@@ -93,7 +94,7 @@ const styles = {
     gap: 12
   },
   card: {
-    background: '#252525',
+    background: isDark ? '#27272a' : '#f4f4f5',
     borderRadius: 8,
     padding: 12,
     cursor: 'pointer',
@@ -104,12 +105,12 @@ const styles = {
     borderColor: '#4a9eff'
   },
   cardHover: {
-    borderColor: '#444'
+    borderColor: isDark ? '#52525b' : '#d4d4d8'
   },
   lutName: {
     fontSize: 13,
     fontWeight: 500,
-    color: '#fff',
+    color: isDark ? '#ECEDEE' : '#11181C',
     marginBottom: 4,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -117,7 +118,7 @@ const styles = {
   },
   lutInfo: {
     fontSize: 11,
-    color: '#888'
+    color: isDark ? '#71717a' : '#a1a1aa'
   },
   preview: {
     width: '100%',
@@ -130,7 +131,7 @@ const styles = {
     justifyContent: 'flex-end',
     gap: 12,
     padding: '16px 20px',
-    borderTop: '1px solid #333'
+    borderTop: isDark ? '1px solid #27272a' : '1px solid #e4e4e7'
   },
   btn: {
     padding: '10px 24px',
@@ -145,18 +146,19 @@ const styles = {
     color: '#fff'
   },
   btnSecondary: {
-    background: '#333',
-    color: '#fff'
+    background: isDark ? '#27272a' : '#f4f4f5',
+    color: isDark ? '#ECEDEE' : '#11181C',
+    border: isDark ? '1px solid #3f3f46' : '1px solid #e4e4e7'
   },
   emptyState: {
     textAlign: 'center',
     padding: 40,
-    color: '#888'
+    color: isDark ? '#71717a' : '#a1a1aa'
   },
   loading: {
     textAlign: 'center',
     padding: 40,
-    color: '#888'
+    color: isDark ? '#71717a' : '#a1a1aa'
   },
   builtInBadge: {
     display: 'inline-block',
@@ -167,7 +169,7 @@ const styles = {
     fontSize: 9,
     marginLeft: 4
   }
-};
+});
 
 // 生成 LUT 预览渐变
 function generatePreviewGradient(lutName) {
@@ -185,7 +187,7 @@ function generatePreviewGradient(lutName) {
 // LUT 卡片组件
 // ============================================================================
 
-function LutCard({ lut, selected, onClick }) {
+function LutCard({ lut, selected, onClick, styles }) {
   const [hover, setHover] = useState(false);
   const isBuiltIn = lut.name.startsWith('FilmGallery_');
   
@@ -227,6 +229,11 @@ export default function LutSelectorModal({ onClose, onSelect, currentLutName }) 
   const [search, setSearch] = useState('');
   const [applying, setApplying] = useState(false);
   const fileInputRef = useRef(null);
+  
+  // Theme detection
+  const isDark = document.documentElement.classList.contains('dark') || 
+                 document.documentElement.getAttribute('data-theme') === 'dark';
+  const styles = getStyles(isDark);
   
   // 加载 LUT 列表
   useEffect(() => {
@@ -353,6 +360,7 @@ export default function LutSelectorModal({ onClose, onSelect, currentLutName }) 
                   lut={lut}
                   selected={selected === lut.name}
                   onClick={() => setSelected(lut.name)}
+                  styles={styles}
                 />
               ))}
             </div>

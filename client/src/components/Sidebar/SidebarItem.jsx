@@ -60,8 +60,8 @@ export function SidebarItem({
           transition-all duration-200 ease-out
           group relative
           ${isActive 
-            ? 'bg-default-200/50 text-foreground font-semibold' 
-            : 'text-default-500 hover:text-default-900 hover:bg-default-100/50'
+            ? 'bg-zinc-200/50 dark:bg-zinc-700/50 text-zinc-900 dark:text-zinc-100 font-semibold' 
+            : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50'
           }
           ${isCollapsed ? 'justify-center px-2' : ''}
         `}
@@ -70,7 +70,7 @@ export function SidebarItem({
         {isActive && (
           <motion.div
             layoutId="sidebar-active-indicator"
-            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-foreground/80 rounded-r-full"
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-zinc-900/80 dark:bg-zinc-100/80 rounded-r-full"
             initial={false}
             transition={{ type: 'spring', stiffness: 500, damping: 30 }}
           />
@@ -79,7 +79,7 @@ export function SidebarItem({
         {/* 图标 */}
         <span className={`
           flex-shrink-0 w-5 h-5
-          ${isActive ? 'text-foreground' : 'text-default-400 group-hover:text-default-600'}
+          ${isActive ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500 group-hover:text-zinc-600 dark:group-hover:text-zinc-300'}
           transition-colors duration-200
         `}>
           {icon}
@@ -116,7 +116,7 @@ export function SidebarItem({
           <div className="flex items-center gap-2">
             <span>{label}</span>
             {shortcut && (
-              <kbd className="px-1.5 py-0.5 text-xs bg-default-200 rounded">
+              <kbd className="px-1.5 py-0.5 text-xs bg-zinc-200 dark:bg-zinc-700 rounded">
                 {shortcut}
               </kbd>
             )}
@@ -171,8 +171,8 @@ export function SidebarSubItem({ to, label }) {
         block px-2 py-1 rounded-md text-xs truncate
         transition-colors duration-150
         ${isActive 
-          ? 'text-primary font-medium' 
-          : 'text-default-500 hover:text-foreground'
+          ? 'text-blue-600 dark:text-blue-400 font-medium' 
+          : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100'
         }
       `}
     >

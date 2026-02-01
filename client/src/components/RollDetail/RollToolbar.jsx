@@ -35,11 +35,15 @@ import {
   Edit
 } from 'lucide-react';
 
-// Dropdown style for consistent appearance (solid bg for Electron compatibility)
-const dropdownMenuStyle = {
-  backgroundColor: '#18181b',
-  border: '1px solid #27272a',
-  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.4)'
+// Dropdown classNames 使用 Tailwind dark: 前缀实现主题响应
+const dropdownClassNames = {
+  content: "bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-lg"
+};
+
+// DropdownMenu itemClasses 用于样式化每个菜单项
+const dropdownItemClasses = {
+  base: "text-zinc-900 dark:text-zinc-100 data-[hover=true]:bg-zinc-100 dark:data-[hover=true]:bg-zinc-800",
+  description: "text-zinc-500 dark:text-zinc-400"
 };
 
 export default function RollToolbar({
@@ -65,7 +69,7 @@ export default function RollToolbar({
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.2, duration: 0.3 }}
-      className="flex flex-wrap items-center justify-between gap-4 mb-6 p-4 bg-content1 border border-divider rounded-xl"
+      className="flex flex-wrap items-center justify-between gap-4 mb-6 p-4 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl"
     >
       {/* Left: View Controls */}
       <div className="flex items-center gap-4">
@@ -117,13 +121,13 @@ export default function RollToolbar({
         )}
 
         {multiSelect && (
-          <Dropdown>
+          <Dropdown classNames={dropdownClassNames}>
              <DropdownTrigger>
                <Button size="sm" variant="flat" isIconOnly>
                  <MoreHorizontal size={14} />
                </Button>
              </DropdownTrigger>
-             <DropdownMenu aria-label="Selection Actions" style={dropdownMenuStyle}>
+             <DropdownMenu aria-label="Selection Actions" itemClasses={dropdownItemClasses}>
                <DropdownItem key="all" onPress={onSelectAll}>Select All</DropdownItem>
                <DropdownItem key="invert" onPress={onInvertSelection}>Invert</DropdownItem>
                <DropdownItem key="none" onPress={onDeselectAll} className="text-danger" color="danger">Deselect All</DropdownItem>
@@ -151,7 +155,7 @@ export default function RollToolbar({
         </Button>
 
         {/* Batch Actions */}
-        <Dropdown>
+        <Dropdown classNames={dropdownClassNames}>
           <DropdownTrigger>
             <Button
               size="sm"
@@ -161,7 +165,7 @@ export default function RollToolbar({
               Batch
             </Button>
           </DropdownTrigger>
-          <DropdownMenu aria-label="Batch actions" style={dropdownMenuStyle}>
+          <DropdownMenu aria-label="Batch actions" itemClasses={dropdownItemClasses}>
             <DropdownItem
               key="render"
               startContent={<Palette size={14} />}
@@ -190,7 +194,7 @@ export default function RollToolbar({
         </Dropdown>
 
         {/* Import Actions */}
-        <Dropdown>
+        <Dropdown classNames={dropdownClassNames}>
           <DropdownTrigger>
             <Button
               size="sm"
@@ -200,7 +204,7 @@ export default function RollToolbar({
               Import
             </Button>
           </DropdownTrigger>
-          <DropdownMenu aria-label="Import options" style={dropdownMenuStyle}>
+          <DropdownMenu aria-label="Import options" itemClasses={dropdownItemClasses}>
             <DropdownItem
               key="positive"
               startContent={<FileImage size={14} />}

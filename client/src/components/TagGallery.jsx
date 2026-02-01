@@ -50,22 +50,22 @@ export default function TagGallery() {
   // View: List of all tags (Tag Cloud)
   if (!selectedTag) {
     return (
-      <div className="flex flex-col min-h-full bg-background text-foreground p-6 md:p-8">
+      <div className="flex flex-col min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-6 md:p-8">
         {/* Header */}
         <div className="mb-8">
           <h2 className="text-3xl font-bold tracking-tight">Themes</h2>
-          <p className="text-default-500 mt-1">{tags.length} themes with photos</p>
+          <p className="text-zinc-500 dark:text-zinc-400 mt-1">{tags.length} themes with photos</p>
         </div>
         
         {/* Tags Grid */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
           {tags.length === 0 ? (
             <div className="col-span-full flex flex-col items-center justify-center text-center py-20">
-              <div className="w-24 h-24 rounded-full bg-content2/50 flex items-center justify-center mb-6">
-                <Tag className="w-12 h-12 text-default-300" />
+              <div className="w-24 h-24 rounded-full bg-zinc-100/50 dark:bg-zinc-800/50 flex items-center justify-center mb-6">
+                <Tag className="w-12 h-12 text-zinc-300 dark:text-zinc-600" />
               </div>
-              <h3 className="text-xl font-semibold text-foreground mb-2">No Themes Yet</h3>
-              <p className="text-default-500 max-w-md">
+              <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">No Themes Yet</h3>
+              <p className="text-zinc-500 dark:text-zinc-400 max-w-md">
                 Add tags to your photos to organize them into themes. Tags will appear here once you create them.
               </p>
             </div>
@@ -86,8 +86,8 @@ export default function TagGallery() {
 
   // View: Single Tag Gallery
   return (
-    <div className="flex flex-col min-h-full bg-background text-foreground p-6 md:p-8">
-      {/* Header with Back Button */}
+    <div className="flex flex-col min-h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 p-6 md:p-8">
+      {/* Header with Back Button */}}
       <div className="flex items-center gap-4 mb-8">
         <Button 
           isIconOnly
@@ -98,7 +98,7 @@ export default function TagGallery() {
         </Button>
         <div>
           <h2 className="text-3xl font-bold tracking-tight">{selectedTag.name}</h2>
-          <p className="text-default-500 mt-1">{photos.length} photos</p>
+          <p className="text-zinc-500 dark:text-zinc-400 mt-1">{photos.length} photos</p>
         </div>
       </div>
 
@@ -109,11 +109,11 @@ export default function TagGallery() {
         </div>
       ) : photos.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center text-center">
-          <div className="w-24 h-24 rounded-full bg-content2/50 flex items-center justify-center mb-6">
-            <ImageIcon className="w-12 h-12 text-default-300" />
+          <div className="w-24 h-24 rounded-full bg-zinc-100/50 dark:bg-zinc-800/50 flex items-center justify-center mb-6">
+            <ImageIcon className="w-12 h-12 text-zinc-300 dark:text-zinc-600" />
           </div>
-          <h3 className="text-xl font-semibold text-foreground mb-2">No Photos</h3>
-          <p className="text-default-500">No photos in this theme yet.</p>
+          <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 mb-2">No Photos</h3>
+          <p className="text-zinc-500 dark:text-zinc-400">No photos in this theme yet.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
@@ -173,7 +173,7 @@ function ThemeCard({ tag, onSelect }) {
   return (
     <div
       onClick={onSelect}
-      className="group cursor-pointer overflow-hidden rounded-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] bg-content1"
+      className="group cursor-pointer overflow-hidden rounded-lg transition-all duration-300 hover:shadow-xl hover:scale-[1.02] bg-white dark:bg-zinc-800"
     >
       {/* Use padding-bottom trick for reliable aspect ratio */}
       <div className="relative w-full" style={{ paddingBottom: '100%' }}>
@@ -195,7 +195,7 @@ function ThemeCard({ tag, onSelect }) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-secondary/20">
-              <Tag className="w-12 h-12 text-default-300" />
+              <Tag className="w-12 h-12 text-zinc-300 dark:text-zinc-600" />
             </div>
           )}
         </div>

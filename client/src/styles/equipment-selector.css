@@ -1,4 +1,5 @@
 /* EquipmentSelector Component Styles */
+/* Theme-aware styling with light mode default, dark mode override */
 
 .equip-selector {
   position: relative;
@@ -10,12 +11,19 @@
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid #27272a;
+  border: 1px solid #e4e4e7;
   border-radius: 6px;
-  background: #18181b;
+  background: #ffffff;
   cursor: pointer;
   min-height: 42px;
   transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+/* Dark mode trigger */
+[data-theme="dark"] .equip-trigger,
+:root.dark .equip-trigger {
+  border-color: #27272a;
+  background: #27272a;
 }
 
 .equip-trigger:hover:not(.disabled) {
@@ -28,14 +36,24 @@
 }
 
 .equip-trigger.disabled {
-  background: #27272a;
+  background: #f4f4f5;
   cursor: not-allowed;
   opacity: 0.7;
 }
 
+[data-theme="dark"] .equip-trigger.disabled,
+:root.dark .equip-trigger.disabled {
+  background: #27272a;
+}
+
 .equip-placeholder {
-  color: #a1a1aa;
+  color: #71717a;
   flex: 1;
+}
+
+[data-theme="dark"] .equip-placeholder,
+:root.dark .equip-placeholder {
+  color: #a1a1aa;
 }
 
 .equip-loading {
@@ -67,10 +85,10 @@
   top: 100%;
   left: 0;
   right: 0;
-  background: #18181b;
-  border: 1px solid #27272a;
+  background: #ffffff;
+  border: 1px solid #e4e4e7;
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   z-index: 100;
   margin-top: 4px;
   max-height: 350px;
@@ -79,19 +97,28 @@
   flex-direction: column;
 }
 
-:root.dark .equip-dropdown,
-[data-theme="dark"] .equip-dropdown {
+[data-theme="dark"] .equip-dropdown,
+:root.dark .equip-dropdown {
+  background: #27272a;
+  border-color: #3f3f46;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .equip-search {
   padding: 10px 12px;
   border: none;
-  border-bottom: 1px solid #27272a;
+  border-bottom: 1px solid #e4e4e7;
   font-size: 14px;
   outline: none;
   flex-shrink: 0;
-  background: #18181b;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+[data-theme="dark"] .equip-search,
+:root.dark .equip-search {
+  background: #27272a;
+  border-color: #3f3f46;
   color: #ECEDEE;
 }
 
@@ -110,16 +137,31 @@
 }
 
 .equip-option:hover {
-  background: #27272a;
+  background: #f4f4f5;
+}
+
+[data-theme="dark"] .equip-option:hover,
+:root.dark .equip-option:hover {
+  background: #3f3f46;
 }
 
 .equip-option.selected {
+  background: #e4e4e7;
+}
+
+[data-theme="dark"] .equip-option.selected,
+:root.dark .equip-option.selected {
   background: #3f3f46;
 }
 
 .equip-empty {
   padding: 20px;
   text-align: center;
+  color: #71717a;
+}
+
+[data-theme="dark"] .equip-empty,
+:root.dark .equip-empty {
   color: #a1a1aa;
 }
 

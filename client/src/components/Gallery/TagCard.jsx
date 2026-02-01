@@ -34,7 +34,7 @@ const TagCard = memo(function TagCard({
       <Card
         isPressable
         onPress={() => onSelect?.(tag)}
-        className="group overflow-hidden border border-divider/50 hover:border-primary/30 hover:shadow-lg transition-all duration-300"
+        className="group overflow-hidden border border-zinc-200/50 dark:border-zinc-700/50 hover:border-primary/30 hover:shadow-lg transition-all duration-300"
       >
         <CardBody className="p-0">
           <div className="relative aspect-[4/3] overflow-hidden">

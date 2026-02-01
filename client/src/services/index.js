@@ -3,10 +3,12 @@
  * 
  * 混合模式架构的核心服务：
  * - ComputeService: 计算任务智能路由
+ * - CpuRenderService: 本地 CPU 渲染（RenderCore）
  * - FileAccessService: 文件访问抽象
  */
 
 export { default as ComputeService } from './ComputeService';
+export { default as CpuRenderService } from './CpuRenderService';
 export { default as FileAccessService } from './FileAccessService';
 
 // ========================================
@@ -52,6 +54,26 @@ export {
 export {
   batchProcess
 } from './ComputeService';
+
+// ========================================
+// CpuRenderService 导出
+// ========================================
+
+// CPU 渲染核心函数
+export {
+  localCpuPreview,
+  localCpuRender,
+  localCpuExport,
+  isCpuRenderAvailable
+} from './CpuRenderService';
+
+// CPU 渲染工具函数
+export {
+  loadImageToCanvas,
+  applyGeometry,
+  processCanvasWithRenderCore,
+  canvasToBlob
+} from './CpuRenderService';
 
 // ========================================
 // FileAccessService 导出

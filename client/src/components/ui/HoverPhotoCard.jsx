@@ -68,7 +68,7 @@ export function HoverPhotoCard({
   return (
     <div
       onClick={onPress}
-      className="group cursor-pointer overflow-hidden rounded-lg transition-all duration-200 hover:shadow-lg hover:scale-[1.02] bg-content1"
+      className="group cursor-pointer overflow-hidden rounded-lg transition-all duration-200 hover:shadow-lg hover:scale-[1.02] bg-white dark:bg-zinc-800"
     >
       {/* Use padding-bottom trick for reliable aspect ratio */}
       <div className="relative w-full" style={{ paddingBottom: aspectRatio === '1/1' ? '100%' : '75%' }}>
@@ -89,7 +89,7 @@ export function HoverPhotoCard({
               className="group-hover:scale-105"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-content2 text-default-400">
+            <div className="w-full h-full flex items-center justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500">
               <ImageIcon className="w-8 h-8" />
             </div>
           )}

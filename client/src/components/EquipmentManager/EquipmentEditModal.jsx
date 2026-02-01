@@ -29,8 +29,7 @@ import {
   Save,
   X,
   Package,
-  Info,
-  DollarSign
+  Info
 } from 'lucide-react';
 
 // ========================================
@@ -147,7 +146,7 @@ function SectionTitle({ icon: Icon, children }) {
       <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center">
         <Icon size={13} className="text-primary" />
       </div>
-      <span className="text-sm font-medium text-foreground">{children}</span>
+      <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{children}</span>
       <div className="flex-1 h-px bg-divider/50 ml-1" />
     </div>
   );
@@ -186,28 +185,40 @@ function StyledCheckbox({ children, isSelected, onValueChange }) {
 }
 
 // Standard Input classNames (SKILL: avoid label overlap)
+// 使用明确的 Tailwind 颜色类确保亮色/暗色模式正确显示
+// 完全透明背景，仅保留边框
 const inputClassNames = { 
-  inputWrapper: "h-10 min-h-10 bg-content1" 
+  base: "bg-transparent",
+  mainWrapper: "bg-transparent",
+  // Fix: Explicitly set background color to avoid dark inputs in light mode
+  // Use higher opacity for better readability
+  inputWrapper: "h-10 min-h-10 bg-white/80 dark:bg-zinc-800/60 shadow-none border border-zinc-200/50 dark:border-zinc-700/50",
+  innerWrapper: "bg-transparent",
+  input: "text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500"
 };
 
 // Date Input classNames (SKILL: dark mode calendar icon)
 const dateInputClassNames = {
-  inputWrapper: "h-10 min-h-10 bg-content1",
-  input: "dark:[color-scheme:dark]"
+  base: "bg-transparent",
+  mainWrapper: "bg-transparent",
+  inputWrapper: "h-10 min-h-10 bg-white/80 dark:bg-zinc-800/60 shadow-none border border-zinc-200/50 dark:border-zinc-700/50",
+  innerWrapper: "bg-transparent",
+  input: "text-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
 };
 
 // Standard Select classNames (SKILL: opaque dropdown + arrow right)
 const selectClassNames = {
-  trigger: "h-10 min-h-10 bg-content1",
-  value: "text-sm truncate pr-6",
-  selectorIcon: "right-2",
-  listbox: "bg-content1",
-  popoverContent: "bg-content1 dark:bg-content1 border border-divider"
+  base: "bg-transparent",
+  trigger: "h-10 min-h-10 bg-white/80 dark:bg-zinc-800/60 shadow-none border border-zinc-200/50 dark:border-zinc-700/50",
+  value: "text-sm truncate pr-6 text-zinc-900 dark:text-zinc-100",
+  selectorIcon: "right-2 text-zinc-500 dark:text-zinc-400",
+  listbox: "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100",
+  popoverContent: "bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100"
 };
 
 const selectPopoverProps = {
   classNames: {
-    content: "min-w-[180px] bg-content1 dark:bg-zinc-900 border border-divider shadow-lg"
+    content: "min-w-[180px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-lg text-zinc-900 dark:text-zinc-100"
   }
 };
 
@@ -311,7 +322,7 @@ export default function EquipmentEditModal({
         <GlassCard className="p-4">
           <div className="flex items-center gap-2 mb-3">
             <Info size={14} className="text-primary" />
-            <span className="text-sm font-medium text-foreground">Basic Information</span>
+            <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Basic Information</span>
           </div>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
@@ -1188,13 +1199,13 @@ export default function EquipmentEditModal({
             <Field label="Purchase Price">
               <Input
                 type="number"
-                placeholder="¥"
+                placeholder=""
                 step="0.01"
                 value={form.purchase_price?.toString() || ''}
                 onValueChange={(v) => handleChange('purchase_price', v ? parseFloat(v) : null)}
                 variant="bordered"
                 size="sm"
-                startContent={<DollarSign size={14} className="text-default-400 mr-1" />}
+                startContent={<span className="text-zinc-400 dark:text-zinc-500 mr-1">¥</span>}
                 classNames={inputClassNames}
               />
             </Field>

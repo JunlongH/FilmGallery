@@ -369,12 +369,27 @@ function createTray() {
       image = nativeImage.createFromData(Buffer.from(base64, 'base64')).resize({ width:24, height:24 });
     }
     tray = new Tray(image || nativeImage.createEmpty());
-    const contextMenu = Menu.buildFromTemplate([
+    
+    // Build tray menu - hide backend options in remote/hybrid mode
+    const serverMode = appConfig.serverMode || 'local';
+    const isLocalMode = serverMode === 'local';
+    
+    const menuTemplate = [
       { label: '显示窗口', click: () => { if (mainWindow) { mainWindow.show(); mainWindow.focus(); } } },
-      { label: '重启后端', click: async () => { await stopServer(); startServer(); } },
+    ];
+    
+    if (isLocalMode) {
+      menuTemplate.push({ label: '重启后端', click: async () => { await stopServer(); startServer(); } });
+    } else {
+      menuTemplate.push({ label: `模式: ${serverMode}`, enabled: false });
+    }
+    
+    menuTemplate.push(
       { type: 'separator' },
       { label: '退出', click: async () => { isQuitting = true; await stopServer(); app.quit(); } }
-    ]);
+    );
+    
+    const contextMenu = Menu.buildFromTemplate(menuTemplate);
     tray.setToolTip('Film Gallery');
     tray.setContextMenu(contextMenu);
     tray.on('click', () => { if (mainWindow) { mainWindow.isVisible() ? mainWindow.hide() : mainWindow.show(); } });
@@ -526,11 +541,15 @@ function createWindow() {
   }
 
   // If app needs backend API, ensure server is started and ready before loading UI
-  const needsBackend = true; // set to true if front-end calls local API
+  // In remote/hybrid mode, we connect to external server and do NOT start local backend
+  const serverMode = appConfig.serverMode || 'local';
+  const needsLocalBackend = serverMode === 'local'; // Only start local server in 'local' mode
+  
+  LOG('createWindow: serverMode=', serverMode, 'needsLocalBackend=', needsLocalBackend);
 
   (async () => {
     try {
-      if (needsBackend) {
+      if (needsLocalBackend) {
         await startServer();
         // Use dynamic port for health check
         const apiHealthUrl = `http://127.0.0.1:${actualServerPort}/api/rolls`;
@@ -539,6 +558,18 @@ function createWindow() {
         await waitForUrl(apiHealthUrl, 15000).catch(() => {
           LOG('backend did not respond in time; continuing to load UI anyway');
         });
+      } else {
+        LOG('createWindow: Skipping local backend (remote/hybrid mode)');
+        // In hybrid/remote mode, optionally verify remote server is reachable
+        const remoteApiBase = appConfig.apiBase;
+        if (remoteApiBase) {
+          LOG('createWindow: Remote API base configured:', remoteApiBase);
+          const remoteHealthUrl = `${remoteApiBase}/api/rolls`;
+          const remoteUp = await waitForUrl(remoteHealthUrl, 5000).catch(() => false);
+          if (!remoteUp) {
+            LOG('createWindow: Remote server not reachable, UI may not work properly');
+          }
+        }
       }
     } catch (e) {
       LOG('error while waiting backend', e && e.message);
@@ -1012,13 +1043,23 @@ ipcMain.handle('config-set-write-through', async (e, flag) => {
 app.on('ready', async () => {
   LOG('app ready, isDev=', isDev);
   appConfig = loadConfig();
+  
+  const serverMode = appConfig.serverMode || 'local';
+  LOG('app ready: serverMode=', serverMode);
+  
   createWindow();
   createTray();
-  // Ensure backend starts when Electron launches (dev and prod)
-  try {
-    startServer();
-  } catch (e) {
-    LOG('startServer on ready failed', e && e.message);
+  
+  // Only start backend in 'local' mode
+  // In remote/hybrid mode, we connect to external server
+  if (serverMode === 'local') {
+    try {
+      startServer();
+    } catch (e) {
+      LOG('startServer on ready failed', e && e.message);
+    }
+  } else {
+    LOG('app ready: Skipping local backend (serverMode=' + serverMode + ')');
   }
 });
 

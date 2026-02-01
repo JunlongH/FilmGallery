@@ -28,6 +28,39 @@ import {
 } from 'lucide-react';
 import { updateFilmItem } from '../api';
 
+// 标准化的 Input/Select classNames（确保亮色/暗色模式正确显示）
+// 完全透明背景，仅保留边框
+const inputClassNames = { 
+  base: "bg-transparent",
+  mainWrapper: "bg-transparent",
+  inputWrapper: "h-10 min-h-10 bg-transparent shadow-none",
+  innerWrapper: "bg-transparent",
+  input: "text-zinc-900 dark:text-zinc-100"
+};
+
+const dateInputClassNames = {
+  base: "bg-transparent",
+  mainWrapper: "bg-transparent",
+  inputWrapper: "h-10 min-h-10 bg-transparent shadow-none",
+  innerWrapper: "bg-transparent",
+  input: "text-zinc-900 dark:text-zinc-100 dark:[color-scheme:dark]"
+};
+
+const selectClassNames = {
+  base: "bg-transparent",
+  trigger: "h-10 min-h-10 bg-transparent shadow-none",
+  value: "text-sm truncate text-zinc-900 dark:text-zinc-100",
+  selectorIcon: "right-2 text-zinc-500 dark:text-zinc-400",
+  listbox: "bg-white dark:bg-zinc-800",
+  popoverContent: "bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700"
+};
+
+const selectPopoverProps = {
+  classNames: {
+    content: "min-w-[180px] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-lg"
+  }
+};
+
 // 状态配置
 const STATUS_OPTIONS = [
   { key: 'in_stock', label: 'In Stock', icon: Package, color: 'success' },
@@ -48,7 +81,7 @@ function SectionTitle({ icon: Icon, children }) {
       <div className="w-6 h-6 rounded-md bg-primary/10 flex items-center justify-center">
         <Icon size={13} className="text-primary" />
       </div>
-      <span className="text-sm font-medium text-foreground">{children}</span>
+      <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">{children}</span>
       <div className="flex-1 h-px bg-divider/50 ml-1" />
     </div>
   );
@@ -181,25 +214,15 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
         <GlassCard className="p-4">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Status</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Status</label>
               <Select
                 selectedKeys={formData.status ? [formData.status] : []}
                 onSelectionChange={(keys) => handleChange('status', Array.from(keys)[0])}
                 size="sm"
                 variant="bordered"
-                classNames={{
-                  trigger: "h-10 min-h-10 bg-content1",
-                  value: "text-sm truncate",
-                  selectorIcon: "right-2",
-                  listbox: "bg-content1",
-                  popoverContent: "bg-content1 dark:bg-content1 border border-divider"
-                }}
+                classNames={selectClassNames}
                 style={{ maxWidth: '100%' }}
-                popoverProps={{
-                  classNames: {
-                    content: "min-w-[180px] bg-content1 dark:bg-zinc-900 border border-divider shadow-lg"
-                  }
-                }}
+                popoverProps={selectPopoverProps}
               >
                 {STATUS_OPTIONS.map(opt => (
                   <SelectItem key={opt.key} textValue={opt.label}>
@@ -212,14 +235,14 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
               </Select>
             </div>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Label</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Label</label>
               <Input
                 value={formData.label}
                 onValueChange={(v) => handleChange('label', v)}
                 placeholder="Optional label"
                 size="sm"
                 variant="bordered"
-                classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                classNames={inputClassNames}
               />
             </div>
           </div>
@@ -227,15 +250,15 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
           {/* 装载相机 - 仅 loaded 状态显示 */}
           {formData.status === 'loaded' && (
             <div className="mt-3">
-              <label className="block text-sm text-default-500 mb-1.5">Loaded Camera</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Loaded Camera</label>
               <Input
                 value={formData.loaded_camera}
                 onValueChange={(v) => handleChange('loaded_camera', v)}
                 placeholder="Camera name"
                 size="sm"
                 variant="bordered"
-                startContent={<Camera size={14} className="text-default-400 mr-1" />}
-                classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                startContent={<Camera size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                classNames={inputClassNames}
               />
             </div>
           )}
@@ -247,7 +270,7 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
         <GlassCard className="p-4">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Price</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Price</label>
               <Input
                 type="number"
                 step="0.01"
@@ -256,85 +279,79 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
                 placeholder="0.00"
                 size="sm"
                 variant="bordered"
-                startContent={<DollarSign size={14} className="text-default-400 mr-1" />}
-                classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                startContent={<DollarSign size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                classNames={inputClassNames}
               />
             </div>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Purchase Date</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Purchase Date</label>
               <Input
                 type="date"
                 value={formData.purchase_date}
                 onValueChange={(v) => handleChange('purchase_date', v)}
                 size="sm"
                 variant="bordered"
-                classNames={{ 
-                  inputWrapper: "h-10 min-h-10 bg-content1",
-                  input: "dark:[color-scheme:dark]"
-                }}
+                classNames={dateInputClassNames}
               />
             </div>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Expiry Date</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Expiry Date</label>
               <Input
                 type="date"
                 value={formData.expiry_date}
                 onValueChange={(v) => handleChange('expiry_date', v)}
                 size="sm"
                 variant="bordered"
-                classNames={{ 
-                  inputWrapper: "h-10 min-h-10 bg-content1",
-                  input: "dark:[color-scheme:dark]"
-                }}
+                classNames={dateInputClassNames}
               />
             </div>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Batch #</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Batch #</label>
               <Input
                 value={formData.batch_number}
                 onValueChange={(v) => handleChange('batch_number', v)}
                 placeholder="Batch number"
                 size="sm"
                 variant="bordered"
-                startContent={<Tag size={14} className="text-default-400 mr-1" />}
-                classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                startContent={<Tag size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                classNames={inputClassNames}
               />
             </div>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Channel</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Channel</label>
               <Input
                 value={formData.purchase_channel}
                 onValueChange={(v) => handleChange('purchase_channel', v)}
                 placeholder="Taobao, Amazon, etc."
                 size="sm"
                 variant="bordered"
-                classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                classNames={inputClassNames}
               />
             </div>
             <div>
-              <label className="block text-sm text-default-500 mb-1.5">Vendor</label>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Vendor</label>
               <Input
                 value={formData.purchase_vendor}
                 onValueChange={(v) => handleChange('purchase_vendor', v)}
                 placeholder="Store name"
                 size="sm"
                 variant="bordered"
-                startContent={<Store size={14} className="text-default-400 mr-1" />}
-                classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                startContent={<Store size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                classNames={inputClassNames}
               />
             </div>
           </div>
           
           <div className="mt-3">
-            <label className="block text-sm text-default-500 mb-1.5">Purchase Note</label>
+            <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Purchase Note</label>
             <Input
               value={formData.purchase_note}
               onValueChange={(v) => handleChange('purchase_note', v)}
               placeholder="Additional notes..."
               size="sm"
               variant="bordered"
-              startContent={<FileText size={14} className="text-default-400 mr-1" />}
-              classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+              startContent={<FileText size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+              classNames={inputClassNames}
             />
           </div>
         </GlassCard>
@@ -347,31 +364,25 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
             <GlassCard className="p-4">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label className="block text-sm text-default-500 mb-1.5">Loaded Date</label>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Loaded Date</label>
                   <Input
                     type="date"
                     value={formData.loaded_date}
                     onValueChange={(v) => handleChange('loaded_date', v)}
                     size="sm"
                     variant="bordered"
-                    classNames={{ 
-                      inputWrapper: "h-10 min-h-10 bg-content1",
-                      input: "dark:[color-scheme:dark]"
-                    }}
+                    classNames={dateInputClassNames}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-default-500 mb-1.5">Finished Date</label>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Finished Date</label>
                   <Input
                     type="date"
                     value={formData.finished_date}
                     onValueChange={(v) => handleChange('finished_date', v)}
                     size="sm"
                     variant="bordered"
-                    classNames={{ 
-                      inputWrapper: "h-10 min-h-10 bg-content1",
-                      input: "dark:[color-scheme:dark]"
-                    }}
+                    classNames={dateInputClassNames}
                   />
                 </div>
               </div>
@@ -387,29 +398,27 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
             <GlassCard className="p-4">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div>
-                  <label className="block text-sm text-default-500 mb-1.5">Lab</label>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Lab</label>
                   <Input
                     value={formData.develop_lab}
                     onValueChange={(v) => handleChange('develop_lab', v)}
                     placeholder="Lab name"
                     size="sm"
                     variant="bordered"
-                    startContent={<FlaskConical size={14} className="text-default-400 mr-1" />}
-                    classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                    startContent={<FlaskConical size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                    classNames={inputClassNames}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-default-500 mb-1.5">Process</label>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Process</label>
                   <Select
                     selectedKeys={formData.develop_process ? [formData.develop_process] : []}
                     onSelectionChange={(keys) => handleChange('develop_process', Array.from(keys)[0] || '')}
                     size="sm"
                     variant="bordered"
                     placeholder="Select process"
-                    classNames={{
-                      trigger: "h-10 min-h-10 bg-content1",
-                      value: "text-sm"
-                    }}
+                    classNames={selectClassNames}
+                    popoverProps={selectPopoverProps}
                   >
                     {PROCESS_OPTIONS.map(p => (
                       <SelectItem key={p} textValue={p}>{p}</SelectItem>
@@ -417,7 +426,7 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
                   </Select>
                 </div>
                 <div>
-                  <label className="block text-sm text-default-500 mb-1.5">Dev Price</label>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Dev Price</label>
                   <Input
                     type="number"
                     step="0.01"
@@ -426,36 +435,33 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
                     placeholder="0.00"
                     size="sm"
                     variant="bordered"
-                    startContent={<DollarSign size={14} className="text-default-400 mr-1" />}
-                    classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                    startContent={<DollarSign size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                    classNames={inputClassNames}
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-default-500 mb-1.5">Dev Date</label>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Dev Date</label>
                   <Input
                     type="date"
                     value={formData.develop_date}
                     onValueChange={(v) => handleChange('develop_date', v)}
                     size="sm"
                     variant="bordered"
-                    classNames={{ 
-                      inputWrapper: "h-10 min-h-10 bg-content1",
-                      input: "dark:[color-scheme:dark]"
-                    }}
+                    classNames={dateInputClassNames}
                   />
                 </div>
               </div>
               
               <div className="mt-3">
-                <label className="block text-sm text-default-500 mb-1.5">Develop Note</label>
+                <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Develop Note</label>
                 <Input
                   value={formData.develop_note}
                   onValueChange={(v) => handleChange('develop_note', v)}
                   placeholder="Development notes..."
                   size="sm"
                   variant="bordered"
-                  startContent={<FileText size={14} className="text-default-400 mr-1" />}
-                  classNames={{ inputWrapper: "h-10 min-h-10 bg-content1" }}
+                  startContent={<FileText size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                  classNames={inputClassNames}
                 />
               </div>
             </GlassCard>

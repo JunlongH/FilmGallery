@@ -119,7 +119,8 @@ function resolveFileMetadata(metaMap, keys = []) {
         shutter_speed: null,
         latitude: null,
         longitude: null,
-        focal_length: null
+        focal_length: null,
+        caption: null
       };
     }
     
@@ -134,7 +135,8 @@ function resolveFileMetadata(metaMap, keys = []) {
         shutter_speed: m.shutter_speed || null,
         latitude: m.latitude ?? null,
         longitude: m.longitude ?? null,
-        focal_length: m.focal_length ?? null
+        focal_length: m.focal_length ?? null,
+        caption: m.caption || null
       };
     }
   }
@@ -149,7 +151,8 @@ function resolveFileMetadata(metaMap, keys = []) {
     shutter_speed: null,
     latitude: null,
     longitude: null,
-    focal_length: null
+    focal_length: null,
+    caption: null
   };
 }
 
@@ -343,10 +346,14 @@ async function processFileForRoll({
     }
   }
 
+  // Caption from shot log mapping
+  const captionForPhoto = meta.caption || null;
+
   const photoData = {
     frameNumber,
     finalName: `${baseName}.jpg`,
     ...pathData,
+    caption: captionForPhoto,
     takenAt,
     dateTaken,
     locationId,

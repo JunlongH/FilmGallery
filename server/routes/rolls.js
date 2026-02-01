@@ -276,13 +276,13 @@ router.post('/', (req, res) => {
           roll_id, frame_number, filename,
           full_rel_path, thumb_rel_path, negative_rel_path,
           original_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
-          is_negative_source, taken_at, date_taken, time_taken,
+          is_negative_source, caption, taken_at, date_taken, time_taken,
           location_id, detail_location, country, city,
           camera, lens, photographer, aperture, shutter_speed, iso, focal_length,
           latitude, longitude,
           scanner_equip_id, scan_resolution, scan_software, scan_date, scan_bit_depth,
           source_make, source_model, source_software, source_lens
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
         stmtToFinalize = stmt;
         
         const runInsert = (params) => new Promise((resolve, reject) => {
@@ -383,6 +383,7 @@ router.post('/', (req, res) => {
             p.positiveThumbRelPath,
             p.negativeThumbRelPath,
             p.isNegativeSource,
+            p.caption,
             p.takenAt,
             p.dateTaken,
             null, // time_taken unused here

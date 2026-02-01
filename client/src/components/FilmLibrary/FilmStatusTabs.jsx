@@ -16,7 +16,6 @@ import {
   CheckCircle2, 
   Archive,
   List,
-  Filter,
   SlidersHorizontal
 } from 'lucide-react';
 
