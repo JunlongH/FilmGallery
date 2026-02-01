@@ -61,6 +61,13 @@ const selectPopoverProps = {
   }
 };
 
+// Listbox item 样式 - 用于 Select 下拉列表项
+const selectListboxProps = {
+  itemClasses: {
+    base: 'text-zinc-900 dark:text-zinc-100 data-[hover=true]:bg-zinc-100 dark:data-[hover=true]:bg-zinc-700 data-[selected=true]:bg-primary/20 data-[selected=true]:text-primary data-[focus=true]:bg-zinc-100 dark:data-[focus=true]:bg-zinc-700'
+  }
+};
+
 // 状态配置
 const STATUS_OPTIONS = [
   { key: 'in_stock', label: 'In Stock', icon: Package, color: 'success' },
@@ -94,11 +101,13 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
     loaded_camera: '',
     // Purchase info
     purchase_price: '',
+    purchase_shipping_share: '',
     purchase_date: '',
     expiry_date: '',
     batch_number: '',
     purchase_channel: '',
     purchase_vendor: '',
+    purchase_order_id: '',
     purchase_note: '',
     // Usage info
     loaded_date: '',
@@ -107,7 +116,11 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
     develop_lab: '',
     develop_process: '',
     develop_price: '',
+    develop_shipping: '',
+    develop_channel: '',
     develop_date: '',
+    sent_to_lab_at: '',
+    scan_date: '',
     develop_note: ''
   };
 
@@ -122,18 +135,24 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
         label: item.label || '',
         loaded_camera: item.loaded_camera || '',
         purchase_price: item.purchase_price ?? '',
+        purchase_shipping_share: item.purchase_shipping_share ?? '',
         purchase_date: item.purchase_date || '',
         expiry_date: item.expiry_date || '',
         batch_number: item.batch_number || '',
         purchase_channel: item.purchase_channel || '',
         purchase_vendor: item.purchase_vendor || '',
+        purchase_order_id: item.purchase_order_id || '',
         purchase_note: item.purchase_note || '',
         loaded_date: item.loaded_date || '',
         finished_date: item.finished_date || '',
         develop_lab: item.develop_lab || '',
         develop_process: item.develop_process || '',
         develop_price: item.develop_price ?? '',
+        develop_shipping: item.develop_shipping ?? '',
+        develop_channel: item.develop_channel || '',
         develop_date: item.develop_date || '',
+        sent_to_lab_at: item.sent_to_lab_at || '',
+        scan_date: item.scan_date || '',
         develop_note: item.develop_note || ''
       });
       setError(null);
@@ -155,7 +174,9 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
       const patch = { ...formData };
       // Convert numbers
       if (patch.purchase_price !== '') patch.purchase_price = Number(patch.purchase_price);
+      if (patch.purchase_shipping_share !== '') patch.purchase_shipping_share = Number(patch.purchase_shipping_share);
       if (patch.develop_price !== '') patch.develop_price = Number(patch.develop_price);
+      if (patch.develop_shipping !== '') patch.develop_shipping = Number(patch.develop_shipping);
       
       const res = await updateFilmItem(item.id, patch);
       if (!res || res.ok === false) {
@@ -219,10 +240,11 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
                 selectedKeys={formData.status ? [formData.status] : []}
                 onSelectionChange={(keys) => handleChange('status', Array.from(keys)[0])}
                 size="sm"
-                variant="bordered"
+                variant="flat"
                 classNames={selectClassNames}
                 style={{ maxWidth: '100%' }}
                 popoverProps={selectPopoverProps}
+                listboxProps={selectListboxProps}
               >
                 {STATUS_OPTIONS.map(opt => (
                   <SelectItem key={opt.key} textValue={opt.label}>
@@ -284,6 +306,20 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
               />
             </div>
             <div>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Shipping Share</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={formData.purchase_shipping_share}
+                onValueChange={(v) => handleChange('purchase_shipping_share', v)}
+                placeholder="0.00"
+                size="sm"
+                variant="bordered"
+                startContent={<DollarSign size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                classNames={inputClassNames}
+              />
+            </div>
+            <div>
               <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Purchase Date</label>
               <Input
                 type="date"
@@ -314,6 +350,17 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
                 size="sm"
                 variant="bordered"
                 startContent={<Tag size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                classNames={inputClassNames}
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Order ID</label>
+              <Input
+                value={formData.purchase_order_id}
+                onValueChange={(v) => handleChange('purchase_order_id', v)}
+                placeholder="Order number"
+                size="sm"
+                variant="bordered"
                 classNames={inputClassNames}
               />
             </div>
@@ -415,10 +462,11 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
                     selectedKeys={formData.develop_process ? [formData.develop_process] : []}
                     onSelectionChange={(keys) => handleChange('develop_process', Array.from(keys)[0] || '')}
                     size="sm"
-                    variant="bordered"
+                    variant="flat"
                     placeholder="Select process"
                     classNames={selectClassNames}
                     popoverProps={selectPopoverProps}
+                    listboxProps={selectListboxProps}
                   >
                     {PROCESS_OPTIONS.map(p => (
                       <SelectItem key={p} textValue={p}>{p}</SelectItem>
@@ -440,11 +488,58 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Dev Date</label>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Dev Shipping</label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    value={formData.develop_shipping}
+                    onValueChange={(v) => handleChange('develop_shipping', v)}
+                    placeholder="0.00"
+                    size="sm"
+                    variant="bordered"
+                    startContent={<DollarSign size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
+                    classNames={inputClassNames}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Dev Channel</label>
+                  <Input
+                    value={formData.develop_channel}
+                    onValueChange={(v) => handleChange('develop_channel', v)}
+                    placeholder="Taobao, direct, etc."
+                    size="sm"
+                    variant="bordered"
+                    classNames={inputClassNames}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Sent Date</label>
+                  <Input
+                    type="date"
+                    value={formData.sent_to_lab_at}
+                    onValueChange={(v) => handleChange('sent_to_lab_at', v)}
+                    size="sm"
+                    variant="bordered"
+                    classNames={dateInputClassNames}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Developed Date</label>
                   <Input
                     type="date"
                     value={formData.develop_date}
                     onValueChange={(v) => handleChange('develop_date', v)}
+                    size="sm"
+                    variant="bordered"
+                    classNames={dateInputClassNames}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Scan Date</label>
+                  <Input
+                    type="date"
+                    value={formData.scan_date}
+                    onValueChange={(v) => handleChange('scan_date', v)}
                     size="sm"
                     variant="bordered"
                     classNames={dateInputClassNames}
@@ -467,6 +562,7 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
             </GlassCard>
           </>
         )}
+
       </div>
     </GlassModal>
   );

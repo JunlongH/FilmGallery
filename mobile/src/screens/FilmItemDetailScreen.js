@@ -53,17 +53,30 @@ export default function FilmItemDetailScreen({ route, navigation }) {
         const base = data.item || data;
         setForm({
           status: base.status || 'in_stock',
-          expiry_date: base.expiry_date || '',
-          purchase_channel: base.purchase_channel || '',
-          purchase_vendor: base.purchase_vendor || '',
+          label: base.label || '',
+          // Purchase info
           purchase_price: base.purchase_price != null ? String(base.purchase_price) : '',
           purchase_shipping_share: base.purchase_shipping_share != null ? String(base.purchase_shipping_share) : '',
+          purchase_date: base.purchase_date || '',
+          expiry_date: base.expiry_date || '',
           batch_number: base.batch_number || '',
-          label: base.label || '',
+          purchase_channel: base.purchase_channel || '',
+          purchase_vendor: base.purchase_vendor || '',
+          purchase_order_id: base.purchase_order_id || '',
           purchase_note: base.purchase_note || '',
+          // Usage info
+          loaded_date: base.loaded_date || '',
+          finished_date: base.finished_date || '',
+          // Develop info
           develop_lab: base.develop_lab || '',
           develop_process: base.develop_process || '',
           develop_price: base.develop_price != null ? String(base.develop_price) : '',
+          develop_shipping: base.develop_shipping != null ? String(base.develop_shipping) : '',
+          develop_channel: base.develop_channel || '',
+          sent_to_lab_at: base.sent_to_lab_at || '',
+          develop_date: base.develop_date || '',
+          scan_date: base.scan_date || '',
+          develop_note: base.develop_note || '',
         });
       } catch (err) {
         console.log('Failed to load film item', err);
@@ -85,17 +98,30 @@ export default function FilmItemDetailScreen({ route, navigation }) {
     try {
       const patch = {
         status: form.status,
-        expiry_date: form.expiry_date || null,
-        purchase_channel: form.purchase_channel || null,
-        purchase_vendor: form.purchase_vendor || null,
+        label: form.label || null,
+        // Purchase info
         purchase_price: form.purchase_price === '' ? null : Number(form.purchase_price),
         purchase_shipping_share: form.purchase_shipping_share === '' ? null : Number(form.purchase_shipping_share),
+        purchase_date: form.purchase_date || null,
+        expiry_date: form.expiry_date || null,
         batch_number: form.batch_number || null,
-        label: form.label || null,
+        purchase_channel: form.purchase_channel || null,
+        purchase_vendor: form.purchase_vendor || null,
+        purchase_order_id: form.purchase_order_id || null,
         purchase_note: form.purchase_note || null,
+        // Usage info
+        loaded_date: form.loaded_date || null,
+        finished_date: form.finished_date || null,
+        // Develop info
         develop_lab: form.develop_lab || null,
         develop_process: form.develop_process || null,
         develop_price: form.develop_price === '' ? null : Number(form.develop_price),
+        develop_shipping: form.develop_shipping === '' ? null : Number(form.develop_shipping),
+        develop_channel: form.develop_channel || null,
+        sent_to_lab_at: form.sent_to_lab_at || null,
+        develop_date: form.develop_date || null,
+        scan_date: form.scan_date || null,
+        develop_note: form.develop_note || null,
       };
       const updated = await updateFilmItem(itemId, patch);
       setItem(updated.item || updated);
@@ -209,18 +235,18 @@ export default function FilmItemDetailScreen({ route, navigation }) {
         )}
         {item.status === 'shot' && (
           <View style={styles.actionRow}>
-            <DatePickerField label="Develop date" value={parseISODate(actionDate) || new Date()} onChange={(d) => setActionDate(toISODateString(d))} />
+            <DatePickerField label="Sent date" value={parseISODate(actionDate) || new Date()} onChange={(d) => setActionDate(toISODateString(d))} />
             <Button
               mode="contained"
               onPress={async () => {
                 try {
                   setSaving(true);
-                  const patch = { status: 'sent_to_lab', develop_date: actionDate || todayStr };
+                  const patch = { status: 'sent_to_lab', sent_to_lab_at: actionDate || todayStr };
                   const updated = await updateFilmItem(itemId, patch);
                   setItem(updated.item || updated);
                 } finally { setSaving(false); }
               }}
-            >Develop</Button>
+            >Send to Lab</Button>
           </View>
         )}
         {/* Note: exclude create-roll for sent_to_lab on mobile */}
@@ -243,31 +269,19 @@ export default function FilmItemDetailScreen({ route, navigation }) {
       />)}
 
       {editMode && (
-      <View style={styles.input}>
-        <DatePickerField
-          label="Expiry date"
-          value={parseISODate(form.expiry_date) || new Date()}
-          onChange={(d) => updateField('expiry_date', toISODateString(d))}
-        />
-      </View>)}
-
-      {editMode && (
       <TextInput
-        label="Purchase channel"
+        label="Label"
         mode="outlined"
-        value={form.purchase_channel}
-        onChangeText={v => updateField('purchase_channel', v)}
+        value={form.label}
+        onChangeText={v => updateField('label', v)}
         style={styles.input}
       />)}
 
+      {/* Purchase Info Section */}
       {editMode && (
-      <TextInput
-        label="Vendor"
-        mode="outlined"
-        value={form.purchase_vendor}
-        onChangeText={v => updateField('purchase_vendor', v)}
-        style={styles.input}
-      />)}
+      <Text style={{ marginTop: spacing.md, marginBottom: spacing.sm }} variant="titleSmall">
+        Purchase Info
+      </Text>)}
 
       {editMode && (
       <TextInput
@@ -290,6 +304,24 @@ export default function FilmItemDetailScreen({ route, navigation }) {
       />)}
 
       {editMode && (
+      <View style={styles.input}>
+        <DatePickerField
+          label="Purchase date"
+          value={parseISODate(form.purchase_date) || new Date()}
+          onChange={(d) => updateField('purchase_date', toISODateString(d))}
+        />
+      </View>)}
+
+      {editMode && (
+      <View style={styles.input}>
+        <DatePickerField
+          label="Expiry date"
+          value={parseISODate(form.expiry_date) || new Date()}
+          onChange={(d) => updateField('expiry_date', toISODateString(d))}
+        />
+      </View>)}
+
+      {editMode && (
       <TextInput
         label="Batch number"
         mode="outlined"
@@ -300,10 +332,28 @@ export default function FilmItemDetailScreen({ route, navigation }) {
 
       {editMode && (
       <TextInput
-        label="Label"
+        label="Order ID"
         mode="outlined"
-        value={form.label}
-        onChangeText={v => updateField('label', v)}
+        value={form.purchase_order_id}
+        onChangeText={v => updateField('purchase_order_id', v)}
+        style={styles.input}
+      />)}
+
+      {editMode && (
+      <TextInput
+        label="Purchase channel"
+        mode="outlined"
+        value={form.purchase_channel}
+        onChangeText={v => updateField('purchase_channel', v)}
+        style={styles.input}
+      />)}
+
+      {editMode && (
+      <TextInput
+        label="Vendor"
+        mode="outlined"
+        value={form.purchase_vendor}
+        onChangeText={v => updateField('purchase_vendor', v)}
         style={styles.input}
       />)}
 
@@ -317,6 +367,31 @@ export default function FilmItemDetailScreen({ route, navigation }) {
         style={styles.input}
       />)}
 
+      {/* Usage Info Section */}
+      {editMode && (
+      <Text style={{ marginTop: spacing.md, marginBottom: spacing.sm }} variant="titleSmall">
+        Usage Info
+      </Text>)}
+
+      {editMode && (
+      <View style={styles.input}>
+        <DatePickerField
+          label="Loaded date"
+          value={parseISODate(form.loaded_date) || new Date()}
+          onChange={(d) => updateField('loaded_date', toISODateString(d))}
+        />
+      </View>)}
+
+      {editMode && (
+      <View style={styles.input}>
+        <DatePickerField
+          label="Finished date"
+          value={parseISODate(form.finished_date) || new Date()}
+          onChange={(d) => updateField('finished_date', toISODateString(d))}
+        />
+      </View>)}
+
+      {/* Development Section */}
       {editMode && (
       <Text style={{ marginTop: spacing.md, marginBottom: spacing.sm }} variant="titleSmall">
         Development
@@ -347,6 +422,62 @@ export default function FilmItemDetailScreen({ route, navigation }) {
         keyboardType="numeric"
         value={form.develop_price}
         onChangeText={v => updateField('develop_price', v)}
+        style={styles.input}
+      />)}
+
+      {editMode && (
+      <TextInput
+        label="Develop shipping"
+        mode="outlined"
+        keyboardType="numeric"
+        value={form.develop_shipping}
+        onChangeText={v => updateField('develop_shipping', v)}
+        style={styles.input}
+      />)}
+
+      {editMode && (
+      <TextInput
+        label="Develop channel"
+        mode="outlined"
+        value={form.develop_channel}
+        onChangeText={v => updateField('develop_channel', v)}
+        style={styles.input}
+      />)}
+
+      {editMode && (
+      <View style={styles.input}>
+        <DatePickerField
+          label="Sent to lab date"
+          value={parseISODate(form.sent_to_lab_at) || new Date()}
+          onChange={(d) => updateField('sent_to_lab_at', toISODateString(d))}
+        />
+      </View>)}
+
+      {editMode && (
+      <View style={styles.input}>
+        <DatePickerField
+          label="Develop date"
+          value={parseISODate(form.develop_date) || new Date()}
+          onChange={(d) => updateField('develop_date', toISODateString(d))}
+        />
+      </View>)}
+
+      {editMode && (
+      <View style={styles.input}>
+        <DatePickerField
+          label="Scan date"
+          value={parseISODate(form.scan_date) || new Date()}
+          onChange={(d) => updateField('scan_date', toISODateString(d))}
+        />
+      </View>)}
+
+      {editMode && (
+      <TextInput
+        label="Develop note"
+        mode="outlined"
+        multiline
+        value={form.develop_note}
+        onChangeText={v => updateField('develop_note', v)}
         style={styles.input}
       />)}
 

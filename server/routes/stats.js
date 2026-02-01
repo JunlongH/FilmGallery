@@ -16,7 +16,7 @@ router.get('/summary', async (req, res) => {
           (SELECT COALESCE(SUM(purchase_price + COALESCE(purchase_shipping_share, 0)), 0) FROM film_items WHERE deleted_at IS NULL)
           +
           -- Inventory Develop
-          (SELECT COALESCE(SUM(develop_price), 0) FROM film_items WHERE deleted_at IS NULL)
+          (SELECT COALESCE(SUM(develop_price + COALESCE(develop_shipping, 0)), 0) FROM film_items WHERE deleted_at IS NULL)
           +
           -- Legacy Rolls (not linked to inventory)
           (SELECT COALESCE(SUM(purchase_cost + develop_cost), 0) FROM rolls WHERE film_item_id IS NULL)
@@ -167,7 +167,7 @@ router.get('/costs', async (req, res) => {
           (SELECT COALESCE(SUM(purchase_cost), 0) FROM rolls WHERE film_item_id IS NULL)
         ) as total_purchase,
         (
-          (SELECT COALESCE(SUM(develop_price), 0) FROM film_items WHERE deleted_at IS NULL)
+          (SELECT COALESCE(SUM(develop_price + COALESCE(develop_shipping, 0)), 0) FROM film_items WHERE deleted_at IS NULL)
           +
           (SELECT COALESCE(SUM(develop_cost), 0) FROM rolls WHERE film_item_id IS NULL)
         ) as total_develop,
@@ -191,7 +191,7 @@ router.get('/costs', async (req, res) => {
         SELECT 
           strftime('%Y-%m', develop_date) as month,
           0 as purchase,
-          SUM(develop_price) as develop
+          SUM(develop_price + COALESCE(develop_shipping, 0)) as develop
         FROM film_items
         WHERE deleted_at IS NULL AND develop_date IS NOT NULL
         GROUP BY month
@@ -222,7 +222,7 @@ router.get('/costs', async (req, res) => {
           f.name,
           COUNT(*) as count,
           SUM(fi.purchase_price + COALESCE(fi.purchase_shipping_share, 0)) as purchase,
-          SUM(fi.develop_price) as develop
+          SUM(fi.develop_price + COALESCE(fi.develop_shipping, 0)) as develop
         FROM film_items fi
         JOIN films f ON fi.film_id = f.id
         WHERE fi.deleted_at IS NULL

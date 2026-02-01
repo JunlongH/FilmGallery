@@ -148,6 +148,7 @@ function runSchemaMigration() {
           shot_at TEXT,
           sent_to_lab_at TEXT,
           developed_at TEXT,
+          scan_date TEXT,
           archived_at TEXT,
           negative_archived INTEGER DEFAULT 0,
           shot_logs TEXT,
@@ -238,6 +239,7 @@ function runSchemaMigration() {
         { table: 'film_items', col: 'loaded_date', type: 'TEXT' },
         { table: 'film_items', col: 'finished_date', type: 'TEXT' },
         { table: 'film_items', col: 'shot_logs', type: 'TEXT' },
+        { table: 'film_items', col: 'scan_date', type: 'TEXT' },
 
         // Photos - Paths
         { table: 'photos', col: 'original_rel_path', type: 'TEXT' },
