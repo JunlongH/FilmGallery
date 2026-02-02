@@ -8,7 +8,8 @@
  * - 响应式设计
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@heroui/react';
 import { 
@@ -37,6 +38,20 @@ import { useTheme } from '../../providers';
 const SIDEBAR_WIDTH = 240;
 const SIDEBAR_COLLAPSED_WIDTH = 72;
 
+// 快捷键映射
+const SHORTCUTS = {
+  '1': '/',
+  '2': '/rolls',
+  '3': '/films',
+  '4': '/calendar',
+  '5': '/map',
+  '6': '/favorites',
+  '7': '/themes',
+  '8': '/stats',
+  '9': '/equipment',
+  ',': '/settings',
+};
+
 /**
  * Sidebar 组件
  * 
@@ -46,6 +61,31 @@ const SIDEBAR_COLLAPSED_WIDTH = 72;
 export function Sidebar({ tags = [] }) {
   const { isCollapsed, toggleCollapsed } = useSidebar();
   const { theme, toggleTheme } = useTheme();
+  const navigate = useNavigate();
+
+  // 全局快捷键监听
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // 检查是否按下 Cmd (Mac) 或 Ctrl (Windows)
+      const isMod = e.metaKey || e.ctrlKey;
+      if (!isMod) return;
+
+      // 检查是否在输入框中
+      const target = e.target;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      const key = e.key;
+      if (SHORTCUTS[key]) {
+        e.preventDefault();
+        navigate(SHORTCUTS[key]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [navigate]);
   
   return (
     <motion.nav

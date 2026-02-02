@@ -11,7 +11,7 @@ import { motion } from 'framer-motion';
 import { Button, Spinner } from '@heroui/react';
 import { Plus, Package, AlertCircle } from 'lucide-react';
 import FilmItemEditModal from './FilmItemEditModal';
-import { LoadFilmModal, DevelopFilmModal, UnloadFilmModal } from './FilmActionModals';
+import { LoadFilmModal, DevelopFilmModal, UnloadFilmModal, ArchiveFilmModal } from './FilmActionModals';
 import { getFilms, getFilmItems, createFilmItemsBatch, updateFilmItem, deleteFilmItem } from '../api';
 import { getCacheStrategy } from '../lib';
 import ModalDialog from './ModalDialog';
@@ -35,6 +35,7 @@ export default function FilmLibrary() {
   const [loadModalItemId, setLoadModalItemId] = useState(null);
   const [unloadModalItemId, setUnloadModalItemId] = useState(null);
   const [developModalItemId, setDevelopModalItemId] = useState(null);
+  const [archiveModalItemId, setArchiveModalItemId] = useState(null);
   const [shotLogModalItemId, setShotLogModalItemId] = useState(null);
   
   // 展开的卡片ID
@@ -200,18 +201,7 @@ export default function FilmLibrary() {
                         });
                       }}
                       onArchive={() => {
-                        showConfirm('Archive Film', 'Archive this film item? This will hide it from active lists.', async () => {
-                          try {
-                            await updateFilmItem(item.id, {
-                              status: 'archived',
-                              archived_at: new Date().toISOString()
-                            });
-                            queryClient.invalidateQueries(['filmItems']);
-                          } catch (err) {
-                            console.error(err);
-                            showAlert('Error', 'Failed to archive: ' + err.message);
-                          }
-                        });
+                        setArchiveModalItemId(item.id);
                       }}
                       onEdit={() => setEditingItem(item)}
                       onDelete={() => {
@@ -334,6 +324,36 @@ export default function FilmLibrary() {
               isOpen={!!shotLogModalItemId}
               onClose={() => setShotLogModalItemId(null)}
               onUpdated={async () => { await queryClient.invalidateQueries(['filmItems']); }}
+            />
+          )}
+
+          {archiveModalItemId && (
+            <ArchiveFilmModal
+              item={allFilmItems.find(i => i.id === archiveModalItemId)}
+              isOpen={!!archiveModalItemId}
+              onClose={() => setArchiveModalItemId(null)}
+              onArchived={async (updated) => {
+                setArchiveModalItemId(null);
+                if (updated && updated.optimistic) {
+                  queryClient.setQueryData(['filmItems'], (old) => {
+                    if (!old || !Array.isArray(old.items)) return old;
+                    return {
+                      ...old,
+                      items: old.items.map(it => it.id === updated.item.id ? updated.item : it),
+                    };
+                  });
+                  return;
+                }
+                if (updated && updated.item) {
+                  queryClient.setQueryData(['filmItems'], (old) => {
+                    if (!old || !Array.isArray(old.items)) return old;
+                    return {
+                      ...old,
+                      items: old.items.map(it => it.id === updated.item.id ? updated.item : it),
+                    };
+                  });
+                }
+              }}
             />
           )}
 

@@ -319,24 +319,46 @@ router.get('/ratings', async (req, res) => {
 // GET /api/stats/locations
 router.get('/locations', async (req, res) => {
   try {
-    // Check if locations table exists
-    const tableExists = await getAsync("SELECT name FROM sqlite_master WHERE type='table' AND name='locations'");
-    if (!tableExists) {
-      return res.json([]);
-    }
-    
+    // Combine locations from both:
+    // 1. photos linked to locations table (via location_id)
+    // 2. photos with direct city/country fields
     const sql = `
+      WITH combined_locations AS (
+        -- Photos linked to locations table
+        SELECT 
+          l.city_name as city_name,
+          l.country_name as country_name,
+          p.id as photo_id,
+          p.roll_id as roll_id
+        FROM photos p
+        JOIN locations l ON p.location_id = l.id
+        WHERE p.location_id IS NOT NULL AND l.city_name IS NOT NULL AND l.city_name != ''
+        
+        UNION ALL
+        
+        -- Photos with direct city field (not linked to locations table or different city)
+        SELECT 
+          p.city as city_name,
+          p.country as country_name,
+          p.id as photo_id,
+          p.roll_id as roll_id
+        FROM photos p
+        WHERE p.city IS NOT NULL AND p.city != ''
+          AND (p.location_id IS NULL OR NOT EXISTS (
+            SELECT 1 FROM locations l 
+            WHERE l.id = p.location_id AND l.city_name = p.city
+          ))
+      )
       SELECT 
-        l.city_name,
-        l.country_name,
-        COUNT(DISTINCT p.id) as photo_count,
-        COUNT(DISTINCT p.roll_id) as roll_count
-      FROM photos p
-      JOIN locations l ON p.location_id = l.id
-      WHERE p.location_id IS NOT NULL
-      GROUP BY l.id
+        city_name,
+        country_name,
+        COUNT(DISTINCT photo_id) as photo_count,
+        COUNT(DISTINCT roll_id) as roll_count
+      FROM combined_locations
+      WHERE city_name IS NOT NULL AND city_name != ''
+      GROUP BY city_name
       ORDER BY photo_count DESC
-      LIMIT 15
+      LIMIT 30
     `;
     
     const rows = await allAsync(sql);

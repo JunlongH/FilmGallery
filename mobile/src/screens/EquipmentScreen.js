@@ -256,17 +256,17 @@ export default function EquipmentScreen({ navigation }) {
         onLongPress={() => tab !== 'film' && setDeleteTarget(item)}
         activeOpacity={0.7}
       >
-        <View style={styles.card}>
+        <View style={[styles.card, { backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
           {/* Thumbnail */}
-          <View style={styles.thumbnail}>
+          <View style={[styles.thumbnail, { backgroundColor: theme.colors.surfaceVariant }]}>
             {thumbUrl ? (
               <CachedImage uri={thumbUrl} style={styles.thumbImage} contentFit="cover" />
             ) : (
-              <View style={styles.thumbPlaceholder}>
+              <View style={[styles.thumbPlaceholder, { backgroundColor: theme.colors.surfaceVariant }]}>
                 <Icon 
                   name={tab === 'camera' ? 'camera' : tab === 'lens' ? 'aperture' : tab === 'flash' ? 'zap' : 'film'} 
                   size={32} 
-                  color="#999" 
+                  color={theme.colors.onSurfaceVariant} 
                 />
               </View>
             )}
@@ -274,19 +274,19 @@ export default function EquipmentScreen({ navigation }) {
           
           {/* Content */}
           <View style={styles.cardContent}>
-            <Text variant="titleMedium" style={styles.cardTitle} numberOfLines={1}>
+            <Text variant="titleMedium" style={[styles.cardTitle, { color: theme.colors.onSurface }]} numberOfLines={1}>
               {displayTitle}
             </Text>
             {subtitle ? (
-              <Text variant="bodySmall" style={styles.cardSubtitle} numberOfLines={1}>
+              <Text variant="bodySmall" style={[styles.cardSubtitle, { color: theme.colors.onSurfaceVariant }]} numberOfLines={1}>
                 {subtitle}
               </Text>
             ) : null}
             {tags.length > 0 && (
               <View style={styles.tagRow}>
                 {tags.map((tag, idx) => (
-                  <View key={idx} style={styles.tag}>
-                    <Text style={styles.tagText}>{tag}</Text>
+                  <View key={idx} style={[styles.tag, { backgroundColor: theme.colors.surfaceVariant }]}>
+                    <Text style={[styles.tagText, { color: theme.colors.onSurfaceVariant }]}>{tag}</Text>
                   </View>
                 ))}
               </View>
@@ -294,7 +294,7 @@ export default function EquipmentScreen({ navigation }) {
           </View>
           
           {/* Arrow */}
-          <Icon name="chevron-right" size={24} color="#999" style={styles.arrow} />
+          <Icon name="chevron-right" size={24} color={theme.colors.onSurfaceVariant} style={styles.arrow} />
         </View>
       </TouchableOpacity>
     );
@@ -458,7 +458,7 @@ export default function EquipmentScreen({ navigation }) {
                         size={24} 
                         color={theme.colors.primary} 
                       />
-                      <Text style={styles.checkboxLabel}>Macro</Text>
+                      <Text style={[styles.checkboxLabel, { color: theme.colors.onSurface }]}>Macro</Text>
                     </TouchableOpacity>
                   </View>
                 </>
@@ -510,18 +510,15 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: radius.md,
     padding: spacing.sm,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
   },
   thumbnail: {
     width: 72,
     height: 72,
     borderRadius: radius.sm,
     overflow: 'hidden',
-    backgroundColor: '#f3f4f6',
     flexShrink: 0,
   },
   thumbImage: {
@@ -533,7 +530,6 @@ const styles = StyleSheet.create({
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f3f4f6',
   },
   cardContent: {
     flex: 1,
@@ -543,12 +539,10 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#1f2937',
     marginBottom: 2,
   },
   cardSubtitle: {
     fontSize: 13,
-    color: '#6b7280',
     marginBottom: 4,
   },
   tagRow: {
@@ -558,14 +552,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   tag: {
-    backgroundColor: '#f3f4f6',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 4,
   },
   tagText: {
     fontSize: 11,
-    color: '#6b7280',
     fontWeight: '500',
   },
   arrow: {
@@ -614,6 +606,5 @@ const styles = StyleSheet.create({
   },
   checkboxLabel: {
     fontSize: 14,
-    color: '#374151',
   },
 });

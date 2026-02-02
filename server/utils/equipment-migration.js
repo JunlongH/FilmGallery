@@ -465,6 +465,14 @@ function runEquipmentMigration() {
       const parseLensString = (str) => {
         if (!str) return null;
         str = str.trim();
+        
+        // Skip fixed lens descriptions (e.g., "32mm f/11", "28mm f/2.8", "Fixed")
+        // These are auto-generated from fixed-lens cameras and should not create lens records
+        const fixedLensPattern = /^\d+(?:\.\d+)?mm\s+f\/[\d.?]+$/i;
+        if (fixedLensPattern.test(str) || str.toLowerCase() === 'fixed') {
+          return null;
+        }
+        
         // Try to extract focal length and aperture from common patterns
         // e.g., "Pentax M 50mm f/1.7", "Zeiss 50/1.4", "Canon 50mm F1.8"
         const focalMatch = str.match(/(\d+)(?:\s*-\s*(\d+))?\s*mm/i);

@@ -563,7 +563,7 @@ export default function ShotLogScreen({ route, navigation }) {
         )}
       />
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.outlineVariant }]}>
         <Text variant="titleSmall" style={{ marginBottom: spacing.sm }}>Add Log Entry</Text>
         <View style={styles.inputRow}>
           <View style={{ flex: 2 }}>
@@ -594,11 +594,11 @@ export default function ShotLogScreen({ route, navigation }) {
 
         {/* Fixed Lens Camera Indicator */}
         {fixedLensInfo && (
-          <View style={styles.fixedLensIndicator}>
-            <Text style={styles.fixedLensText}>
+          <View style={[styles.fixedLensIndicator, { backgroundColor: theme.dark ? 'rgba(34, 197, 94, 0.15)' : '#f0fdf4', borderColor: theme.dark ? '#22c55e' : '#86efac' }]}>
+            <Text style={[styles.fixedLensText, { color: theme.dark ? '#4ade80' : '#166534' }]}>
               🔒 Fixed Lens Camera: {fixedLensInfo.text}
             </Text>
-            <Text style={styles.fixedLensSubtext}>
+            <Text style={[styles.fixedLensSubtext, { color: theme.dark ? '#86efac' : '#15803d' }]}>
               Lens is automatically set for {cameraName || 'this camera'}
             </Text>
           </View>
@@ -610,7 +610,7 @@ export default function ShotLogScreen({ route, navigation }) {
           mode="outlined"
           value={newLens}
           onChangeText={fixedLensInfo ? undefined : setNewLens}
-          style={[styles.input, { marginBottom: spacing.xs }, fixedLensInfo && styles.disabledInput]}
+          style={[styles.input, { marginBottom: spacing.xs }, fixedLensInfo && [styles.disabledInput, { backgroundColor: theme.dark ? 'rgba(34, 197, 94, 0.1)' : '#f0fdf4' }]]}
           dense
           disabled={!!fixedLensInfo}
         />
@@ -916,31 +916,25 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: spacing.lg,
-    backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#eee',
     elevation: 8
   },
   inputRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg },
-  input: { backgroundColor: '#fff' },
-  disabledInput: { backgroundColor: '#f0fdf4', opacity: 0.8 },
+  input: {},
+  disabledInput: { opacity: 0.7 },
   addButton: { justifyContent: 'center', marginTop: 6 },
   saveButton: { marginTop: 0 },
   fixedLensIndicator: {
-    backgroundColor: '#f0fdf4',
     borderWidth: 1,
-    borderColor: '#86efac',
     borderRadius: 8,
     padding: spacing.sm,
     marginBottom: spacing.sm,
   },
   fixedLensText: {
-    color: '#166534',
     fontSize: 14,
     fontWeight: '600',
   },
   fixedLensSubtext: {
-    color: '#15803d',
     fontSize: 12,
     marginTop: 2,
   },

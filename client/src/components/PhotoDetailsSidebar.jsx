@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import LocationInput from './LocationInput.jsx';
 import GeoSearchInput from './GeoSearchInput.jsx';
-import { getMetadataOptions, getApiBase } from '../api';
+import { getMetadataOptions, getApiBase, getTags } from '../api';
 import EquipmentSelector from './EquipmentSelector';
 import '../styles/forms.css';
 import '../styles/sidebar.css';
 
 // Field definitions for modular saving
 const FIELD_GROUPS = {
+  caption: ['caption'],
+  tags: ['tags'],
   time: ['date_taken', 'time_taken'],
   equipment: ['camera', 'lens', 'camera_equip_id', 'lens_equip_id', 'photographer'],
   params: ['aperture', 'shutter_speed', 'iso', 'focal_length'],
@@ -48,6 +50,8 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
     latitude: base?.latitude,
     longitude: base?.longitude,
   });
+  // Available coordinates from LocationInput (for manual fill)
+  const [availableCoords, setAvailableCoords] = useState(null);
   
   const [scannerEquipId, setScannerEquipId] = useState(base?.scanner_equip_id || roll?.scanner_equip_id || null);
   const [scanResolution, setScanResolution] = useState(base?.scan_resolution || roll?.scan_resolution || '');
@@ -57,6 +61,12 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   const [scanCost, setScanCost] = useState(base?.scan_cost || roll?.scan_cost || '');
   const [scanNotes, setScanNotes] = useState(base?.scan_notes || roll?.scan_notes || '');
   
+  // Caption & Tags
+  const [caption, setCaption] = useState(base?.caption || '');
+  const [currentTags, setCurrentTags] = useState(base?.tags ? base.tags.map(t => t.name || t) : []);
+  const [tagInput, setTagInput] = useState('');
+  const [allTags, setAllTags] = useState([]);
+  
   const [options, setOptions] = useState({ cameras: [], lenses: [], photographers: [] });
 
   // Load metadata options for autocomplete
@@ -64,6 +74,10 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
     getMetadataOptions()
       .then(opts => setOptions(opts || { cameras: [], lenses: [], photographers: [] }))
       .catch(err => console.error('Failed to load metadata options', err));
+    // Load all tags for suggestions
+    getTags()
+      .then(tags => setAllTags(tags || []))
+      .catch(err => console.error('Failed to load tags', err));
   }, []);
 
   // Update states when photo changes (for navigation between photos)
@@ -98,6 +112,10 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
     setScanDate(base.scan_date || roll?.scan_date || '');
     setScanCost(base.scan_cost || roll?.scan_cost || '');
     setScanNotes(base.scan_notes || roll?.scan_notes || '');
+    // Caption & Tags
+    setCaption(base.caption || '');
+    setCurrentTags(base.tags ? base.tags.map(t => t.name || t) : []);
+    setTagInput('');
   }, [base, roll]);
 
   // Dirty marking helper
@@ -120,6 +138,8 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
   // Retrieve current value for a field key
   const getFieldValue = (field) => {
     switch (field) {
+      case 'caption': return caption || null;
+      case 'tags': return currentTags;
       case 'date_taken': return dateTaken || null;
       case 'time_taken': return timeTaken || null;
       case 'location_id': return location.location_id || null;
@@ -409,22 +429,54 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
         <div className="fg-separator" />
         <div className="fg-field">
           <label className="fg-label">Country / City</label>
-          <LocationInput value={location} onChange={(loc) => {
-            if (!loc) {
-              setLocation({ location_id: null, country_name: null, city_name: null, latitude: null, longitude: null });
-              markDirty(['location_id', 'country', 'city', 'latitude', 'longitude']);
-              return;
-            }
-            setLocation(prev => ({
-              location_id: loc.location_id || null,
-              country_name: loc.country_name || null,
-              city_name: loc.city_name || null,
-              latitude: loc.latitude ?? prev.latitude,
-              longitude: loc.longitude ?? prev.longitude
-            }));
-            markDirty(['location_id', 'country', 'city', 'latitude', 'longitude']);
-          }} />
+          <LocationInput 
+            value={location} 
+            onChange={(loc) => {
+              if (!loc) {
+                // Only clear location info, KEEP coordinates
+                setLocation(prev => ({
+                  ...prev,
+                  location_id: null,
+                  country_name: null,
+                  city_name: null
+                  // latitude and longitude are preserved
+                }));
+                markDirty(['location_id', 'country', 'city']);
+                return;
+              }
+              setLocation(prev => ({
+                ...prev,
+                location_id: loc.location_id || null,
+                country_name: loc.country_name || null,
+                city_name: loc.city_name || null
+                // latitude and longitude are preserved
+              }));
+              markDirty(['location_id', 'country', 'city']);
+            }}
+            onCoordinatesAvailable={setAvailableCoords}
+          />
         </div>
+        {/* Fill coordinates button */}
+        {availableCoords && (
+          <div className="fg-field">
+            <button 
+              type="button" 
+              className="fg-btn fg-btn-secondary" 
+              onClick={() => {
+                setLocation(l => ({
+                  ...l,
+                  latitude: availableCoords.lat,
+                  longitude: availableCoords.lng
+                }));
+                markDirty(['latitude', 'longitude']);
+                setAvailableCoords(null);
+              }}
+              style={{ width: '100%' }}
+            >
+              📍 Fill Coordinates ({availableCoords.lat.toFixed(4)}, {availableCoords.lng.toFixed(4)})
+            </button>
+          </div>
+        )}
         <div className="fg-sidepanel-groupGrid cols-2">
           <div className="fg-field">
             <label className="fg-label">Latitude</label>
@@ -553,6 +605,116 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
             value={scanNotes} 
             onChange={e=>{ setScanNotes(e.target.value); markDirty('scan_notes'); }} 
           />
+        </div>
+      </section>
+
+      {/* --- CAPTION SECTION --- */}
+      <section className="fg-sidepanel-section">
+        <SectionHeader title="Caption" sectionKey="caption" />
+        <div className="fg-separator" />
+        <div className="fg-field">
+          <textarea 
+            className="fg-textarea" 
+            style={{ minHeight: 80, resize: 'vertical' }} 
+            placeholder="Add a description or caption for this photo..." 
+            value={caption} 
+            onChange={e=>{ setCaption(e.target.value); markDirty('caption'); }} 
+          />
+        </div>
+      </section>
+
+      {/* --- TAGS SECTION --- */}
+      <section className="fg-sidepanel-section">
+        <SectionHeader title="Tags" sectionKey="tags" />
+        <div className="fg-separator" />
+        {/* Current Tags */}
+        {currentTags.length > 0 && (
+          <div className="fg-field" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {currentTags.map(tag => (
+              <span 
+                key={tag} 
+                className="fg-tag-chip"
+                style={{ 
+                  display: 'inline-flex', 
+                  alignItems: 'center', 
+                  gap: 4,
+                  padding: '4px 8px',
+                  borderRadius: 12,
+                  background: 'var(--fg-success-bg, #dcfce7)',
+                  color: 'var(--fg-success-text, #166534)',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {tag}
+                <button 
+                  type="button"
+                  onClick={() => { 
+                    setCurrentTags(prev => prev.filter(t => t !== tag)); 
+                    markDirty('tags'); 
+                  }}
+                  style={{ 
+                    background: 'transparent', 
+                    border: 'none', 
+                    cursor: 'pointer', 
+                    padding: 0,
+                    lineHeight: 1,
+                    color: 'inherit',
+                    opacity: 0.6
+                  }}
+                  aria-label={`Remove tag ${tag}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        {/* Tag Input */}
+        <div className="fg-field" style={{ marginTop: currentTags.length > 0 ? 8 : 0 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input 
+              className="fg-input" 
+              type="text"
+              list="tag-suggestions"
+              placeholder="Add tag..." 
+              value={tagInput} 
+              onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && tagInput.trim()) {
+                  e.preventDefault();
+                  if (!currentTags.includes(tagInput.trim())) {
+                    setCurrentTags(prev => [...prev, tagInput.trim()]);
+                    markDirty('tags');
+                  }
+                  setTagInput('');
+                }
+              }}
+              style={{ flex: 1 }}
+            />
+            <button 
+              type="button" 
+              className="fg-btn fg-btn-secondary"
+              disabled={!tagInput.trim()}
+              onClick={() => {
+                if (tagInput.trim() && !currentTags.includes(tagInput.trim())) {
+                  setCurrentTags(prev => [...prev, tagInput.trim()]);
+                  markDirty('tags');
+                }
+                setTagInput('');
+              }}
+              style={{ padding: '0 12px' }}
+            >
+              +
+            </button>
+          </div>
+          <datalist id="tag-suggestions">
+            {allTags
+              .filter(t => t.photos_count > 0)
+              .filter(t => !currentTags.includes(t.name))
+              .filter(t => !tagInput || t.name.toLowerCase().includes(tagInput.toLowerCase()))
+              .map(t => <option key={t.id} value={t.name} />)
+            }
+          </datalist>
         </div>
       </section>
 

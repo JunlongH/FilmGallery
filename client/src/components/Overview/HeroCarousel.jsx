@@ -150,6 +150,28 @@ export default function HeroCarousel({ onPhotoClick }) {
               ].filter(Boolean).join(' · ')}
             </p>
             
+            {/* Exposure Info - Aperture, Shutter, ISO */}
+            {(() => {
+              const aperture = current.aperture;
+              const shutter = current.shutter_speed;
+              // ISO fallback: photo -> roll -> film
+              const iso = current.iso || current.roll_iso || current.film_iso;
+              // Only show this line if aperture or shutter exists
+              const hasExposureData = aperture || shutter;
+              if (!hasExposureData) return null;
+              
+              const exposureParts = [];
+              if (aperture) exposureParts.push(`ƒ/${aperture}`);
+              if (shutter) exposureParts.push(shutter);
+              if (iso) exposureParts.push(`ISO ${iso}`);
+              
+              return (
+                <p className="text-white/60 text-xs md:text-sm drop-shadow-lg mt-1">
+                  {exposureParts.join(' · ')}
+                </p>
+              );
+            })()}
+            
             {/* Photo Caption - if exists */}
             {current.caption && (
               <p className="text-white/60 text-xs md:text-sm drop-shadow-lg mt-2 max-w-2xl line-clamp-2">

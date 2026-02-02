@@ -30,14 +30,15 @@ router.get('/:id', async (req, res) => {
 
 // GET /api/locations?country=CN&query=shang
 router.get('/', async (req, res) => {
-  const { country, query, hasRecords, withCounts } = req.query;
+  const { country, query, hasRecords, withCounts, includeUserCities } = req.query;
   const params = [];
   const where = [];
   if (country) { where.push('l.country_code = ?'); params.push(country); }
   if (query) { where.push('(l.city_name LIKE ? OR l.country_name LIKE ?)'); params.push(`%${query}%`, `%${query}%`); }
 
-  // If hasRecords is truthy, only include locations that appear in photos or roll_locations
-  if (hasRecords) {
+  // If hasRecords is 'true', only include locations that appear in photos or roll_locations
+  // Fix: checking explicitly for 'true' string because req.query values are strings
+  if (hasRecords === 'true') {
     where.push(`(
       EXISTS (SELECT 1 FROM photos p WHERE p.location_id = l.id)
       OR EXISTS (SELECT 1 FROM roll_locations rl WHERE rl.location_id = l.id)
@@ -65,7 +66,48 @@ router.get('/', async (req, res) => {
     ORDER BY l.country_name, l.city_name
   `;
   try {
-    const rows = await allAsync(sql, params);
+    let rows = await allAsync(sql, params);
+    
+    // Include user-entered cities from photos.city field
+    // These are cities that users typed directly and aren't in the locations table
+    if (includeUserCities === 'true' || hasRecords === 'true') {
+      const userCitiesSql = `
+        SELECT DISTINCT p.city as city_name
+        FROM photos p
+        WHERE p.city IS NOT NULL 
+          AND p.city != ''
+          AND p.location_id IS NULL
+          ${query ? 'AND p.city LIKE ?' : ''}
+      `;
+      const userCityParams = query ? [`%${query}%`] : [];
+      const userCities = await allAsync(userCitiesSql, userCityParams);
+      
+      // Add user-entered cities as virtual location entries with negative IDs
+      // Using format "city::user" to distinguish from location table entries
+      userCities.forEach((uc, idx) => {
+        // Check if this city name already exists in the locations result
+        const exists = rows.some(r => r.city_name?.toLowerCase() === uc.city_name?.toLowerCase());
+        if (!exists && uc.city_name) {
+          rows.push({
+            id: `user::${uc.city_name}`,  // Special ID format for user-entered cities
+            country_code: null,
+            country_name: null,
+            city_name: uc.city_name,
+            city_lat: null,
+            city_lng: null,
+            is_user_city: true  // Flag to identify user-entered cities
+          });
+        }
+      });
+      
+      // Re-sort to include new entries
+      rows.sort((a, b) => {
+        const aName = a.city_name || '';
+        const bName = b.city_name || '';
+        return aName.localeCompare(bName);
+      });
+    }
+    
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });

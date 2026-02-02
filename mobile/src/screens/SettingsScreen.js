@@ -152,8 +152,8 @@ export default function SettingsScreen({ navigation }) {
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       {/* Auto Discovery Section */}
-      <Text style={styles.sectionTitle}>🔍 自动发现</Text>
-      <Text style={styles.hint}>
+      <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>🔍 自动发现</Text>
+      <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
         自动发现局域网内的 FilmGallery 服务，或通过 IP 地址扫描端口
       </Text>
       
@@ -169,7 +169,7 @@ export default function SettingsScreen({ navigation }) {
           ]}
           style={{ marginBottom: 8 }}
         />
-        <Text style={styles.modeHint}>
+        <Text style={[styles.modeHint, { color: theme.colors.onSurfaceVariant }]}>
           {discoveryMode === 'auto' && '自动模式：优先使用 mDNS 发现，然后端口扫描'}
           {discoveryMode === 'mdns' && 'mDNS 模式：零配置发现局域网内的服务'}
           {discoveryMode === 'portscan' && '端口扫描：输入 IP 地址扫描常用端口（适用于公网）'}
@@ -186,8 +186,8 @@ export default function SettingsScreen({ navigation }) {
             placeholder="192.168.1.100 (可选)"
             autoCapitalize="none"
             keyboardType="numeric"
-            activeOutlineColor="#5a4632"
-            style={{ backgroundColor: '#f5f0e6' }}
+            activeOutlineColor={theme.colors.primary}
+            style={{ backgroundColor: theme.colors.surface }}
             label="服务器 IP 地址"
           />
         </View>
@@ -209,7 +209,7 @@ export default function SettingsScreen({ navigation }) {
       {/* Discovered Services List */}
       {discoveredServices.length > 0 && (
         <View style={{ marginBottom: 16 }}>
-          <Text style={styles.label}>发现的服务:</Text>
+          <Text style={[styles.label, { color: theme.colors.primary }]}>发现的服务:</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             {discoveredServices.map((service, index) => (
               <Chip
@@ -227,9 +227,9 @@ export default function SettingsScreen({ navigation }) {
       )}
       
       {/* Manual Configuration Section */}
-      <Text style={styles.sectionTitle}>手动配置</Text>
-      <Text style={styles.label}>Primary Server URL</Text>
-      <Text style={styles.hint}>
+      <Text style={[styles.sectionTitle, { color: theme.colors.primary }]}>手动配置</Text>
+      <Text style={[styles.label, { color: theme.colors.primary }]}>Primary Server URL</Text>
+      <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
         完整服务器地址（自动发现后会自动填入）
       </Text>
       <TextInput
@@ -239,8 +239,8 @@ export default function SettingsScreen({ navigation }) {
         placeholder="http://192.168.1.x:4000"
         autoCapitalize="none"
         keyboardType="url"
-        activeOutlineColor="#5a4632"
-        style={{ backgroundColor: '#f5f0e6', marginBottom: 10 }}
+        activeOutlineColor={theme.colors.primary}
+        style={{ backgroundColor: theme.colors.surface, marginBottom: 10 }}
       />
 
       <View style={{ alignItems: 'center', marginBottom: 10 }}>
@@ -255,8 +255,8 @@ export default function SettingsScreen({ navigation }) {
         </Button>
       </View>
       
-      <Text style={styles.label}>Backup Server URL (Optional)</Text>
-      <Text style={styles.hint}>
+      <Text style={[styles.label, { color: theme.colors.primary }]}>Backup Server URL (Optional)</Text>
+      <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
         Alternative IP address if primary is unreachable.
       </Text>
       <TextInput
@@ -266,8 +266,8 @@ export default function SettingsScreen({ navigation }) {
         placeholder="http://192.168.1.y:4000"
         autoCapitalize="none"
         keyboardType="url"
-        activeOutlineColor="#5a4632"
-        style={{ backgroundColor: '#f5f0e6', marginBottom: 10 }}
+        activeOutlineColor={theme.colors.primary}
+        style={{ backgroundColor: theme.colors.surface, marginBottom: 10 }}
       />
 
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -283,16 +283,16 @@ export default function SettingsScreen({ navigation }) {
         Save Settings
       </Button>
       <View style={{ marginTop: 24 }}>
-        <Text style={styles.label}>Dark Mode</Text>
+        <Text style={[styles.label, { color: theme.colors.primary }]}>Dark Mode</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={styles.hint}>Reduce eye strain with a dark UI</Text>
+          <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant, marginBottom: 0 }]}>Reduce eye strain with a dark UI</Text>
           <Switch value={isDark} onValueChange={toggleDark} />
         </View>
       </View>
 
       <View style={{ marginTop: 24 }}>
-        <Text style={styles.label}>Equipment Library</Text>
-        <Text style={styles.hint}>Manage your cameras, lenses, and flashes</Text>
+        <Text style={[styles.label, { color: theme.colors.primary }]}>Equipment Library</Text>
+        <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>Manage your cameras, lenses, and flashes</Text>
         <Button 
           mode="outlined" 
           onPress={() => navigation.navigate('Equipment')} 
@@ -305,8 +305,8 @@ export default function SettingsScreen({ navigation }) {
       </View>
       
       <View style={{ marginTop: 24 }}>
-        <Text style={styles.label}>Location Diagnostic (位置诊断)</Text>
-        <Text style={styles.hint}>Debug location issues on HyperOS/MIUI devices</Text>
+        <Text style={[styles.label, { color: theme.colors.primary }]}>Location Diagnostic (位置诊断)</Text>
+        <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>Debug location issues on HyperOS/MIUI devices</Text>
         <Button 
           mode="outlined" 
           onPress={() => navigation.navigate('LocationDiagnostic')} 
@@ -328,29 +328,24 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 20,
-    backgroundColor: '#fdfdfd',
   },
   sectionTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 8,
     marginTop: 16,
-    color: '#5a4632',
   },
   label: {
     fontSize: 16,
     fontWeight: 'bold',
     marginBottom: 8,
-    color: '#5a4632',
   },
   hint: {
     fontSize: 14,
-    color: '#666',
     marginBottom: 16,
   },
   modeHint: {
     fontSize: 12,
-    color: '#888',
     fontStyle: 'italic',
   },
   button: {

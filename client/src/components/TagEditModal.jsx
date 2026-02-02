@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import GlassModal from './ui/GlassModal';
+import { Button, Chip } from '@heroui/react';
+import { Tag, Plus } from 'lucide-react';
 
 export default function TagEditModal({ photo, allTags, onClose, onSave }) {
   const [input, setInput] = useState('');
   const [currentTags, setCurrentTags] = useState(photo.tags ? photo.tags.map(t => t.name || t) : []);
   const [suggestions, setSuggestions] = useState([]);
   const inputRef = useRef(null);
-
-  // Theme detection
-  const isDark = document.documentElement.classList.contains('dark') || 
-                 document.documentElement.getAttribute('data-theme') === 'dark';
 
   useEffect(() => {
     if (inputRef.current) inputRef.current.focus();
@@ -47,83 +46,107 @@ export default function TagEditModal({ photo, allTags, onClose, onSave }) {
     onClose();
   };
 
-  // Theme-aware colors
-  const tagBg = isDark ? '#064e3b' : '#eef8ee';
-  const tagColor = isDark ? '#34d399' : '#2f7d32';
-  const inputBorder = isDark ? '#3f3f46' : '#ccc';
-  const inputBg = isDark ? '#27272a' : '#fff';
-  const inputColor = isDark ? '#ECEDEE' : '#333';
-  const suggestionBg = isDark ? '#27272a' : '#f5f5f5';
-  const suggestionBorder = isDark ? '#3f3f46' : '#e0e0e0';
-  const suggestionHoverBg = isDark ? '#3f3f46' : '#e8f5e9';
-  const suggestionHoverBorder = isDark ? '#52525b' : '#c8e6c9';
-  const suggestionTextColor = isDark ? '#ECEDEE' : '#333';
-  const cancelBtnBg = isDark ? '#27272a' : '#fff';
-  const cancelBtnBorder = isDark ? '#3f3f46' : '#ccc';
-  const cancelBtnColor = isDark ? '#ECEDEE' : '#333';
+  // Prevent click-through to elements behind the modal
+  const handleContentClick = (e) => {
+    e.stopPropagation();
+  };
 
   return (
-    <div className="fg-modal-overlay" onClick={onClose}>
-      <div className="fg-modal-panel" onClick={e => e.stopPropagation()} style={{ width: 400, maxWidth: '90%' }}>
-        <h3 style={{ marginTop: 0, marginBottom: 16, color: isDark ? '#ECEDEE' : '#11181C' }}>Edit Tags</h3>
-        
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-          {currentTags.map(t => (
-            <span key={t} style={{ background: tagBg, color: tagColor, padding: '4px 8px', borderRadius: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6 }}>
-              {t}
-              <button onClick={() => removeTag(t)} style={{ border: 'none', background: 'transparent', color: tagColor, cursor: 'pointer', padding: 0, fontSize: 16, lineHeight: 1 }}>×</button>
-            </span>
-          ))}
-        </div>
-
-        <div style={{ position: 'relative', marginBottom: 20 }}>
-          <input 
-            ref={inputRef}
-            value={input} 
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                addTag(input);
-              }
-            }}
-            placeholder="Type to add tag..."
-            style={{ width: '100%', padding: '8px 12px', borderRadius: 4, border: `1px solid ${inputBorder}`, background: inputBg, color: inputColor }}
-          />
-          {suggestions.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10, maxHeight: 200, overflowY: 'auto' }}>
-              {suggestions.map(s => (
-                <div 
-                  key={s.id} 
-                  onClick={() => addTag(s.name)}
-                  style={{ 
-                    padding: '6px 12px', 
-                    background: suggestionBg, 
-                    borderRadius: 20, 
-                    cursor: 'pointer', 
-                    fontSize: 13, 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    gap: 6,
-                    border: `1px solid ${suggestionBorder}`,
-                    transition: 'all 0.2s'
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background = suggestionHoverBg; e.currentTarget.style.borderColor = suggestionHoverBorder; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = suggestionBg; e.currentTarget.style.borderColor = suggestionBorder; }}
+    <div onClick={handleContentClick}>
+      <GlassModal
+        isOpen={true}
+        onClose={onClose}
+        size="md"
+        title="Edit Tags"
+        subtitle="Add or remove tags for this photo"
+        icon={<Tag className="w-5 h-5" />}
+        footer={
+          <div className="flex gap-3 justify-end w-full">
+            <Button
+              variant="bordered"
+              onPress={onClose}
+              className="border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              onPress={handleSave}
+              className="bg-blue-600 text-white"
+            >
+              Save
+            </Button>
+          </div>
+        }
+      >
+        <div className="flex flex-col gap-4" onClick={handleContentClick}>
+          {/* Current Tags */}
+          {currentTags.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {currentTags.map(t => (
+                <Chip
+                  key={t}
+                  onClose={() => removeTag(t)}
+                  variant="flat"
+                  color="success"
+                  className="bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200"
                 >
-                  <span style={{ color: suggestionTextColor }}>{s.name}</span>
-                  <span style={{ color: tagColor, fontWeight: 'bold', fontSize: 15, lineHeight: 1 }}>+</span>
-                </div>
+                  {t}
+                </Chip>
+              ))}
+            </div>
+          )}
+
+          {/* Input - using native input for consistent styling */}
+          <div className="relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  addTag(input);
+                }
+              }}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Type to add tag..."
+              className="w-full h-10 px-3 pr-10 rounded-lg border border-zinc-200/50 dark:border-zinc-700/50 bg-white/80 dark:bg-zinc-800/60 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            />
+            {input.trim() && (
+              <Button
+                isIconOnly
+                size="sm"
+                variant="light"
+                onPress={() => addTag(input)}
+                className="absolute right-1 top-1/2 -translate-y-1/2 text-blue-600 dark:text-blue-400"
+              >
+                <Plus className="w-4 h-4" />
+              </Button>
+            )}
+          </div>
+
+          {/* Suggestions */}
+          {suggestions.length > 0 && (
+            <div className="flex flex-wrap gap-2 max-h-[200px] overflow-y-auto custom-scrollbar">
+              {suggestions.map(s => (
+                <Chip
+                  key={s.id}
+                  onClick={() => addTag(s.name)}
+                  variant="bordered"
+                  className="cursor-pointer hover:bg-green-50 dark:hover:bg-green-900/20 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 transition-colors"
+                  endContent={
+                    <Plus className="w-3 h-3 text-green-600 dark:text-green-400" />
+                  }
+                >
+                  {s.name}
+                </Chip>
               ))}
             </div>
           )}
         </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-          <button onClick={onClose} style={{ padding: '8px 16px', background: cancelBtnBg, border: `1px solid ${cancelBtnBorder}`, color: cancelBtnColor, borderRadius: 4, cursor: 'pointer' }}>Cancel</button>
-          <button onClick={handleSave} style={{ padding: '8px 16px', background: '#2f7d32', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer' }}>Save</button>
-        </div>
-      </div>
+      </GlassModal>
     </div>
   );
 }

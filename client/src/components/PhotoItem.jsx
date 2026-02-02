@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import LazyImage from './common/LazyImage';
 import { buildUploadUrl } from '../api';
 import ModalDialog from './ModalDialog';
+import GlassModal from './ui/GlassModal';
+import { Button } from '@heroui/react';
+import { FileText } from 'lucide-react';
 
 function HeartIcon({ filled }) {
   return (
@@ -22,22 +25,55 @@ function PlusIcon() {
 }
 
 function NoteEditModal({ initialValue, onSave, onClose }) {
-  const [val, setVal] = React.useState(initialValue);
+  const [val, setVal] = React.useState(initialValue || '');
+  
+  const handleSave = () => {
+    onSave(val);
+  };
+
+  // Prevent click-through to elements behind the modal
+  const handleContentClick = (e) => {
+    e.stopPropagation();
+  };
+  
   return (
-    <div className="fg-modal-overlay" onClick={onClose} style={{ zIndex: 10001 }}>
-      <div className="fg-modal-panel" onClick={e => e.stopPropagation()} style={{ width: 300 }}>
-        <h3 style={{ marginTop: 0 }}>Edit Note</h3>
-        <textarea 
-          value={val} 
-          onChange={e => setVal(e.target.value)} 
-          style={{ width: '100%', height: 80, marginBottom: 10, padding: 8, borderRadius: 4, border: '1px solid #ccc' }}
+    <div onClick={handleContentClick}>
+      <GlassModal
+        isOpen={true}
+        onClose={onClose}
+        size="md"
+        title="Edit Note"
+        subtitle="Add a description or caption for this photo"
+        icon={<FileText className="w-5 h-5" />}
+        footer={
+          <div className="flex gap-3 justify-end w-full">
+            <Button
+              variant="bordered"
+              onPress={onClose}
+              className="border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              onPress={handleSave}
+              className="bg-blue-600 text-white"
+            >
+              Save
+            </Button>
+          </div>
+        }
+      >
+        <textarea
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          placeholder="Enter note or caption..."
+          rows={4}
+          className="w-full p-3 rounded-lg border border-zinc-200/50 dark:border-zinc-700/50 bg-white/80 dark:bg-zinc-800/60 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 resize-none"
           autoFocus
+          onClick={(e) => e.stopPropagation()}
         />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} style={{ padding: '6px 12px' }}>Cancel</button>
-          <button onClick={() => onSave(val)} style={{ padding: '6px 12px', background: '#2f7d32', color: '#fff', border: 'none', borderRadius: 4 }}>Save</button>
-        </div>
-      </div>
+      </GlassModal>
     </div>
   );
 }

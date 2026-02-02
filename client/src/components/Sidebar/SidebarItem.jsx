@@ -112,16 +112,7 @@ export function SidebarItem({
   if (isCollapsed) {
     return (
       <Tooltip 
-        content={
-          <div className="flex items-center gap-2">
-            <span>{label}</span>
-            {shortcut && (
-              <kbd className="px-1.5 py-0.5 text-xs bg-zinc-200 dark:bg-zinc-700 rounded">
-                {shortcut}
-              </kbd>
-            )}
-          </div>
-        }
+        content={label}
         placement="right"
         delay={300}
       >

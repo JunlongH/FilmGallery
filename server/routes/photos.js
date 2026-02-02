@@ -99,7 +99,25 @@ router.get('/', async (req, res) => {
   const cameras = toArray(camera);
   const lenses = toArray(lens);
   const photographers = toArray(photographer);
-  const locations = toArray(location_id).map(v => String(v).split('::')[0]);
+  
+  // Parse location IDs: regular numbers or "user::CityName" for user-entered cities
+  const rawLocations = toArray(location_id);
+  const numericLocationIds = [];
+  const userCityNames = [];
+  rawLocations.forEach(v => {
+    const str = String(v);
+    if (str.startsWith('user::')) {
+      // User-entered city name
+      userCityNames.push(str.substring(6)); // Extract city name after "user::"
+    } else {
+      // Regular location ID
+      const id = str.split('::')[0];
+      if (id && !isNaN(Number(id))) {
+        numericLocationIds.push(Number(id));
+      }
+    }
+  });
+  
   const years = toArray(year);
   const months = toArray(month);
   const yms = toArray(ym);
@@ -110,33 +128,49 @@ router.get('/', async (req, res) => {
 
   let sql = locationsTableExists ? `
     SELECT p.*, r.title as roll_title, l.city_name, l.country_name, COALESCE(f.name, r.film_type) AS film_name,
-           cam.name AS camera_equip_name, cam.brand AS camera_equip_brand, cam.mount AS camera_equip_mount,
-           cam.has_fixed_lens, cam.fixed_lens_focal_length, cam.fixed_lens_max_aperture,
-           lens.name AS lens_equip_name, lens.brand AS lens_equip_brand,
-           lens.focal_length_min AS lens_equip_focal_min, lens.focal_length_max AS lens_equip_focal_max,
-           lens.max_aperture AS lens_equip_max_aperture,
+           COALESCE(cam.name, rcam.name) AS camera_equip_name, 
+           COALESCE(cam.brand, rcam.brand) AS camera_equip_brand, 
+           COALESCE(cam.mount, rcam.mount) AS camera_equip_mount,
+           COALESCE(cam.has_fixed_lens, rcam.has_fixed_lens) AS has_fixed_lens, 
+           COALESCE(cam.fixed_lens_focal_length, rcam.fixed_lens_focal_length) AS fixed_lens_focal_length, 
+           COALESCE(cam.fixed_lens_max_aperture, rcam.fixed_lens_max_aperture) AS fixed_lens_max_aperture,
+           COALESCE(lens.name, rlens.name) AS lens_equip_name, 
+           COALESCE(lens.brand, rlens.brand) AS lens_equip_brand,
+           COALESCE(lens.focal_length_min, rlens.focal_length_min) AS lens_equip_focal_min, 
+           COALESCE(lens.focal_length_max, rlens.focal_length_max) AS lens_equip_focal_max,
+           COALESCE(lens.max_aperture, rlens.max_aperture) AS lens_equip_max_aperture,
            flash.name AS flash_equip_name, flash.brand AS flash_equip_brand, flash.guide_number AS flash_equip_gn
     FROM photos p
     JOIN rolls r ON p.roll_id = r.id
     LEFT JOIN locations l ON p.location_id = l.id
     LEFT JOIN films f ON r.filmId = f.id
     LEFT JOIN equip_cameras cam ON p.camera_equip_id = cam.id
+    LEFT JOIN equip_cameras rcam ON r.camera_equip_id = rcam.id
     LEFT JOIN equip_lenses lens ON p.lens_equip_id = lens.id
+    LEFT JOIN equip_lenses rlens ON r.lens_equip_id = rlens.id
     LEFT JOIN equip_flashes flash ON p.flash_equip_id = flash.id
     WHERE 1=1
   ` : `
     SELECT p.*, r.title as roll_title, NULL as city_name, NULL as country_name, COALESCE(f.name, r.film_type) AS film_name,
-           cam.name AS camera_equip_name, cam.brand AS camera_equip_brand, cam.mount AS camera_equip_mount,
-           cam.has_fixed_lens, cam.fixed_lens_focal_length, cam.fixed_lens_max_aperture,
-           lens.name AS lens_equip_name, lens.brand AS lens_equip_brand,
-           lens.focal_length_min AS lens_equip_focal_min, lens.focal_length_max AS lens_equip_focal_max,
-           lens.max_aperture AS lens_equip_max_aperture,
+           COALESCE(cam.name, rcam.name) AS camera_equip_name, 
+           COALESCE(cam.brand, rcam.brand) AS camera_equip_brand, 
+           COALESCE(cam.mount, rcam.mount) AS camera_equip_mount,
+           COALESCE(cam.has_fixed_lens, rcam.has_fixed_lens) AS has_fixed_lens, 
+           COALESCE(cam.fixed_lens_focal_length, rcam.fixed_lens_focal_length) AS fixed_lens_focal_length, 
+           COALESCE(cam.fixed_lens_max_aperture, rcam.fixed_lens_max_aperture) AS fixed_lens_max_aperture,
+           COALESCE(lens.name, rlens.name) AS lens_equip_name, 
+           COALESCE(lens.brand, rlens.brand) AS lens_equip_brand,
+           COALESCE(lens.focal_length_min, rlens.focal_length_min) AS lens_equip_focal_min, 
+           COALESCE(lens.focal_length_max, rlens.focal_length_max) AS lens_equip_focal_max,
+           COALESCE(lens.max_aperture, rlens.max_aperture) AS lens_equip_max_aperture,
            flash.name AS flash_equip_name, flash.brand AS flash_equip_brand, flash.guide_number AS flash_equip_gn
     FROM photos p
     JOIN rolls r ON p.roll_id = r.id
     LEFT JOIN films f ON r.filmId = f.id
     LEFT JOIN equip_cameras cam ON p.camera_equip_id = cam.id
+    LEFT JOIN equip_cameras rcam ON r.camera_equip_id = rcam.id
     LEFT JOIN equip_lenses lens ON p.lens_equip_id = lens.id
+    LEFT JOIN equip_lenses rlens ON r.lens_equip_id = rlens.id
     LEFT JOIN equip_flashes flash ON p.flash_equip_id = flash.id
     WHERE 1=1
   `;
@@ -159,14 +193,39 @@ router.get('/', async (req, res) => {
   }
 
   if (cameras.length) {
-    const cs = cameras.map(() => `p.camera = ?`).join(' OR ');
-    sql += ` AND (${cs})`;
+    // Check photo's camera, photo's camera_equip, or roll's camera_equip
+    const cameraConditions = [
+      ...cameras.map(() => `p.camera = ?`),
+      ...cameras.map(() => `cam.name = ?`),
+      ...cameras.map(() => `rcam.name = ?`)
+    ];
+    sql += ` AND (${cameraConditions.join(' OR ')})`;
+    cameras.forEach(c => { params.push(c); });
+    cameras.forEach(c => { params.push(c); });
     cameras.forEach(c => { params.push(c); });
   }
 
   if (lenses.length) {
-    const ls = lenses.map(() => `p.lens = ?`).join(' OR ');
-    sql += ` AND (${ls})`;
+    // Match against:
+    // 1) p.lens (legacy text field on photos)
+    // 2) lens.name (from photo's equip_lenses)
+    // 3) rlens.name (from roll's equip_lenses, for photos inheriting from roll)
+    // 4) Virtual lens from photo's fixed-lens camera
+    // 5) Virtual lens from roll's fixed-lens camera
+    // Note: Use CASE to handle integer apertures (f/11 not f/11.0)
+    const virtualLensExpr = (alias) => `(${alias}.has_fixed_lens = 1 AND (${alias}.name || ' ' || CAST(${alias}.fixed_lens_focal_length AS INTEGER) || 'mm f/' || CASE WHEN ${alias}.fixed_lens_max_aperture = CAST(${alias}.fixed_lens_max_aperture AS INTEGER) THEN CAST(${alias}.fixed_lens_max_aperture AS INTEGER) ELSE ${alias}.fixed_lens_max_aperture END) IN (${lenses.map(()=>'?').join(',')}))`;
+    const lensConditions = [
+      `p.lens IN (${lenses.map(()=>'?').join(',')})`,
+      `lens.name IN (${lenses.map(()=>'?').join(',')})`,
+      `rlens.name IN (${lenses.map(()=>'?').join(',')})`,
+      virtualLensExpr('cam'),
+      virtualLensExpr('rcam')
+    ];
+    sql += ` AND (${lensConditions.join(' OR ')})`;
+    lenses.forEach(l => { params.push(l); });
+    lenses.forEach(l => { params.push(l); });
+    lenses.forEach(l => { params.push(l); });
+    lenses.forEach(l => { params.push(l); });
     lenses.forEach(l => { params.push(l); });
   }
 
@@ -176,10 +235,21 @@ router.get('/', async (req, res) => {
     photographers.forEach(pv => { params.push(pv); });
   }
 
-  if (locations.length) {
-    const placeholders = locations.map(()=>'?').join(',');
-    sql += ` AND p.location_id IN (${placeholders})`;
-    params.push(...locations);
+  // Location filter: handle both location IDs and user-entered city names
+  if (numericLocationIds.length || userCityNames.length) {
+    const locationConditions = [];
+    if (numericLocationIds.length) {
+      const placeholders = numericLocationIds.map(()=>'?').join(',');
+      locationConditions.push(`p.location_id IN (${placeholders})`);
+      params.push(...numericLocationIds);
+    }
+    if (userCityNames.length) {
+      // Match user-entered cities by the photos.city field
+      const cityPlaceholders = userCityNames.map(()=>'?').join(',');
+      locationConditions.push(`(p.location_id IS NULL AND p.city IN (${cityPlaceholders}))`);
+      params.push(...userCityNames);
+    }
+    sql += ` AND (${locationConditions.join(' OR ')})`;
   }
 
   if (films.length) {
@@ -229,6 +299,8 @@ router.get('/random', async (req, res) => {
            r.title as roll_title,
            p.date_taken as date,
            f.name AS film_name,
+           r.iso AS roll_iso,
+           f.iso AS film_iso,
            COALESCE(
              (SELECT brand || ' ' || model FROM equip_cameras WHERE id = p.camera_equip_id),
              p.camera

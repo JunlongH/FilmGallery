@@ -271,6 +271,12 @@ const seedLocations = async () => {
 
 (async () => {
 	try {
+		// ========================================
+		// MIGRATIONS DISABLED - Database is up to date
+		// Uncomment these sections if you need to run migrations on older databases
+		// ========================================
+		
+		/*
 		// 1. Run Migration BEFORE loading DB
 		console.log('[SERVER] Starting migration check...');
 		await runMigration();
@@ -290,6 +296,9 @@ const seedLocations = async () => {
         console.log('[SERVER] Starting film structure migration...');
         await runFilmStructMigration();
         console.log('[SERVER] Film structure migration complete.');
+		*/
+		
+		console.log('[SERVER] Migrations skipped (database is up to date)');
 
 		// 3. Load DB now that file is ready
 		const db = require('./db');

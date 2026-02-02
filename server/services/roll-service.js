@@ -87,7 +87,23 @@ function buildRollFilters(filters) {
   const cameras = toArray(camera);
   const lenses = toArray(lens);
   const photographers = toArray(photographer);
-  const locations = toArray(location_id).map(v => String(v).split('::')[0]);
+  
+  // Parse location IDs: regular numbers or "user::CityName" for user-entered cities
+  const rawLocations = toArray(location_id);
+  const numericLocationIds = [];
+  const userCityNames = [];
+  rawLocations.forEach(v => {
+    const str = String(v);
+    if (str.startsWith('user::')) {
+      userCityNames.push(str.substring(6)); // Extract city name after "user::"
+    } else {
+      const id = str.split('::')[0];
+      if (id && !isNaN(Number(id))) {
+        numericLocationIds.push(Number(id));
+      }
+    }
+  });
+  
   const years = toArray(year);
   const months = toArray(month);
   const yms = toArray(ym);
@@ -132,25 +148,49 @@ function buildRollFilters(filters) {
   
   // Legacy text filters
   if (cameras.length) {
-    conditions.push(`(rolls.camera IN (${cameras.map(()=>'?').join(',')}) OR cam.model IN (${cameras.map(()=>'?').join(',')}))`);
-    params.push(...cameras, ...cameras);
+    conditions.push(`(rolls.camera IN (${cameras.map(()=>'?').join(',')}) OR cam.model IN (${cameras.map(()=>'?').join(',')}) OR cam.name IN (${cameras.map(()=>'?').join(',')}))`);
+    params.push(...cameras, ...cameras, ...cameras);
   }
   if (lenses.length) {
-    conditions.push(`(rolls.lens IN (${lenses.map(()=>'?').join(',')}) OR lens.model IN (${lenses.map(()=>'?').join(',')}))`);
-    params.push(...lenses, ...lenses);
+    // Match against:
+    // 1) rolls.lens (legacy text field)
+    // 2) lens.name (from equip_lenses table)
+    // 3) Virtual lens name for fixed-lens cameras: "Camera Name focal_length mm f/aperture"
+    // Note: Use CASE to handle integer apertures (f/11 not f/11.0)
+    const virtualLensExpr = `(cam.has_fixed_lens = 1 AND (cam.name || ' ' || CAST(cam.fixed_lens_focal_length AS INTEGER) || 'mm f/' || CASE WHEN cam.fixed_lens_max_aperture = CAST(cam.fixed_lens_max_aperture AS INTEGER) THEN CAST(cam.fixed_lens_max_aperture AS INTEGER) ELSE cam.fixed_lens_max_aperture END) IN (${lenses.map(()=>'?').join(',')}))`;
+    const lensConditions = [
+      `rolls.lens IN (${lenses.map(()=>'?').join(',')})`,
+      `lens.name IN (${lenses.map(()=>'?').join(',')})`,
+      virtualLensExpr
+    ];
+    conditions.push(`(${lensConditions.join(' OR ')})`);
+    params.push(...lenses, ...lenses, ...lenses);
   }
   if (photographers.length) {
     conditions.push(`rolls.photographer IN (${photographers.map(()=>'?').join(',')})`);
     params.push(...photographers);
   }
   
-  // Location filter via roll_locations
-  if (locations.length) {
-    conditions.push(`EXISTS (
-      SELECT 1 FROM roll_locations rl WHERE rl.roll_id = rolls.id 
-      AND rl.location_id IN (${locations.map(()=>'?').join(',')})
-    )`);
-    params.push(...locations);
+  // Location filter via roll_locations or photos with user-entered cities
+  if (numericLocationIds.length || userCityNames.length) {
+    const locationConditions = [];
+    if (numericLocationIds.length) {
+      locationConditions.push(`EXISTS (
+        SELECT 1 FROM roll_locations rl WHERE rl.roll_id = rolls.id 
+        AND rl.location_id IN (${numericLocationIds.map(()=>'?').join(',')})
+      )`);
+      params.push(...numericLocationIds);
+    }
+    if (userCityNames.length) {
+      // Include rolls that have photos with user-entered city names
+      locationConditions.push(`EXISTS (
+        SELECT 1 FROM photos p WHERE p.roll_id = rolls.id 
+        AND p.location_id IS NULL 
+        AND p.city IN (${userCityNames.map(()=>'?').join(',')})
+      )`);
+      params.push(...userCityNames);
+    }
+    conditions.push(`(${locationConditions.join(' OR ')})`);
   }
   
   // Date filters
