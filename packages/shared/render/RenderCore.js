@@ -25,7 +25,7 @@
 
 const { DEFAULT_CURVES, DEFAULT_WB_PARAMS } = require('../filmLabConstants');
 const { buildToneLUT } = require('../filmLabToneLUT');
-const { buildCurveLUT } = require('../filmLabCurves');
+const { buildCurveLUT, buildCurveLUTFloat } = require('../filmLabCurves');
 const { computeWBGains } = require('../filmLabWhiteBalance');
 const { applyInversion, applyLogBaseCorrectionRGB, applyLinearBaseCorrectionRGB } = require('../filmLabInversion');
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../filmLabCurve');
@@ -180,12 +180,18 @@ class RenderCore {
       blacks: p.blacks,
     });
 
-    // 构建曲线 LUT
+    // 构建曲线 LUT (8-bit for processPixel)
     const curves = p.curves;
     const lutRGB = buildCurveLUT(curves.rgb || DEFAULT_CURVES.rgb);
     const lutR = buildCurveLUT(curves.red || DEFAULT_CURVES.red);
     const lutG = buildCurveLUT(curves.green || DEFAULT_CURVES.green);
     const lutB = buildCurveLUT(curves.blue || DEFAULT_CURVES.blue);
+
+    // 构建 Float32 曲线 LUT (for processPixelFloat - higher precision)
+    const lutRGBf = buildCurveLUTFloat(curves.rgb || DEFAULT_CURVES.rgb);
+    const lutRf = buildCurveLUTFloat(curves.red || DEFAULT_CURVES.red);
+    const lutGf = buildCurveLUTFloat(curves.green || DEFAULT_CURVES.green);
+    const lutBf = buildCurveLUTFloat(curves.blue || DEFAULT_CURVES.blue);
 
     // 计算白平衡增益
     const [rBal, gBal, bBal] = computeWBGains({
@@ -204,6 +210,10 @@ class RenderCore {
       lutR,
       lutG,
       lutB,
+      lutRGBf,
+      lutRf,
+      lutGf,
+      lutBf,
       rBal,
       gBal,
       bBal,
@@ -402,16 +412,16 @@ class RenderCore {
     g = Math.max(0, Math.min(1, g));
     b = Math.max(0, Math.min(1, b));
 
-    // ⑥ Curves — sample existing 256-entry LUTs with linear interpolation
-    // This gives float-precision output from the 8-bit curve data
-    if (luts.lutRGB) {
-      r = this._sampleCurveLUTFloat(r, luts.lutRGB);
-      g = this._sampleCurveLUTFloat(g, luts.lutRGB);
-      b = this._sampleCurveLUTFloat(b, luts.lutRGB);
+    // ⑥ Curves — sample Float32 1024-entry LUTs with linear interpolation
+    // This gives true float-precision output from the natural cubic spline data
+    if (luts.lutRGBf) {
+      r = this._sampleCurveLUTFloatHQ(r, luts.lutRGBf);
+      g = this._sampleCurveLUTFloatHQ(g, luts.lutRGBf);
+      b = this._sampleCurveLUTFloatHQ(b, luts.lutRGBf);
     }
-    if (luts.lutR) r = this._sampleCurveLUTFloat(r, luts.lutR);
-    if (luts.lutG) g = this._sampleCurveLUTFloat(g, luts.lutG);
-    if (luts.lutB) b = this._sampleCurveLUTFloat(b, luts.lutB);
+    if (luts.lutRf) r = this._sampleCurveLUTFloatHQ(r, luts.lutRf);
+    if (luts.lutGf) g = this._sampleCurveLUTFloatHQ(g, luts.lutGf);
+    if (luts.lutBf) b = this._sampleCurveLUTFloatHQ(b, luts.lutBf);
 
     // ⑦ HSL Adjustment (perceptual domain — scale to 0-255 for existing code)
     if (p.hslParams && !isDefaultHSL(p.hslParams)) {
@@ -524,6 +534,19 @@ class RenderCore {
     g = luts.toneLUT[Math.floor(g)];
     b = luts.toneLUT[Math.floor(b)];
 
+    // ④b Highlight Roll-Off (Shoulder Compression)
+    // Matches processPixelFloat step ⑤b — compress overbrights into [0.8, 1.0]
+    const maxV = Math.max(r, Math.max(g, b));
+    if (maxV > 204) { // 204 ≈ 0.8 * 255
+      const nR = r / 255, nG = g / 255, nB = b / 255;
+      const nMax = maxV / 255;
+      const compressed = MathOps.highlightRollOff(nMax, 0.8);
+      const scale = compressed / nMax;
+      r = this._clamp255(Math.round(nR * scale * 255));
+      g = this._clamp255(Math.round(nG * scale * 255));
+      b = this._clamp255(Math.round(nB * scale * 255));
+    }
+
     // ⑤ 曲线 (Curves)
     r = luts.lutRGB[r];
     g = luts.lutRGB[g];
@@ -597,7 +620,10 @@ class RenderCore {
       // 白平衡
       u_wbGains: wbGains,
 
-      // 色调 (注意：WebGL 中 exposure 需要除以 50)
+      // 色调
+      // u_exposure: 已预除以 50, 即 pow(2, u_exposure) 即为曝光增益。
+      //   注意: electron-gpu/gpu-renderer.js 直接使用 params.exposure 原始值
+      //   并在 shader 内部做 pow(2, u_exposure / 50.0)，两种用法等价。
       u_exposure: p.exposure / 50.0,
       u_contrast: p.contrast / 100.0,
       u_highlights: p.highlights,
@@ -647,7 +673,7 @@ const vec2 HSL_GREEN   = vec2(120.0, 45.0);
 const vec2 HSL_CYAN    = vec2(180.0, 30.0);
 const vec2 HSL_BLUE    = vec2(240.0, 45.0);
 const vec2 HSL_PURPLE  = vec2(280.0, 30.0);
-const vec2 HSL_MAGENTA = vec2(320.0, 30.0);
+const vec2 HSL_MAGENTA = vec2(330.0, 30.0);
 
 // RGB to HSL conversion
 vec3 rgb2hsl(vec3 c) {
@@ -731,8 +757,8 @@ vec3 applyHSL(vec3 color, vec3 hslParams[8]) {
   float l = hsl.z;
   
   float totalHueShift = 0.0;
-  float totalSatMult = 1.0;
-  float totalLumShift = 0.0;
+  float satAdjust = 0.0;
+  float lumAdjust = 0.0;
   float totalWeight = 0.0;
   
   vec2 channels[8];
@@ -749,16 +775,36 @@ vec3 applyHSL(vec3 color, vec3 hslParams[8]) {
     float w = hslChannelWeight(h, channels[i]);
     if (w > 0.0) {
       totalHueShift += hslParams[i].x * w;
-      totalSatMult *= 1.0 + (hslParams[i].y / 100.0) * w;
-      totalLumShift += (hslParams[i].z / 100.0) * 0.5 * w;
+      satAdjust += (hslParams[i].y / 100.0) * w;
+      lumAdjust += (hslParams[i].z / 100.0) * w;
       totalWeight += w;
     }
   }
   
+  if (totalWeight > 1.0) {
+    totalHueShift /= totalWeight;
+    satAdjust /= totalWeight;
+    lumAdjust /= totalWeight;
+  }
+  
   if (totalWeight > 0.0) {
     h = mod(h + totalHueShift, 360.0);
-    s = clamp(s * totalSatMult, 0.0, 1.0);
-    l = clamp(l + totalLumShift, 0.0, 1.0);
+    
+    // Saturation: asymmetric mapping (matching CPU filmLabHSL.js)
+    if (satAdjust > 0.0) {
+      s = s + (1.0 - s) * satAdjust;
+    } else if (satAdjust < 0.0) {
+      s = s * (1.0 + satAdjust);
+    }
+    s = clamp(s, 0.0, 1.0);
+    
+    // Luminance: asymmetric mapping with 0.5 damping (matching CPU filmLabHSL.js)
+    if (lumAdjust > 0.0) {
+      l = l + (1.0 - l) * lumAdjust * 0.5;
+    } else if (lumAdjust < 0.0) {
+      l = l * (1.0 + lumAdjust * 0.5);
+    }
+    l = clamp(l, 0.0, 1.0);
   }
   
   return hsl2rgb(vec3(h, s, l));
@@ -773,38 +819,61 @@ vec3 applyHSL(vec3 color, vec3 hslParams[8]) {
    */
   static getSplitToneGLSL() {
     return `
-// Calculate luminance (Rec. 709)
+// Calculate luminance (Rec. 709, matching CPU filmLabSplitTone.js)
 float calcLuminance(vec3 c) {
   return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
 }
 
-// Apply split toning
-// highlightHue, highlightSat, shadowHue, shadowSat in [0,1] range
-// balance in [-1, 1] range
+// Smoothstep helper (matching CPU Hermite smoothstep)
+float splitToneSmoothstep(float t) {
+  t = clamp(t, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
+// Apply split toning — lerp-to-tint blend (matching CPU filmLabSplitTone.js)
 vec3 applySplitTone(vec3 color, float highlightHue, float highlightSat, 
                      float shadowHue, float shadowSat, float balance) {
   float lum = calcLuminance(color);
   
-  // Calculate shadow and highlight weights with balance
-  float shadowEnd = 0.25 + balance * 0.15;
-  float highlightStart = 0.75 + balance * 0.15;
+  // Zone weights (matching CPU calculateZoneWeights)
+  float balanceOffset = balance / 2.0;
+  float midpoint = 0.5 + balanceOffset;
+  float shadowEnd = 0.25;
+  float highlightStart = 0.75;
   
-  float shadowWeight = smoothstep(shadowEnd + 0.1, shadowEnd - 0.1, lum);
-  float highlightWeight = smoothstep(highlightStart - 0.1, highlightStart + 0.1, lum);
+  float shadowWeight = 0.0;
+  float midtoneWeight = 0.0;
+  float highlightWeight = 0.0;
   
-  // Convert hue to RGB tint
+  if (lum < shadowEnd) {
+    shadowWeight = 1.0;
+  } else if (lum < midpoint) {
+    float d = max(midpoint - shadowEnd, 0.001);
+    float st = splitToneSmoothstep(clamp((lum - shadowEnd) / d, 0.0, 1.0));
+    shadowWeight = 1.0 - st;
+    midtoneWeight = st;
+  }
+  if (lum > highlightStart) {
+    highlightWeight = 1.0;
+  } else if (lum > midpoint) {
+    float d = max(highlightStart - midpoint, 0.001);
+    float st = splitToneSmoothstep(clamp((lum - midpoint) / d, 0.0, 1.0));
+    highlightWeight = st;
+    midtoneWeight = max(midtoneWeight, 1.0 - st);
+  }
+  
   vec3 highlightTint = hsl2rgb(vec3(highlightHue * 360.0, 1.0, 0.5));
   vec3 shadowTint = hsl2rgb(vec3(shadowHue * 360.0, 1.0, 0.5));
   
-  // Apply tints
+  // Lerp-to-tint blend (matching CPU: result + (tint - result) * strength * 0.3)
   vec3 result = color;
-  
   if (shadowWeight > 0.0 && shadowSat > 0.0) {
-    result = mix(result, result * shadowTint / 0.5, shadowWeight * shadowSat);
+    float strength = shadowSat * shadowWeight;
+    result += (shadowTint - result) * strength * 0.3;
   }
-  
   if (highlightWeight > 0.0 && highlightSat > 0.0) {
-    result = mix(result, result * highlightTint / 0.5, highlightWeight * highlightSat);
+    float strength = highlightSat * highlightWeight;
+    result += (highlightTint - result) * strength * 0.3;
   }
   
   return clamp(result, 0.0, 1.0);
@@ -1012,6 +1081,23 @@ vec3 applySplitTone(vec3 color, float highlightHue, float highlightSat,
     return ((1 - frac) * lut[lo] + frac * lut[hi]) / 255;
   }
 
+  /**
+   * Sample a Float32 curve LUT with linear interpolation.
+   * Higher precision than the 8-bit variant — output is already normalized 0-1.
+   *
+   * @param {number} val - Input value (0.0–1.0)
+   * @param {Float32Array} lut - Float32 curve LUT (values in 0.0–1.0)
+   * @returns {number} Interpolated output (0.0–1.0)
+   */
+  _sampleCurveLUTFloatHQ(val, lut) {
+    const maxIdx = lut.length - 1;
+    const pos = Math.max(0, Math.min(1, val)) * maxIdx;
+    const lo = Math.floor(pos);
+    const hi = Math.min(maxIdx, lo + 1);
+    const frac = pos - lo;
+    return (1 - frac) * lut[lo] + frac * lut[hi];
+  }
+
   // ==========================================================================
   // 8-bit Pipeline Helper Methods (legacy)
   // ==========================================================================
@@ -1077,9 +1163,10 @@ vec3 applySplitTone(vec3 color, float highlightHue, float highlightSat,
   _hasCurves(curves) {
     if (!curves) return false;
     // 检查是否有非默认曲线
+    // 默认曲线控制点为 {x:0,y:0} → {x:255,y:255} (参见 filmLabConstants.DEFAULT_CURVES)
     const isDefault = (pts) => {
       if (!pts || pts.length !== 2) return false;
-      return pts[0]?.x === 0 && pts[0]?.y === 0 && pts[1]?.x === 1 && pts[1]?.y === 1;
+      return pts[0]?.x === 0 && pts[0]?.y === 0 && pts[1]?.x === 255 && pts[1]?.y === 255;
     };
     return !isDefault(curves.rgb) || !isDefault(curves.red) || 
            !isDefault(curves.green) || !isDefault(curves.blue);

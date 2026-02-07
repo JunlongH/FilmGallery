@@ -1,38 +1,42 @@
 # FilmGallery 渲染引擎重构计划：HDR全流程与一致性修复
 
-> **版本**: 1.1 (Code Audit Annotated)
-> **日期**: 2026-02-07 | **审计**: 2026-02-08
+> **版本**: 1.2 (P1-P9 Fixed + Second Audit)
+> **日期**: 2026-02-07 | **审计 v1**: 2026-02-08 | **修复**: 2026-02-08 | **审计 v2**: 2026-02-09
 > **目标**: 统一 CPU/GPU 渲染管线，实现 16-bit/Float 精度全链路，对齐 LR/PS 的动态范围处理机制。
 
 ---
 
-## 0. 代码审计结果总览 (2026-02-08)
+## 0. 代码审计结果总览
 
-### ✅ 已完成的部分
+### ✅ 已完成的部分 (含 P1-P9 修复)
 | 项 | 文件 | 状态 | 备注 |
 |---|---|---|---|
 | `math/color-space.js` | `packages/shared/render/math/` | ✅ 已创建 | `linearToSrgb`, `srgbToLinear`, `applyGamma`, `removeGamma` |
 | `math/exposure.js` | 同上 | ✅ 已创建 | `evToGain`, `applyExposure`, `applyWhiteBalance` |
 | `math/tone-curves.js` | 同上 | ✅ 已创建 | `reinhard`, `reinhardExtended`, `filmicACES`, `highlightRollOff` |
 | `math/index.js` | 同上 | ✅ 已创建 | CommonJS 聚合导出 |
-| `RenderCore.processPixelFloat()` | `RenderCore.js L222-330` | ✅ 已创建 | 浮点管线原型 |
-| `render-service.js` Float Path | `server/services/render-service.js` | ✅ 已修改 | TIFF16 + JPEG 均调用 `processPixelFloat` |
-| `render-service.js` 导入 math | 同上 L17 | ✅ 已导入 | `srgbToLinear` from `math/color-space` |
-| GPU `highlightRollOff` | `electron-gpu/gpu-renderer.js` | ✅ 已实现 | Shader 中有对应代码 |
+| `RenderCore.processPixelFloat()` | `RenderCore.js` | ✅ **完整管线** | 含 FilmCurve→Base→DensityLevels→Inversion→3DLUT→WB→Exp→Contrast→B/W→S/H→RollOff→Curves→HSL→SplitTone |
+| `render-service.js` Float Path | `server/services/render-service.js` | ✅ 已修改 | TIFF16 + JPEG 均调用 `processPixelFloat`，移除错误的 srgbToLinear |
+| `CpuRenderService.js` | `client/src/services/` | ✅ **已升级** | 调用 `processPixelFloat()` 替代旧 `processPixel()` |
+| GPU `highlightRollOff` | `electron-gpu/gpu-renderer.js` | ✅ 已修复 | GL2+GL1 均有，重复代码已删除 |
 
-### 🔴 发现的 Bug 和问题
+### ✅ P1-P9 修复记录 (commit `18cb6c2`)
 
-| # | 严重度 | 位置 | 问题描述 |
-|---|--------|------|----------|
-| **P1** | 🔴 编译错误 | `gpu-renderer.js` L471-480 | **Highlight Roll-off 代码重复了两次**（同一段 GLSL 粘贴了两遍），`maxVal` 和 `threshold` 被重复声明，GLSL 编译会报错 |
-| **P2** | 🔴 逻辑不一致 | `RenderCore.processPixelFloat()` | WB 调用方式错误：`applyWhiteBalance(r, 1, 1, gains).r` 等三次独立调用，应该是一次 `applyWhiteBalance(r, g, b, gains)` |
-| **P3** | 🟡 精度浪费 | `processPixelFloat()` | 步骤 4 做了 `applyGamma(2.2)` 将线性转到感知空间，但对比度/阴影/高光后没有再 `removeGamma()` 回去，Highlight Roll-off 和最终输出都在 Gamma 空间操作，与 Plan 要求的"线性空间运算，最后才 Gamma 编码"**不一致** |
-| **P4** | 🟡 管线缺失 | `processPixelFloat()` | 缺少 Plan 中阶段 ①③ 的 Film Curve、片基校正、Inversion、3D LUT、Curves、HSL、Split Toning 步骤——这些只在旧的 `processPixel()` 中有，Float 版跳过了 |
-| **P5** | 🟡 未被调用 | `CpuRenderService.js` (客户端) | 仍然调用 `core.processPixel()` (8-bit 旧管线)，没有使用新的 `processPixelFloat()`，客户端 CPU 渲染完全没有升级 |
-| **P6** | 🟡 LUT 未升级 | `filmLabToneLUT.js` | 仍然是 `Uint8Array(256)` 索引 LUT，Plan 要求升级为 Float LUT 或废弃 |
-| **P7** | 🟢 math 未使用 | `math/exposure.js` | `evToGain()` 和 `applyExposure()` 在 `processPixelFloat` 中未被引用，而是内联了 `Math.pow(2, ev)` |
-| **P8** | 🟢 math 未使用 | `math/tone-curves.js` | `reinhard()`, `reinhardExtended()`, `filmicACES()` 均未被任何代码调用；只有 `highlightRollOff()` 被 `processPixelFloat` 引用 |
-| **P9** | 🟢 GPU 不一致 | GPU Shader vs `processPixelFloat` | GPU 的 Tone 步骤仍在用 `u_toneCurveTex`（旧 256-entry LUT 纹理），而 Float 管线完全绕过了 LUT，两者算法已分道 |
+| # | 原严重度 | 修复状态 | 修复内容 |
+|---|----------|----------|----------|
+| **P1** | 🔴 编译错误 | ✅ **已修复** | 删除 gpu-renderer.js 中重复的 Highlight Roll-off GLSL 代码块 |
+| **P2** | 🔴 逻辑不一致 | ✅ **已修复** | processPixelFloat() WB 改为单次 `r*=gains[0]` 直接乘法 |
+| **P3** | 🟡 精度浪费 | ✅ **已修复** | 移除 processPixelFloat() 中错误的 mid-pipeline applyGamma(2.2)，全程 sRGB 空间操作与 GPU 一致 |
+| **P4** | 🟡 管线缺失 | ✅ **已修复** | 完整实现 Float 管线：Film Curve / Base Correction / Density Levels / Inversion / 3D LUT / Curves / HSL / Split Toning |
+| **P5** | 🟡 未被调用 | ✅ **已修复** | CpuRenderService.js 已改为调用 processPixelFloat() |
+| **P6** | 🟡 LUT 未升级 | ✅ **已解决** | processPixelFloat() 使用内联 Float 公式，不再依赖 Uint8Array LUT；GPU 的 toneCurveTex 仅包含 curves 数据（非 tone mapping LUT） |
+| **P7** | 🟢 math 未使用 | ⚠️ **保留** | math/ 库保留为未来重构基础，当前 Float 管线使用内联公式以匹配 GPU |
+| **P8** | 🟢 math 未使用 | ⚠️ **保留** | reinhard/filmicACES 作为未来可选 tone mapping 算法保留 |
+| **P9** | 🟢 GPU 不一致 | ✅ **已解决** | 确认 GPU toneCurveTex = curves-only（由 FilmLab.jsx buildCurveLUT 生成），不含 exposure/contrast，与 Float 管线一致 |
+
+### 🔴 第二轮审计发现的新问题 (2026-02-09)
+
+> 详见新文档: `docs/FILMLAB-COMPREHENSIVE-AUDIT.md`
 
 ### 🏗️ 尚未开始的 Plan 内容
 

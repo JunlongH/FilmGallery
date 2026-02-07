@@ -35,7 +35,13 @@ export async function loadImageToCanvas(imageUrl, maxWidth = null) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     
+    // 设置超时
+    const timeout = setTimeout(() => {
+      reject(new Error('Image load timeout'));
+    }, 30000);
+
     img.onload = () => {
+      clearTimeout(timeout);
       const scale = maxWidth ? Math.min(1, maxWidth / img.width) : 1;
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
@@ -58,35 +64,8 @@ export async function loadImageToCanvas(imageUrl, maxWidth = null) {
     };
     
     img.onerror = (e) => {
-      reject(new Error(`Failed to load image: ${imageUrl}`));
-    };
-    
-    // 设置超时
-    const timeout = setTimeout(() => {
-      reject(new Error('Image load timeout'));
-    }, 30000);
-    
-    img.onload = function() {
       clearTimeout(timeout);
-      const scale = maxWidth ? Math.min(1, maxWidth / img.width) : 1;
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0, w, h);
-      
-      resolve({ 
-        canvas, 
-        ctx, 
-        width: w, 
-        height: h, 
-        originalWidth: img.width, 
-        originalHeight: img.height,
-        image: img
-      });
+      reject(new Error(`Failed to load image: ${imageUrl}`));
     };
     
     img.src = imageUrl;

@@ -34,6 +34,9 @@ const HSL_CHANNELS = {
 /** HSL 通道顺序 (用于 UI) */
 const HSL_CHANNEL_ORDER = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'magenta'];
 
+/** 预缓存 HSL_CHANNELS entries (避免每像素 Object.entries 分配) */
+const HSL_CHANNELS_ENTRIES = Object.entries(HSL_CHANNELS);
+
 /** 默认 HSL 参数 */
 const DEFAULT_HSL_PARAMS = {
   red:     { hue: 0, saturation: 0, luminance: 0 },
@@ -189,7 +192,7 @@ function applyHSL(r, g, b, hslParams = {}) {
   if (s < 0.05) {
     // 仍可调整明度
     let lumAdjust = 0;
-    for (const [channelKey, channel] of Object.entries(HSL_CHANNELS)) {
+    for (const [channelKey, channel] of HSL_CHANNELS_ENTRIES) {
       const params = hslParams[channelKey];
       if (params && params.luminance !== 0) {
         const weight = calculateChannelWeight(h, channel);
@@ -212,7 +215,7 @@ function applyHSL(r, g, b, hslParams = {}) {
   let lumAdjust = 0;
   let totalWeight = 0;
   
-  for (const [channelKey, channel] of Object.entries(HSL_CHANNELS)) {
+  for (const [channelKey, channel] of HSL_CHANNELS_ENTRIES) {
     const params = hslParams[channelKey];
     if (!params) continue;
     
