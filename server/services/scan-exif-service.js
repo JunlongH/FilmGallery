@@ -320,12 +320,22 @@ function matchScannerToEquipment(scannerInfo, scanners) {
  * @returns {Object} Database-ready object
  */
 function formatForDatabase(scannerInfo) {
+  let scanDate = null;
+  if (scannerInfo.dateTime) {
+    try {
+      const d = new Date(scannerInfo.dateTime);
+      if (!isNaN(d.getTime())) {
+        scanDate = d.toISOString();
+      }
+    } catch (_) { /* ignore unparseable dates */ }
+  }
+
   return {
     source_make: scannerInfo.make || null,
     source_model: scannerInfo.model || null,
     source_software: scannerInfo.software || null,
     scan_resolution: scannerInfo.effectiveDpi || null,
-    scan_date: scannerInfo.dateTime ? new Date(scannerInfo.dateTime).toISOString() : null,
+    scan_date: scanDate,
     scan_bit_depth: Array.isArray(scannerInfo.bitsPerSample) 
       ? scannerInfo.bitsPerSample[0] 
       : scannerInfo.bitsPerSample || null

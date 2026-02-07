@@ -25,10 +25,10 @@ const fs = require('fs');
 sharp.cache(false);
 sharp.concurrency(1);
 
-// Default timeout for Sharp operations (30 seconds)
-const SHARP_TIMEOUT = 30000;
-// Faster timeout for thumbnails (10 seconds)
-const THUMB_TIMEOUT = 10000;
+// Default timeout for Sharp operations (120 seconds — raised for pixel-shift RAW ~170MP)
+const SHARP_TIMEOUT = 120000;
+// Timeout for thumbnails (30 seconds — raised for pixel-shift RAW ~170MP)
+const THUMB_TIMEOUT = 30000;
 
 /**
  * Execute a Sharp operation with timeout protection.
@@ -62,7 +62,7 @@ function sharpWithTimeout(sharpOp, timeoutMs = SHARP_TIMEOUT) {
 async function processToJpeg(input, outputPath, options = {}) {
   const { quality = 95, autoRotate = true, timeout = SHARP_TIMEOUT } = options;
 
-  let pipeline = sharp(input, { failOn: 'none' });
+  let pipeline = sharp(input, { failOn: 'none', limitInputPixels: false });
   
   if (autoRotate) {
     pipeline = pipeline.rotate();
@@ -95,7 +95,7 @@ async function generateThumbnail(input, outputPath, options = {}) {
     timeout = THUMB_TIMEOUT 
   } = options;
 
-  const pipeline = sharp(input)
+  const pipeline = sharp(input, { limitInputPixels: false })
     .resize({ width, height, fit })
     .jpeg({ quality });
 
@@ -112,13 +112,18 @@ async function generateThumbnail(input, outputPath, options = {}) {
  * @returns {Promise<{buffer: Buffer, metadata: Object|null}>}
  */
 async function decodeRawFile(filePath, options = {}) {
-  const { outputFormat = 'tiff' } = options;
+  const { outputFormat = 'tiff', halfSize = false } = options;
 
   // Lazy-load raw-decoder to avoid startup cost if not used
   const rawDecoder = require('./raw-decoder');
 
   try {
-    const buffer = await rawDecoder.decode(filePath, { outputFormat });
+    const decodeOpts = { outputFormat };
+    if (halfSize) {
+      decodeOpts.halfSize = true;
+      console.log('[ImageProcessor] Using halfSize decode for large RAW file');
+    }
+    const buffer = await rawDecoder.decode(filePath, decodeOpts);
     
     let metadata = null;
     try {

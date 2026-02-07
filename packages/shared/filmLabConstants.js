@@ -17,7 +17,7 @@ const PREVIEW_MAX_WIDTH_SERVER = 1400;
 const PREVIEW_MAX_WIDTH_CLIENT = 1200;
 
 /** 导出操作最大宽度 (Save/HQ Export/Download) */
-const EXPORT_MAX_WIDTH = 4000;
+const EXPORT_MAX_WIDTH = 8000;
 
 // ============================================================================
 // 默认参数值

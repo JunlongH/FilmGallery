@@ -211,7 +211,14 @@ async function processFileForRoll({
   if (file.isRaw) {
     console.log(`[PhotoUpload] Detected RAW file: ${file.originalName}`);
     try {
-      const decoded = await imageProcessor.decodeRawFile(file.tmpPath);
+      // Use halfSize decode for very large RAW files (>100MB) to prevent OOM/timeout
+      // Pixel-shift files (e.g. 170MP Panasonic RW2) can be 200-400MB
+      const fileStats = fs.statSync(file.tmpPath);
+      const useHalfSize = fileStats.size > 100 * 1024 * 1024; // >100MB
+      if (useHalfSize) {
+        console.log(`[PhotoUpload] Large RAW file (${(fileStats.size / 1024 / 1024).toFixed(0)}MB), using halfSize decode`);
+      }
+      const decoded = await imageProcessor.decodeRawFile(file.tmpPath, { halfSize: useHalfSize });
       processInput = decoded.buffer;
       rawMetadata = decoded.metadata;
       console.log(`[PhotoUpload] RAW decoded. Camera: ${rawMetadata?.camera || 'Unknown'}`);
@@ -412,10 +419,10 @@ async function uploadSinglePhoto({ rollId, file, options = {} }) {
   const originalExt = path.extname(file.originalname || file.filename) || '.jpg';
   const isRawFile = imageProcessor.isRawFile(file.originalname || file.filename);
 
-  // Get next frame number
+  // Get next frame number — use MAX(frame_number) + 1 to avoid collisions after deletions
   const PreparedStmt = require('../utils/prepared-statements');
-  const cntRow = await PreparedStmt.getAsync('rolls.countPhotos', [rollId]);
-  const nextIndex = (cntRow && cntRow.cnt ? cntRow.cnt : 0) + 1;
+  const maxRow = await PreparedStmt.getAsync('rolls.maxFrameNumber', [rollId]);
+  const nextIndex = (maxRow && maxRow.max_frame ? maxRow.max_frame : 0) + 1;
   const frameNumber = String(nextIndex).padStart(2, '0');
   const baseName = `${rollId}_${frameNumber}`;
   const finalName = `${baseName}.jpg`;
@@ -449,6 +456,12 @@ async function uploadSinglePhoto({ rollId, file, options = {} }) {
   const originalPath = path.join(originalsDir, originalName);
   const { moveFileSync } = require('../utils/file-helpers');
   moveFileSync(file.path, originalPath);
+
+  // If processInput is still a file path (i.e. non-RAW), update it to the new location
+  // since the original upload file has been moved to originals/
+  if (typeof processInput === 'string') {
+    processInput = originalPath;
+  }
 
   // Determine upload mode
   const effectiveUploadType = uploadType || (isNegativeFlag === 'true' || isNegativeFlag === true ? 'negative' : 'positive');
@@ -519,12 +532,14 @@ async function uploadSinglePhoto({ rollId, file, options = {} }) {
   // Insert photo
   const sql = `INSERT INTO photos (
     roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path,
+    positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
     caption, taken_at, rating, camera, lens, photographer,
     source_make, source_model, source_software, source_lens
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
   const result = await runAsync(sql, [
     rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath,
+    positiveRelPath, positiveThumbRelPath, negativeThumbRelPath,
     caption, taken_at, rating, finalCamera, finalLens, finalPhotographer,
     sourceMake, sourceModel, sourceSoftware, sourceLens
   ]);

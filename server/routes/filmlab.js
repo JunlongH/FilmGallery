@@ -7,6 +7,7 @@ const sharp = require('sharp');
 sharp.cache(false);
 const { uploadsDir } = require('../config/paths');
 const { buildPipeline } = require('../services/filmlab-service');
+const { generatePositiveThumb, cleanupOldThumb } = require('../services/thumb-service');
 
 // 使用统一渲染核心和源路径解析器
 const {
@@ -114,7 +115,7 @@ router.post('/render', async (req, res) => {
   if (!photoId) return res.status(400).json({ error: 'photoId required' });
   try {
     const row = await new Promise((resolve, reject) => {
-      db.get('SELECT id, roll_id, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path, filename FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
+      db.get('SELECT id, roll_id, frame_number, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path, positive_thumb_rel_path, filename FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
     });
     if (!row) return res.status(404).json({ error: 'photo not found' });
     
@@ -143,7 +144,7 @@ router.post('/render', async (req, res) => {
 
     // Full resolution pipeline: geometry only; color ops via shared module
     let img = await buildPipeline(abs, params || {}, { 
-      maxWidth: EXPORT_MAX_WIDTH, 
+      maxWidth: null, // No width limit for High Quality Render
       cropRect: (params && params.cropRect) || null, 
       toneAndCurvesInJs: true,
       skipColorOps: true
@@ -197,9 +198,26 @@ router.post('/render', async (req, res) => {
     
     const relOut = path.relative(uploadsDir, outPath).replace(/\\/g, '/');
     
-    // Also update filename in database to match the actual file
+    // Generate positive thumbnail using shared thumb service
+    let relThumb = null;
+    try {
+      const thumbResult = await generatePositiveThumb(outPath, row.roll_id, row.frame_number);
+      relThumb = thumbResult.relPath;
+      // Cleanup previous positive thumb if it was at a different path
+      cleanupOldThumb(row.positive_thumb_rel_path, relThumb);
+    } catch (thumbErr) {
+      console.error('[FILMLAB] render thumb generation failed:', thumbErr.message);
+    }
+
+    // Update DB: filename, positive_rel_path, full_rel_path, positive_thumb_rel_path, and updated_at
     await new Promise((resolve, reject) => {
-        db.run('UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ? WHERE id = ?', [newName, relOut, relOut, photoId], (err) => err ? reject(err) : resolve());
+        const sql = relThumb
+          ? 'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ?, positive_thumb_rel_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+          : 'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+        const params = relThumb
+          ? [newName, relOut, relOut, relThumb, photoId]
+          : [newName, relOut, relOut, photoId];
+        db.run(sql, params, (err) => err ? reject(err) : resolve());
     });
 
     res.json({ ok: true, path: relOut });
@@ -216,7 +234,7 @@ router.post('/export', async (req, res) => {
   if (!photoId) return res.status(400).json({ error: 'photoId required' });
   try {
     const row = await new Promise((resolve, reject) => {
-      db.get('SELECT id, roll_id, filename, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
+      db.get('SELECT id, roll_id, frame_number, filename, original_rel_path, positive_rel_path, full_rel_path, negative_rel_path, positive_thumb_rel_path FROM photos WHERE id = ?', [photoId], (err, r) => err ? reject(err) : resolve(r));
     });
     if (!row) return res.status(404).json({ error: 'photo not found' });
     
@@ -245,7 +263,7 @@ router.post('/export', async (req, res) => {
 
     // Full resolution pipeline: geometry only; color ops via shared module
     let img = await buildPipeline(abs, params || {}, { 
-      maxWidth: EXPORT_MAX_WIDTH, 
+      maxWidth: null, // No width limit for High Quality Export
       cropRect: (params && params.cropRect) || null, 
       toneAndCurvesInJs: true,
       skipColorOps: true
@@ -295,33 +313,32 @@ router.post('/export', async (req, res) => {
     await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toFile(outPath);
     const relOut = path.relative(uploadsDir, outPath).replace(/\\/g, '/');
 
-    // Optionally generate/update thumbnail in thumb/ directory
+    // Generate/update positive thumbnail using shared thumb service
+    let relThumb = null;
     try {
-      const rollsRoot = path.resolve(outDir, '..');
-      const thumbDir = path.join(rollsRoot, 'thumb');
-      if (!fs.existsSync(thumbDir)) fs.mkdirSync(thumbDir, { recursive: true });
-      const thumbName = `${base.includes('_pos') ? base : base + '_pos'}-thumb.jpg`;
-      const thumbPath = path.join(thumbDir, thumbName);
-      await sharp(outPath)
-        .resize({ width: 240, height: 240, fit: 'inside' })
-        .jpeg({ quality: 40 })
-        .toFile(thumbPath)
-        .catch(() => {});
-      const relThumb = path.relative(uploadsDir, thumbPath).replace(/\\/g, '/');
+      const thumbResult = await generatePositiveThumb(outPath, row.roll_id, row.frame_number);
+      relThumb = thumbResult.relPath;
+      cleanupOldThumb(row.positive_thumb_rel_path, relThumb);
+    } catch (thumbErr) {
+      console.error('[FILMLAB] export thumb generation failed:', thumbErr.message);
+    }
 
-      // Update DB: filename, positive_rel_path, full_rel_path, positive_thumb_rel_path, thumb_rel_path
+    // Update DB: filename, positive_rel_path, full_rel_path, positive_thumb_rel_path, and updated_at
+    try {
+      const sql = relThumb
+        ? 'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ?, positive_thumb_rel_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+        : 'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+      const params = relThumb
+        ? [outName, relOut, relOut, relThumb, photoId]
+        : [outName, relOut, relOut, photoId];
       await new Promise((resolve, reject) => {
-        db.run(
-          'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ?, positive_thumb_rel_path = ?, thumb_rel_path = ? WHERE id = ?',
-          [outName, relOut, relOut, relThumb, relThumb, photoId],
-          (err) => (err ? reject(err) : resolve())
-        );
+        db.run(sql, params, (err) => (err ? reject(err) : resolve()));
       });
     } catch (e) {
       // Fallback: update paths without thumbnail
       await new Promise((resolve, reject) => {
         db.run(
-          'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ? WHERE id = ?',
+          'UPDATE photos SET filename = ?, positive_rel_path = ?, full_rel_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
           [outName, relOut, relOut, photoId],
           (err) => (err ? reject(err) : resolve())
         );

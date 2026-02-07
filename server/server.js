@@ -64,9 +64,17 @@ app.options('*', (req, res) => {
 });
 
 // --- storage directories ---
+// Thumbs are mutable (regenerated on re-export) — use short cache + revalidate.
+// Originals/full are immutable — safe to cache aggressively.
 const staticOptions = {
   maxAge: '1y',
   immutable: true,
+  etag: true,
+  lastModified: true
+};
+const thumbStaticOptions = {
+  maxAge: '0',       // Always revalidate thumbs
+  immutable: false,
   etag: true,
   lastModified: true
 };
@@ -129,6 +137,17 @@ const caseInsensitiveStatic = (root, options = {}) => {
 
 // Serve local temp uploads for previews (no long cache). Mount BEFORE /uploads.
 app.use('/uploads/tmp', express.static(localTmpDir));
+
+// Serve thumb directories with short-lived cache (thumbs are mutable — regenerated on re-export)
+// Must be mounted BEFORE the generic /uploads route so it takes priority.
+app.use('/uploads/rolls', (req, res, next) => {
+  // Match paths like /{rollId}/thumb/... 
+  if (/\/\d+\/thumb\//.test(req.path)) {
+    return express.static(rollsDir, thumbStaticOptions)(req, res, next);
+  }
+  next();
+});
+
 app.use('/uploads', caseInsensitiveStatic(uploadsDir, staticOptions));
 app.use('/uploads', express.static(uploadsDir, staticOptions));
 app.use('/uploads/rolls', caseInsensitiveStatic(rollsDir, staticOptions));

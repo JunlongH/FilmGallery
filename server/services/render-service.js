@@ -219,7 +219,7 @@ async function renderToLibrary(photoId, params) {
   // 更新数据库
   await new Promise((resolve, reject) => {
     db.run(
-      'UPDATE photos SET positive_rel_path = ?, positive_thumb_rel_path = ?, full_rel_path = ?, filename = ? WHERE id = ?',
+      'UPDATE photos SET positive_rel_path = ?, positive_thumb_rel_path = ?, full_rel_path = ?, filename = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [relOut, relThumb, relOut, newName, photoId],
       (err) => err ? reject(err) : resolve()
     );

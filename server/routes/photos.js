@@ -11,6 +11,7 @@ const { uploadsDir } = require('../config/paths');
 const { uploadDefault } = require('../config/multer');
 const { moveFileSync } = require('../utils/file-helpers');
 const PreparedStmt = require('../utils/prepared-statements');
+const { generatePositiveThumb, cleanupOldThumb } = require('../services/thumb-service');
 
 // Film Curve support
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../../packages/shared/filmLabCurve');
@@ -87,7 +88,7 @@ function buildCurveLUT(points) {
 
 // Get all photos with optional filtering
 router.get('/', async (req, res) => {
-  const { camera, lens, photographer, location_id, film, year, month, ym, q } = req.query;
+  const { camera, lens, photographer, location_id, film, year, month, ym, q, favorite } = req.query;
 
   const toArray = (v) => {
     if (v === undefined || v === null) return [];
@@ -269,6 +270,11 @@ router.get('/', async (req, res) => {
       if (months.length) { parts.push(`strftime('%m', p.date_taken) IN (${months.map(()=>'?').join(',')})`); params.push(...months); }
     }
     if (parts.length) sql += ` AND (${parts.join(' OR ')})`;
+  }
+
+  // Favorites filter
+  if (favorite === 'true' || favorite === '1') {
+    sql += ` AND IFNULL(CAST(p.rating AS INTEGER), 0) <> 0`;
   }
 
   sql += ` ORDER BY p.date_taken DESC, p.id DESC`;
@@ -499,9 +505,6 @@ router.put('/:id/update-positive', uploadDefault.single('image'), async (req, re
 
     if (!row) return res.status(404).json({ error: 'Photo not found' });
 
-    // If full_rel_path is null (negative only), we need to create a path for the positive
-    // Even if it exists, we ALWAYS create a new versioned filename to avoid OneDrive/OS file locking issues.
-    
     const rollId = row.roll_id;
     const frameNum = row.frame_number || '00';
     const folderName = String(rollId);
@@ -510,7 +513,7 @@ router.put('/:id/update-positive', uploadDefault.single('image'), async (req, re
     const fullDir = path.join(uploadsDir, 'rolls', folderName, 'full');
     if (!fs.existsSync(fullDir)) fs.mkdirSync(fullDir, { recursive: true });
 
-    // Generate new unique filename: rollID_frame.jpg (stable filename to avoid proliferation)
+    // Stable filename: rollID_frame.jpg
     const newFileName = `${rollId}_${frameNum}.jpg`;
     const newFullRelPath = path.join('rolls', folderName, 'full', newFileName).replace(/\\/g, '/');
     const newFullPath = path.join(fullDir, newFileName);
@@ -518,60 +521,56 @@ router.put('/:id/update-positive', uploadDefault.single('image'), async (req, re
     // Move uploaded file to new path
     try {
         console.log(`[UPDATE-POSITIVE] Moving file from ${req.file.path} to ${newFullPath}`);
-        // Direct overwrite using moveFileSync. Do NOT unlink beforehand to prevent data loss if move fails.
         moveFileSync(req.file.path, newFullPath);
     } catch (moveErr) {
         console.error('[UPDATE-POSITIVE] Move failed:', moveErr);
         return res.status(500).json({ error: 'Failed to save file to disk: ' + moveErr.message });
     }
 
-    // Update DB with new path
+    // Try to delete the old positive file if it existed and is different
+    if (row.positive_rel_path && row.positive_rel_path !== newFullRelPath) {
+        try {
+            const oldFullPath = path.join(uploadsDir, row.positive_rel_path);
+            if (fs.existsSync(oldFullPath)) fs.unlinkSync(oldFullPath);
+        } catch (e) {
+            console.warn('[UPDATE-POSITIVE] Could not delete old positive file:', e.message);
+        }
+    } else if (row.full_rel_path && row.full_rel_path !== newFullRelPath) {
+        try {
+            const oldFullPath = path.join(uploadsDir, row.full_rel_path);
+            if (fs.existsSync(oldFullPath)) fs.unlinkSync(oldFullPath);
+        } catch (e) {
+            console.warn('[UPDATE-POSITIVE] Could not delete old full file:', e.message);
+        }
+    }
+
+    // Generate positive thumbnail via shared thumb-service
+    let relThumb = null;
     try {
-        await runAsync('UPDATE photos SET full_rel_path = ? WHERE id = ?', [newFullRelPath, id]);
+      const thumbResult = await generatePositiveThumb(newFullPath, rollId, frameNum);
+      relThumb = thumbResult.relPath;
+      // Cleanup previous positive thumb if path changed
+      cleanupOldThumb(row.positive_thumb_rel_path, relThumb);
+      console.log(`[UPDATE-POSITIVE] Generated positive thumb: ${relThumb}`);
+    } catch (sharpErr) {
+      console.error('[UPDATE-POSITIVE] Thumbnail generation failed:', sharpErr.message);
+    }
+
+    // Update DB: set positive_rel_path, full_rel_path, positive_thumb_rel_path, and updated_at
+    try {
+        const sql = relThumb
+          ? 'UPDATE photos SET full_rel_path = ?, positive_rel_path = ?, positive_thumb_rel_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+          : 'UPDATE photos SET full_rel_path = ?, positive_rel_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+        const params = relThumb
+          ? [newFullRelPath, newFullRelPath, relThumb, id]
+          : [newFullRelPath, newFullRelPath, id];
+        await runAsync(sql, params);
     } catch (dbErr) {
         console.error('[UPDATE-POSITIVE] DB update failed:', dbErr);
         return res.status(500).json({ error: 'Failed to update database: ' + dbErr.message });
     }
 
-    // Try to delete the old file if it existed and is different from new file
-    if (row.full_rel_path) {
-        try {
-            const oldFullPath = path.join(uploadsDir, row.full_rel_path);
-            if (oldFullPath !== newFullPath && fs.existsSync(oldFullPath)) {
-                // Attempt delete, ignore if locked
-                fs.unlinkSync(oldFullPath);
-            }
-        } catch (e) {
-            console.warn('[UPDATE-POSITIVE] Could not delete old file (locked?), leaving as orphan:', e.message);
-        }
-    }
-
-    // Update variables for thumbnail generation
-    const fullPath = newFullPath;
-    const thumbPath = row.thumb_rel_path ? path.join(uploadsDir, row.thumb_rel_path) : null;
-
-    // Regenerate thumbnail
-    if (thumbPath) {
-      try {
-        console.log(`[UPDATE-POSITIVE] Regenerating thumbnail at ${thumbPath}`);
-        // Try to unlink thumb first to avoid lock
-        if (fs.existsSync(thumbPath)) {
-            try { fs.unlinkSync(thumbPath); } catch(e) {}
-        }
-        
-        // Read file to buffer to avoid Sharp holding a file lock on Windows
-        const fileBuf = fs.readFileSync(fullPath);
-        await sharp(fileBuf)
-          .resize({ width: 240, height: 240, fit: 'inside' })
-          .jpeg({ quality: 40 })
-          .toFile(thumbPath);
-      } catch (sharpErr) {
-        console.error('[UPDATE-POSITIVE] Thumbnail regeneration failed:', sharpErr);
-        // Do not fail the request if thumbnail fails, just log it
-      }
-    }
-
-    res.json({ ok: true, newPath: newFullRelPath });
+    res.json({ ok: true, newPath: newFullRelPath, thumbPath: relThumb });
   } catch (err) {
     console.error('[UPDATE-POSITIVE] General error:', err);
     res.status(500).json({ error: err.message });
@@ -694,7 +693,7 @@ router.post('/:id/ingest-positive', uploadDefault.single('image'), async (req, r
 
     // Update DB: set positive paths; ensure full_rel_path has a value for legacy viewers
     console.log('[INGEST-POSITIVE] Updating DB with paths:', { newFullRelPath, relThumb });
-    await runAsync('UPDATE photos SET positive_rel_path=?, positive_thumb_rel_path=?, full_rel_path=COALESCE(full_rel_path, ?) WHERE id=?', [newFullRelPath, relThumb, newFullRelPath, id]);
+    await runAsync('UPDATE photos SET positive_rel_path=?, positive_thumb_rel_path=?, full_rel_path=COALESCE(full_rel_path, ?), updated_at=CURRENT_TIMESTAMP WHERE id=?', [newFullRelPath, relThumb, newFullRelPath, id]);
     console.log('[INGEST-POSITIVE] DB updated');
 
     // Cleanup old positive thumbnail if it was different
@@ -1121,7 +1120,7 @@ router.post('/:id/render-positive', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const id = req.params.id;
   try {
-    const row = await getAsync('SELECT filename, full_rel_path, thumb_rel_path, original_rel_path, negative_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path FROM photos WHERE id = ?', [id]);
+    const row = await getAsync('SELECT roll_id, filename, full_rel_path, thumb_rel_path, original_rel_path, negative_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path FROM photos WHERE id = ?', [id]);
     
     if (row) {
       const pathsToDelete = [
@@ -1161,6 +1160,13 @@ router.delete('/:id', async (req, res) => {
     // Delete DB row
     const result = await runAsync('DELETE FROM photos WHERE id = ?', [id]);
     
+    // NOTE: We intentionally do NOT resequence frame_numbers after deletion.
+    // frame_number is used in disk file naming (e.g. {rollId}_{frame}-thumb.jpg).
+    // Resequencing would desync DB frame_numbers from on-disk filenames, causing
+    // new uploads to overwrite existing files. Gaps in numbering are harmless —
+    // photos are still sorted correctly by frame_number, and MAX+1 guarantees
+    // the next upload gets a unique, non-colliding number.
+
     // Cleanup orphaned tags
     try {
       await runAsync('DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM photo_tags)');

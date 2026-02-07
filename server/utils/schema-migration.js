@@ -286,6 +286,8 @@ function runSchemaMigration() {
         { table: 'photos', col: 'location_name', type: 'TEXT' },
         { table: 'photos', col: 'country', type: 'TEXT' },
         { table: 'photos', col: 'city', type: 'TEXT' },
+        // Photos - Timestamps
+        { table: 'photos', col: 'updated_at', type: 'DATETIME' },
 
         // Films
         { table: 'films', col: 'category', type: 'TEXT' },

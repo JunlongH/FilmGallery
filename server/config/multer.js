@@ -20,8 +20,8 @@ const storageTmp = multer.diskStorage({
     cb(null, unique);
   }
 });
-// Allow larger single files for batch roll creation
-const uploadTmp = multer({ storage: storageTmp, limits: { fileSize: 200 * 1024 * 1024 } });
+// Allow larger single files for batch roll creation (500MB for pixel-shift RAW files)
+const uploadTmp = multer({ storage: storageTmp, limits: { fileSize: 500 * 1024 * 1024 } });
 
 const storageFilm = multer.diskStorage({
   destination: (req, file, cb) => cb(null, filmDir),

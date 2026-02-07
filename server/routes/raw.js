@@ -33,7 +33,7 @@ const storage = multer.diskStorage({
 
 const rawUpload = multer({
   storage,
-  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB - support pixel-shift RAW files
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     if (SUPPORTED_EXTENSIONS.includes(ext)) {

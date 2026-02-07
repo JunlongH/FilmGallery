@@ -8,8 +8,8 @@ router.get('/', async (req, res) => {
   try {
     const rows = await allAsync(`
       SELECT t.id, t.name, COUNT(pt.photo_id) AS photos_count,
-             (SELECT p.thumb_rel_path FROM photo_tags pt2 JOIN photos p ON p.id = pt2.photo_id WHERE pt2.tag_id = t.id ORDER BY p.id DESC LIMIT 1) as cover_thumb,
-             (SELECT p.full_rel_path FROM photo_tags pt2 JOIN photos p ON p.id = pt2.photo_id WHERE pt2.tag_id = t.id ORDER BY p.id DESC LIMIT 1) as cover_full
+             (SELECT COALESCE(p.positive_thumb_rel_path, p.thumb_rel_path) FROM photo_tags pt2 JOIN photos p ON p.id = pt2.photo_id WHERE pt2.tag_id = t.id ORDER BY p.id DESC LIMIT 1) as cover_thumb,
+             (SELECT COALESCE(p.positive_rel_path, p.full_rel_path) FROM photo_tags pt2 JOIN photos p ON p.id = pt2.photo_id WHERE pt2.tag_id = t.id ORDER BY p.id DESC LIMIT 1) as cover_full
       FROM tags t
       LEFT JOIN photo_tags pt ON pt.tag_id = t.id
       GROUP BY t.id
