@@ -31,6 +31,7 @@ const { applyInversion, applyLogBaseCorrectionRGB, applyLinearBaseCorrectionRGB 
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../filmLabCurve');
 const { applyHSL, DEFAULT_HSL_PARAMS, isDefaultHSL } = require('../filmLabHSL');
 const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone } = require('../filmLabSplitTone');
+const MathOps = require('./math');
 
 // ============================================================================
 // 默认值常量
@@ -213,6 +214,227 @@ class RenderCore {
     };
 
     return this.luts;
+  }
+
+  // ==========================================================================
+  // Float Processing (HDR / High Precision)
+  // ==========================================================================
+
+  /**
+   * Process a single pixel using floating point math throughout.
+   * This method mirrors the full processPixel() pipeline but operates in
+   * float precision (0.0 – 1.0+) to preserve dynamic range and avoid
+   * 8-bit quantization artifacts.
+   *
+   * Input: linear-light RGB (0.0 – 1.0+, may exceed 1.0 for HDR/16-bit).
+   * Output: sRGB gamma-encoded RGB (0.0 – 1.0).
+   *
+   * Pipeline order (mirrors processPixel and GPU shader):
+   *  ① Film Curve (H&D density model)
+   *  ② Base Correction (linear or log)
+   *  ②.5 Density Levels
+   *  ③ Inversion
+   *  ③b 3D LUT
+   *  ④ White Balance
+   *  ⑤ Tone Mapping (exposure, contrast, blacks/whites, shadows/highlights)
+   *  ⑤b Highlight Roll-Off (shoulder compression)
+   *  ⑥ Curves (RGB master + per-channel)
+   *  ⑦ HSL Adjustment
+   *  ⑧ Split Toning
+   *
+   * @param {number} r - Red   (Linear 0.0 – 1.0+)
+   * @param {number} g - Green (Linear 0.0 – 1.0+)
+   * @param {number} b - Blue  (Linear 0.0 – 1.0+)
+   * @returns {Array<number>} [r, g, b] sRGB 0.0 – 1.0
+   */
+  processPixelFloat(r, g, b) {
+    const p = this.params;
+    const luts = this.luts || this.prepareLUTs();
+
+    // ① Film Curve (H&D density model) — inline float version
+    // Only when inverting negatives and film curve is enabled
+    if (p.inverted && p.filmCurveEnabled && p.filmCurveProfile) {
+      const profile = FILM_CURVE_PROFILES[p.filmCurveProfile];
+      if (profile) {
+        const gamma = p.filmCurveGamma ?? profile.gamma;
+        const dMin  = p.filmCurveDMin  ?? profile.dMin;
+        const dMax  = p.filmCurveDMax  ?? profile.dMax;
+        r = this._applyFilmCurveFloat(r, gamma, dMin, dMax);
+        g = this._applyFilmCurveFloat(g, gamma, dMin, dMax);
+        b = this._applyFilmCurveFloat(b, gamma, dMin, dMax);
+      }
+    }
+
+    // ② Base Correction (neutralize film base color)
+    if (p.baseMode === 'log') {
+      // Log domain density subtraction (more accurate)
+      if (p.baseDensityR !== 0 || p.baseDensityG !== 0 || p.baseDensityB !== 0) {
+        const log10 = Math.log(10);
+        const minT = 0.001;
+        const Tr = Math.max(r, minT);
+        const Tg = Math.max(g, minT);
+        const Tb = Math.max(b, minT);
+        r = Math.pow(10, -(-Math.log(Tr) / log10 - p.baseDensityR));
+        g = Math.pow(10, -(-Math.log(Tg) / log10 - p.baseDensityG));
+        b = Math.pow(10, -(-Math.log(Tb) / log10 - p.baseDensityB));
+        r = Math.max(0, Math.min(1, r));
+        g = Math.max(0, Math.min(1, g));
+        b = Math.max(0, Math.min(1, b));
+      }
+    } else {
+      // Linear domain multiplication
+      if (p.baseRed !== 1.0 || p.baseGreen !== 1.0 || p.baseBlue !== 1.0) {
+        r = Math.max(0, Math.min(1, r * p.baseRed));
+        g = Math.max(0, Math.min(1, g * p.baseGreen));
+        b = Math.max(0, Math.min(1, b * p.baseBlue));
+      }
+    }
+
+    // ②.5 Density Levels (log domain auto-levels)
+    if (p.densityLevelsEnabled && p.baseMode === 'log') {
+      [r, g, b] = this._applyDensityLevelsFloat(r, g, b);
+    }
+
+    // ③ Inversion — inline float version
+    if (p.inverted) {
+      if (p.inversionMode === 'log') {
+        // Log inversion: out = 1 - log(in*255 + 1) / log(256)
+        // Adapted from invertLog() for 0-1 float range
+        const log256 = Math.log(256);
+        r = 1.0 - Math.log(r * 255 + 1) / log256;
+        g = 1.0 - Math.log(g * 255 + 1) / log256;
+        b = 1.0 - Math.log(b * 255 + 1) / log256;
+      } else {
+        // Linear inversion
+        r = 1.0 - r;
+        g = 1.0 - g;
+        b = 1.0 - b;
+      }
+    }
+
+    // ③b 3D LUT (after inversion — supports "Inversion LUT" workflows)
+    if (luts.lut1) {
+      [r, g, b] = this._sampleLUT3DFloat(r, g, b, luts.lut1, luts.lut1Intensity);
+    }
+    if (luts.lut2) {
+      [r, g, b] = this._sampleLUT3DFloat(r, g, b, luts.lut2, luts.lut2Intensity);
+    }
+
+    // ④ White Balance — single call with cached gains
+    r *= luts.rBal;
+    g *= luts.gBal;
+    b *= luts.bBal;
+
+    // NaN guard
+    if (!Number.isFinite(r)) r = 0;
+    if (!Number.isFinite(g)) g = 0;
+    if (!Number.isFinite(b)) b = 0;
+
+    // ⑤ Tone Mapping — inline float math (replaces 8-bit toneLUT lookup)
+    // This matches the exact same formulas in buildToneLUT() / GPU shader,
+    // but without 8-bit quantization.
+
+    // 5a. Exposure (f-stop formula: 2^(exposure/50))
+    const expFactor = Math.pow(2, (Number(p.exposure) || 0) / 50);
+    r *= expFactor;
+    g *= expFactor;
+    b *= expFactor;
+
+    // 5b. Contrast (around 0.5 mid-grey)
+    const ctr = Number(p.contrast) || 0;
+    if (ctr !== 0) {
+      const contrastFactor = (259 * (ctr + 255)) / (255 * (259 - ctr));
+      r = (r - 0.5) * contrastFactor + 0.5;
+      g = (g - 0.5) * contrastFactor + 0.5;
+      b = (b - 0.5) * contrastFactor + 0.5;
+    }
+
+    // 5c. Blacks & Whites (window remap)
+    const blackPoint = -(Number(p.blacks) || 0) * 0.002;
+    const whitePoint = 1.0 - (Number(p.whites) || 0) * 0.002;
+    if (blackPoint !== 0 || whitePoint !== 1) {
+      const range = whitePoint - blackPoint;
+      if (range > 0.001) {
+        r = (r - blackPoint) / range;
+        g = (g - blackPoint) / range;
+        b = (b - blackPoint) / range;
+      }
+    }
+
+    // 5d. Shadows (Bernstein basis, peak ~0.33)
+    const sFactor = (Number(p.shadows) || 0) * 0.005;
+    if (sFactor !== 0) {
+      const applyS = (v) => {
+        const c = Math.max(0, Math.min(1, v));
+        return v + sFactor * (1 - c) * (1 - c) * c * 4;
+      };
+      r = applyS(r);
+      g = applyS(g);
+      b = applyS(b);
+    }
+
+    // 5e. Highlights (Bernstein basis, peak ~0.67)
+    const hFactor = (Number(p.highlights) || 0) * 0.005;
+    if (hFactor !== 0) {
+      const applyH = (v) => {
+        const c = Math.max(0, Math.min(1, v));
+        return v + hFactor * c * c * (1 - c) * 4;
+      };
+      r = applyH(r);
+      g = applyH(g);
+      b = applyH(b);
+    }
+
+    // ⑤b Highlight Roll-Off (Shoulder Compression)
+    // Softly compress values > 0.8 into [0.8, 1.0] preserving color ratios
+    const maxVal = Math.max(r, Math.max(g, b));
+    const threshold = 0.8;
+    if (maxVal > threshold) {
+      const compressed = MathOps.highlightRollOff(maxVal, threshold);
+      const scale = compressed / maxVal;
+      r *= scale;
+      g *= scale;
+      b *= scale;
+    }
+
+    // Clamp to [0, 1] before perceptual-domain operations
+    r = Math.max(0, Math.min(1, r));
+    g = Math.max(0, Math.min(1, g));
+    b = Math.max(0, Math.min(1, b));
+
+    // ⑥ Curves — sample existing 256-entry LUTs with linear interpolation
+    // This gives float-precision output from the 8-bit curve data
+    if (luts.lutRGB) {
+      r = this._sampleCurveLUTFloat(r, luts.lutRGB);
+      g = this._sampleCurveLUTFloat(g, luts.lutRGB);
+      b = this._sampleCurveLUTFloat(b, luts.lutRGB);
+    }
+    if (luts.lutR) r = this._sampleCurveLUTFloat(r, luts.lutR);
+    if (luts.lutG) g = this._sampleCurveLUTFloat(g, luts.lutG);
+    if (luts.lutB) b = this._sampleCurveLUTFloat(b, luts.lutB);
+
+    // ⑦ HSL Adjustment (perceptual domain — scale to 0-255 for existing code)
+    if (p.hslParams && !isDefaultHSL(p.hslParams)) {
+      const [hr, hg, hb] = applyHSL(r * 255, g * 255, b * 255, p.hslParams);
+      r = hr / 255;
+      g = hg / 255;
+      b = hb / 255;
+    }
+
+    // ⑧ Split Toning (perceptual domain — scale to 0-255 for existing code)
+    if (p.splitToning && !isDefaultSplitTone(p.splitToning)) {
+      const [sr, sg, sb] = applySplitTone(r * 255, g * 255, b * 255, p.splitToning);
+      r = sr / 255;
+      g = sg / 255;
+      b = sb / 255;
+    }
+
+    // Final clamp to [0, 1]
+    return [
+      Math.max(0, Math.min(1, r)),
+      Math.max(0, Math.min(1, g)),
+      Math.max(0, Math.min(1, b)),
+    ];
   }
 
   // ==========================================================================
@@ -638,6 +860,161 @@ vec3 applySplitTone(vec3 color, float highlightHue, float highlightSat,
   _clamp255(v) {
     return Math.max(0, Math.min(255, v));
   }
+
+  // ==========================================================================
+  // Float Pipeline Helper Methods
+  // ==========================================================================
+
+  /**
+   * Film curve (H&D density model) — float version
+   * Operates on 0.0–1.0 transmittance values without 8-bit quantization.
+   *
+   * @param {number} val - Transmittance (0.0–1.0)
+   * @param {number} gamma - Curve gamma
+   * @param {number} dMin  - Minimum density
+   * @param {number} dMax  - Maximum density
+   * @returns {number} Adjusted transmittance (0.0–1.0)
+   */
+  _applyFilmCurveFloat(val, gamma, dMin, dMax) {
+    const normalized = Math.max(0.001, Math.min(1, val));
+    const density = -Math.log10(normalized);
+    const densityNorm = Math.max(0, Math.min(1, (density - dMin) / (dMax - dMin)));
+    const gammaApplied = Math.pow(densityNorm, gamma);
+    const adjustedDensity = dMin + gammaApplied * (dMax - dMin);
+    return Math.max(0, Math.min(1, Math.pow(10, -adjustedDensity)));
+  }
+
+  /**
+   * Density levels — float version (0.0–1.0 transmittance)
+   * Matches _applyDensityLevels() but without 0-255 scaling.
+   *
+   * @param {number} r - Red transmittance
+   * @param {number} g - Green transmittance
+   * @param {number} b - Blue transmittance
+   * @returns {[number, number, number]} Corrected transmittance
+   */
+  _applyDensityLevelsFloat(r, g, b) {
+    const levels = this.params.densityLevels;
+    if (!levels) return [r, g, b];
+
+    const minT = 0.001;
+    const log10 = Math.log(10);
+
+    const rangeR = levels.red.max - levels.red.min;
+    const rangeG = levels.green.max - levels.green.min;
+    const rangeB = levels.blue.max - levels.blue.min;
+
+    let avgRange = (rangeR + rangeG + rangeB) / 3;
+    avgRange = Math.max(0.5, Math.min(2.5, avgRange));
+
+    const processChannel = (val, channelLevels, inputRange) => {
+      const T = Math.max(val, minT);
+      const D = -Math.log(T) / log10;
+      if (inputRange <= 0.001) return val;
+      const normalized = Math.max(0, Math.min(1, (D - channelLevels.min) / inputRange));
+      const Dnew = normalized * avgRange;
+      return Math.max(0, Math.min(1, Math.pow(10, -Dnew)));
+    };
+
+    return [
+      processChannel(r, levels.red, rangeR),
+      processChannel(g, levels.green, rangeG),
+      processChannel(b, levels.blue, rangeB),
+    ];
+  }
+
+  /**
+   * 3D LUT sampling — float version (0.0–1.0)
+   * Trilinear interpolation on the LUT, operating in normalized range.
+   *
+   * @param {number} r - Red (0.0–1.0)
+   * @param {number} g - Green (0.0–1.0)
+   * @param {number} b - Blue (0.0–1.0)
+   * @param {Object} lut - LUT object { data, size }
+   * @param {number} intensity - LUT blend intensity (0–1)
+   * @returns {[number, number, number]} LUT-mapped color
+   */
+  _sampleLUT3DFloat(r, g, b, lut, intensity = 1) {
+    if (!lut || !lut.data || !lut.size) return [r, g, b];
+
+    const { size, data } = lut;
+    const maxIndex = size - 1;
+
+    const rNorm = Math.max(0, Math.min(1, r));
+    const gNorm = Math.max(0, Math.min(1, g));
+    const bNorm = Math.max(0, Math.min(1, b));
+
+    const rPos = rNorm * maxIndex;
+    const gPos = gNorm * maxIndex;
+    const bPos = bNorm * maxIndex;
+
+    const r0 = Math.floor(rPos);
+    const r1 = Math.min(maxIndex, r0 + 1);
+    const g0 = Math.floor(gPos);
+    const g1 = Math.min(maxIndex, g0 + 1);
+    const b0 = Math.floor(bPos);
+    const b1 = Math.min(maxIndex, b0 + 1);
+
+    const fr = rPos - r0;
+    const fg = gPos - g0;
+    const fb = bPos - b0;
+
+    const getIdx = (ri, gi, bi) => (ri + gi * size + bi * size * size) * 3;
+
+    const interp = (offset) => {
+      const v000 = data[getIdx(r0, g0, b0) + offset];
+      const v100 = data[getIdx(r1, g0, b0) + offset];
+      const v010 = data[getIdx(r0, g1, b0) + offset];
+      const v110 = data[getIdx(r1, g1, b0) + offset];
+      const v001 = data[getIdx(r0, g0, b1) + offset];
+      const v101 = data[getIdx(r1, g0, b1) + offset];
+      const v011 = data[getIdx(r0, g1, b1) + offset];
+      const v111 = data[getIdx(r1, g1, b1) + offset];
+
+      const c00 = v000 * (1 - fr) + v100 * fr;
+      const c10 = v010 * (1 - fr) + v110 * fr;
+      const c01 = v001 * (1 - fr) + v101 * fr;
+      const c11 = v011 * (1 - fr) + v111 * fr;
+
+      const c0 = c00 * (1 - fg) + c10 * fg;
+      const c1 = c01 * (1 - fg) + c11 * fg;
+
+      return c0 * (1 - fb) + c1 * fb;
+    };
+
+    // LUT data is already normalized 0–1 (cube file format)
+    const rOut = interp(0);
+    const gOut = interp(1);
+    const bOut = interp(2);
+
+    if (intensity >= 1) return [rOut, gOut, bOut];
+
+    return [
+      r + (rOut - r) * intensity,
+      g + (gOut - g) * intensity,
+      b + (bOut - b) * intensity,
+    ];
+  }
+
+  /**
+   * Sample a 256-entry curve LUT with float linear interpolation.
+   * Gives smooth float output from the discrete 8-bit LUT data.
+   *
+   * @param {number} val - Input value (0.0–1.0)
+   * @param {Uint8Array} lut - 256-entry curve LUT (0–255)
+   * @returns {number} Interpolated output (0.0–1.0)
+   */
+  _sampleCurveLUTFloat(val, lut) {
+    const pos = Math.max(0, Math.min(1, val)) * 255;
+    const lo = Math.floor(pos);
+    const hi = Math.min(255, lo + 1);
+    const frac = pos - lo;
+    return ((1 - frac) * lut[lo] + frac * lut[hi]) / 255;
+  }
+
+  // ==========================================================================
+  // 8-bit Pipeline Helper Methods (legacy)
+  // ==========================================================================
 
   /**
    * 应用密度域色阶校正

@@ -462,9 +462,20 @@ const FS_GL2 = `#version 300 es
       c += hFactor * pow(c, vec3(2.0)) * (1.0 - c) * 4.0;
     }
 
+    // Highlight Roll-off (Shoulder Compression)
+    // Map values > 0.8 smoothly to [0.8, 1.0] to recover highlights
+    float maxVal = max(c.r, max(c.g, c.b));
+    float threshold = 0.8;
+    if (maxVal > threshold) {
+      float range = maxVal - threshold;
+      float maxRes = 1.0 - threshold;
+      float compressed = threshold + (range / (range + maxRes)) * maxRes;
+      c *= (compressed / maxVal);
+    }
+
     c = clamp(c, 0.0, 1.0);
 
-    // Tone Curve
+    // Curves (via 1D texture lookup — combines RGB master + per-channel curves)
     float r = texture(u_toneCurveTex, vec2(c.r, 0.5)).r;
     float g = texture(u_toneCurveTex, vec2(c.g, 0.5)).g;
     float b = texture(u_toneCurveTex, vec2(c.b, 0.5)).b;
@@ -794,6 +805,16 @@ const FS_GL1 = `
     }
     if (hFactor != 0.0) {
       c += hFactor * pow(c, vec3(2.0)) * (1.0 - c) * 4.0;
+    }
+
+    // Highlight Roll-off (Shoulder Compression)
+    float maxVal = max(c.r, max(c.g, c.b));
+    float threshold = 0.8;
+    if (maxVal > threshold) {
+      float range = maxVal - threshold;
+      float maxRes = 1.0 - threshold;
+      float compressed = threshold + (range / (range + maxRes)) * maxRes;
+      c *= (compressed / maxVal);
     }
 
     c = clamp(c, 0.0, 1.0);
