@@ -18,7 +18,7 @@ import ConflictBanner from './components/ConflictBanner';
 import EquipmentManager from './components/EquipmentManager';
 import LutLibrary from './components/Settings/LutLibrary';
 import MapPage from './pages/MapPage';
-import { getTags } from './api';
+import { getTags, bustImageCache } from './api';
 import FloatingRefreshButton from './components/FloatingRefreshButton';
 // HeroUI Provider for modern UI components
 import { HeroUIProvider } from './providers';
@@ -53,21 +53,28 @@ function Layout() {
   }, [refreshTags]);
 
   const handleHardRefresh = useCallback(() => {
+    console.log('[App] Hard refresh: busting image cache + clearing query cache');
     try {
-      // Clear React Query caches to avoid stale data
+      // 1. Increment global cache-buster → all subsequent buildUploadUrl calls
+      //    will produce new URLs that bypass the browser's HTTP disk cache
+      //    (even for resources served with max-age=1y, immutable)
+      bustImageCache();
+
+      // 2. Clear all React Query caches and re-fetch everything
       queryClient.clear();
+
+      // 3. Refresh tags (sidebar)
+      refreshTags();
+
+      // 4. Invalidate all queries so active components re-fetch fresh data
+      //    (queryClient.clear() removes cache, but invalidateQueries triggers
+      //    refetch for any mounted observers)
+      queryClient.invalidateQueries();
     } catch (e) {
-      console.warn('Failed to clear query cache', e);
+      console.warn('Failed during hard refresh, falling back to page reload', e);
+      window.location.reload();
     }
-    // Append a cache-busting param to the URL hash (HashRouter)
-    const now = Date.now();
-    const href = window.location.href;
-    const [base, hash] = href.split('#');
-    const newHash = hash ? `${hash.replace(/[?&]force=\d+/, '')}${hash.includes('?') ? '&' : '?'}force=${now}` : `?force=${now}`;
-    window.location.replace(`${base}#${newHash}`);
-    // Then trigger a full reload to re-fetch assets and data
-    window.location.reload();
-  }, [queryClient]);
+  }, [queryClient, refreshTags]);
 
   return (
     <HeroUIProvider>

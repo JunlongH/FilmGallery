@@ -10,6 +10,7 @@
 import React, { useState, useEffect } from 'react';
 import { Button, Input, Select, SelectItem } from '@heroui/react';
 import GlassModal, { GlassCard } from './ui/GlassModal';
+import EquipmentSelector from './EquipmentSelector';
 import { 
   Edit, 
   Package, 
@@ -99,6 +100,7 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
     status: 'in_stock',
     label: '',
     loaded_camera: '',
+    camera_equip_id: null,
     // Purchase info
     purchase_price: '',
     purchase_shipping_share: '',
@@ -134,6 +136,7 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
         status: item.status || 'in_stock',
         label: item.label || '',
         loaded_camera: item.loaded_camera || '',
+        camera_equip_id: item.camera_equip_id || null,
         purchase_price: item.purchase_price ?? '',
         purchase_shipping_share: item.purchase_shipping_share ?? '',
         purchase_date: item.purchase_date || '',
@@ -273,14 +276,17 @@ export default function FilmItemEditModal({ item, isOpen, onClose, onUpdated }) 
           {formData.status === 'loaded' && (
             <div className="mt-3">
               <label className="block text-sm text-zinc-500 dark:text-zinc-400 mb-1.5">Loaded Camera</label>
-              <Input
-                value={formData.loaded_camera}
-                onValueChange={(v) => handleChange('loaded_camera', v)}
-                placeholder="Camera name"
-                size="sm"
-                variant="bordered"
-                startContent={<Camera size={14} className="text-zinc-400 dark:text-zinc-500 mr-1" />}
-                classNames={inputClassNames}
+              <EquipmentSelector 
+                type="camera"
+                value={formData.camera_equip_id}
+                onChange={(id, equipItem) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    camera_equip_id: id,
+                    loaded_camera: equipItem ? `${equipItem.brand} ${equipItem.model}` : ''
+                  }));
+                }}
+                placeholder="Select camera..."
               />
             </div>
           )}

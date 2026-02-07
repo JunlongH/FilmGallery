@@ -1522,7 +1522,9 @@ export default function FilmLab({
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
     // High-res rotate first
-    const maxSaveWidth = EXPORT_MAX_WIDTH;
+    // 使用 0 (无限制) 或 8000+ 的最大宽度，防止快速保存时横向图片被压缩
+    // 这里使用 EXPORT_MAX_WIDTH (已更正为 8000)
+    const maxSaveWidth = EXPORT_MAX_WIDTH; 
     const scale = Math.min(1, maxSaveWidth / image.width);
     const totalRotation = rotation + orientation + rotationOffset;
     const rad = (totalRotation * Math.PI) / 180;

@@ -132,18 +132,6 @@ export default function EquipmentSelector({
     return () => { mounted = false; };
   }, [type, cameraId, config, useAdapter]);
 
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClickOutside = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
-        setIsOpen(false);
-        setShowAddForm(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Find selected item
   const selectedItem = useMemo(() => {
     if (!value) return null;
@@ -163,6 +151,9 @@ export default function EquipmentSelector({
 
   // Handle item selection
   const handleSelect = (item) => {
+    // Prevent event from bubbling to parent components (like Modals) that might interpret it as an outside click
+    // Note: Since this is often triggered from a Portal, event bubbling follows React tree.
+    // However, we rely on setIsOpen(false) to close the dropdown.
     onChange?.(item.id, item);
     setIsOpen(false);
     setSearch('');

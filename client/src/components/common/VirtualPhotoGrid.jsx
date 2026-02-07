@@ -81,7 +81,7 @@ function VirtualPhotoGrid({
     if (!photo) return null;
 
     const photoUrl = buildUploadUrl(photo.positive_rel_path || photo.full_rel_path);
-    const thumbUrl = buildUploadUrl(photo.thumb_rel_path || photo.positive_thumb_rel_path);
+    const thumbUrl = buildUploadUrl(photo.positive_thumb_rel_path || photo.thumb_rel_path);
 
     // 调整样式以包含间距
     const cellStyle = {

@@ -36,29 +36,49 @@ export function getApiBase() {
 }
 
 // Build an absolute URL for an uploaded file value stored in the DB.
+// NOTE: This is the legacy version. New code should use api/core.js buildUploadUrl.
+// Both versions now share the same cache-buster mechanism via getCacheBusterVersion.
+import { getCacheBusterVersion } from './api/core';
+
 export function buildUploadUrl(pathOrUrl) {
   const apiBase = getApiBase();
   if (!pathOrUrl) return null;
+  let url;
   // already absolute URL
-  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) return pathOrUrl;
+  if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+    url = pathOrUrl;
+  }
   // leading slash -> relative to API_BASE
-  if (pathOrUrl.startsWith('/')) return `${apiBase}${pathOrUrl}`;
+  else if (pathOrUrl.startsWith('/')) {
+    url = `${apiBase}${pathOrUrl}`;
+  }
   // contains 'uploads' somewhere (e.g. Windows full path like D:\...\uploads\rolls\...)
-  const lower = pathOrUrl.toLowerCase();
-  const idx = lower.indexOf('uploads');
-  if (idx !== -1) {
-    // extract from 'uploads' onward and normalize slashes
-    const sub = pathOrUrl.slice(idx).replace(/\\/g, '/').replace(/^\/+/, '');
-    return `${apiBase}/${sub}`;
+  else {
+    const lower = pathOrUrl.toLowerCase();
+    const idx = lower.indexOf('uploads');
+    if (idx !== -1) {
+      const sub = pathOrUrl.slice(idx).replace(/\\/g, '/').replace(/^\/+/, '');
+      url = `${apiBase}/${sub}`;
+    }
+    // Windows path fallback - use basename
+    else if (pathOrUrl.indexOf('\\') !== -1 || /^([a-zA-Z]:\\)/.test(pathOrUrl)) {
+      const parts = pathOrUrl.split(/[/\\]+/);
+      const base = parts[parts.length - 1];
+      url = `${apiBase}/uploads/${base}`;
+    }
+    // default: assume value is relative inside uploads (e.g. 'rolls/..')
+    else {
+      url = `${apiBase}/uploads/${pathOrUrl.replace(/^\/+/, '')}`;
+    }
   }
-  // Windows path fallback - use basename
-  if (pathOrUrl.indexOf('\\') !== -1 || /^([a-zA-Z]:\\)/.test(pathOrUrl)) {
-    const parts = pathOrUrl.split(/[/\\]+/);
-    const base = parts[parts.length - 1];
-    return `${apiBase}/uploads/${base}`;
+
+  // Append global cache-buster if active
+  const cbv = getCacheBusterVersion();
+  if (cbv > 0) {
+    const sep = url.includes('?') ? '&' : '?';
+    url += `${sep}_cb=${cbv}`;
   }
-  // default: assume value is relative inside uploads (e.g. 'rolls/..')
-  return `${apiBase}/uploads/${pathOrUrl.replace(/^\/+/, '')}`;
+  return url;
 }
 
 async function jsonFetch(url, opts = {}) {

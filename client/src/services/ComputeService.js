@@ -327,7 +327,7 @@ async function localRenderPositive(photoId, params, { format = 'jpeg', sourceTyp
   
   // CPU 回退
   console.log('[ComputeService] Using CPU fallback for render, format:', format);
-  return await CpuRenderService.localCpuRender({ imageUrl, params, format });
+  return await CpuRenderService.localCpuRender({ imageUrl, params, format, maxWidth: 0 });
 }
 
 /**

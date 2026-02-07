@@ -295,7 +295,8 @@ export async function localCpuRender({ imageUrl, params, format = 'jpeg', maxWid
     const startTime = performance.now();
     
     // 加载图片（不限制宽度以保持原始分辨率）
-    const effectiveMaxWidth = maxWidth || EXPORT_MAX_WIDTH;
+    // 如果 maxWidth 为 0，明确表示不限制宽度；否则使用传入值或默认限制
+    const effectiveMaxWidth = (maxWidth === 0) ? 0 : (maxWidth || EXPORT_MAX_WIDTH);
     const { canvas, width, height } = await loadImageToCanvas(imageUrl, effectiveMaxWidth);
     console.log(`[CpuRenderService] Image loaded: ${width}x${height}`);
     
@@ -335,8 +336,8 @@ export async function localCpuExport({ photoId, imageUrl, params, format = 'jpeg
   try {
     console.log('[CpuRenderService] Starting CPU export, photoId:', photoId);
     
-    // 渲染图片
-    const renderResult = await localCpuRender({ imageUrl, params, format });
+    // 渲染图片 (Explicitly disable size limit for export)
+    const renderResult = await localCpuRender({ imageUrl, params, format, maxWidth: 0 });
     
     if (!renderResult.ok) {
       return renderResult;

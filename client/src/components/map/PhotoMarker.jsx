@@ -16,7 +16,7 @@ import { API_BASE } from '../../api';
  */
 const getThumbUrl = (photo) => {
   const apiBase = API_BASE;
-  const thumbPath = photo.thumb_rel_path || photo.positive_thumb_rel_path || photo.negative_thumb_rel_path;
+  const thumbPath = photo.positive_thumb_rel_path || photo.thumb_rel_path || photo.negative_thumb_rel_path;
   
   if (thumbPath) {
     return `${apiBase}/uploads/${thumbPath}`;

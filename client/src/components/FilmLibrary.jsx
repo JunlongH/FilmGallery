@@ -97,6 +97,51 @@ export default function FilmLibrary() {
     });
   }
 
+  // Sort items
+  filmItems = React.useMemo(() => {
+    const STATUS_ORDER = ['loaded', 'in_stock', 'shot', 'sent_to_lab', 'developed', 'archived'];
+    return [...filmItems].sort((a, b) => {
+      const statusA = a.status || 'in_stock';
+      const statusB = b.status || 'in_stock';
+      
+      const idxA = STATUS_ORDER.indexOf(statusA);
+      const idxB = STATUS_ORDER.indexOf(statusB);
+      
+      // 1. Status order (only if showing all)
+      if (inventoryStatusFilter === 'all') {
+        if (idxA !== -1 && idxB !== -1) {
+          if (idxA !== idxB) return idxA - idxB;
+        } else if (idxA !== -1) {
+          return -1;
+        } else if (idxB !== -1) {
+          return 1;
+        }
+      }
+
+      // 2. Within status sorting
+      // In stock: Expiry ASC
+      // Others: Use Date DESC (shooting date, finished date, loaded date)
+      if (statusA === 'in_stock') {
+        if (!a.expiry_date) return 1;
+        if (!b.expiry_date) return -1;
+        return a.expiry_date.localeCompare(b.expiry_date);
+      } else {
+        const getDate = (item) => {
+          if (item.status === 'loaded') return item.loaded_date;
+          // For others, try finished, then loaded
+          // Or developed_date for processed ones?
+          // User said "按照拍摄时间排序" (sort by shooting time)
+          return item.finished_date || item.loaded_date || item.purchase_date || ''; 
+        };
+        const dateA = getDate(a) || '';
+        const dateB = getDate(b) || '';
+        // DESC sort
+        if (dateA === dateB) return (b.id || 0) - (a.id || 0);
+        return dateB.localeCompare(dateA);
+      }
+    });
+  }, [filmItems, inventoryStatusFilter]);
+
   const createFilmItemsBatchMutation = useMutation({
     mutationFn: createFilmItemsBatch,
     onSuccess: () => {

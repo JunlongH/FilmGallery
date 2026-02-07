@@ -33,7 +33,7 @@ L.Icon.Default.mergeOptions({
  * Get thumbnail URL for a photo
  */
 const getThumbUrl = (photo) => {
-  const thumbPath = photo.thumb_rel_path || photo.positive_thumb_rel_path || photo.negative_thumb_rel_path;
+  const thumbPath = photo.positive_thumb_rel_path || photo.thumb_rel_path || photo.negative_thumb_rel_path;
   if (thumbPath) {
     const apiBase = getApiBase();
     return `${apiBase}/uploads/${thumbPath}`;

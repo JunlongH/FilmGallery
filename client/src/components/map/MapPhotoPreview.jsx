@@ -15,11 +15,11 @@ import { API_BASE } from '../../api';
  */
 const getPreviewUrl = (photo) => {
   const apiBase = API_BASE;
-  const path = photo.thumb_rel_path || photo.positive_thumb_rel_path || 
-               photo.full_rel_path || photo.positive_rel_path || 
+  const thumbPath = photo.positive_thumb_rel_path || photo.thumb_rel_path || 
+               photo.positive_rel_path || photo.full_rel_path || 
                photo.negative_rel_path;
   
-  return path ? `${apiBase}/uploads/${path}` : null;
+  return thumbPath ? `${apiBase}/uploads/${thumbPath}` : null;
 };
 
 /**
