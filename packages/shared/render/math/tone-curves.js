@@ -42,26 +42,31 @@ function filmicACES(x) {
 
 /**
  * Applies a highlight compression roll-off "shoulder".
- * For values below threshold, it's linear.
- * For values above, it compresses softly.
+ * For values below threshold, it's linear (identity).
+ * For values above, it compresses softly toward 1.0.
+ *
+ * Uses tanh-based compression for C² continuity at the threshold:
+ *   f(threshold)  = threshold       (value match)
+ *   f'(threshold) = 1               (derivative match — no slope kink)
+ *   f''(threshold) = 0              (curvature match — smooth onset)
+ *
  * @param {number} x - Input value
- * @param {number} threshold - Start of shoulder (0.0 - 1.0)
- * @returns {number} output
+ * @param {number} threshold - Start of shoulder (0.0 - 1.0), default 0.8
+ * @returns {number} Compressed output in [0, 1.0)
  */
 function highlightRollOff(x, threshold = 0.8) {
     if (x <= threshold) return x;
     
-    // Smooth compression function for values > threshold
-    // Maps [threshold, infinity] -> [threshold, 1.0]
-    const range = x - threshold;
-    const max = 1.0 - threshold;
+    const headroom = 1.0 - threshold;
+    const t = (x - threshold) / headroom;  // normalized overshoot [0, ∞)
     
-    // Soft roll-off asymptotically approaching 1.0 (limit)
-    // Formula: threshold + (range / (range + 1)) * max_headroom
-    // We normalize range so that +1 EV (range=1.0?) maps to some value?
-    // Let's use simple Reinhard-style compression for the overshoot.
-    // Normalized overshoot:
-    return threshold + (range / (range + max)) * max;
+    // tanh: maps [0, ∞) → [0, 1), with derivative 1 and curvature 0 at t=0
+    // Clamp input to avoid exp overflow on extreme HDR values
+    const tc = Math.min(t, 10.0);  // tanh(10) ≈ 1.0
+    const e2t = Math.exp(2.0 * tc);
+    const tanhT = (e2t - 1.0) / (e2t + 1.0);
+    
+    return threshold + headroom * tanhT;
 }
 
 module.exports = {

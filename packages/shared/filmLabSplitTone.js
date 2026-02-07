@@ -264,13 +264,15 @@ function applySplitToneToArray(data, params, options = {}) {
   }
   
   const output = new Uint8Array(data.length);
+  // Q18: Precompute tint colors once (instead of per-pixel)
+  const ctx = prepareSplitTone(params);
   
   for (let i = 0; i < data.length; i += channels) {
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
     
-    const [rOut, gOut, bOut] = applySplitTone(r, g, b, params);
+    const [rOut, gOut, bOut] = applySplitToneFast(r, g, b, ctx);
     
     output[i] = rOut;
     output[i + 1] = gOut;
@@ -282,6 +284,76 @@ function applySplitToneToArray(data, params, options = {}) {
   }
   
   return output;
+}
+
+// ============================================================================
+// Q18: Precomputed Split Tone (避免每像素重复 hslToRgb)
+// ============================================================================
+
+/**
+ * 预计算分离色调参数（tint RGB 颜色等），一帧只需调用一次。
+ * 返回的上下文对象传给 applySplitToneFast() 进行逐像素处理。
+ *
+ * @param {Object} params - 分离色调参数
+ * @returns {Object|null} 预计算上下文，如果参数为默认值则返回 null
+ */
+function prepareSplitTone(params) {
+  if (!params || isDefaultSplitTone(params)) return null;
+
+  const { highlights = {}, midtones = {}, shadows = {}, balance = 0 } = params;
+  return {
+    highlightSat: (highlights.saturation ?? 0) / 100,
+    midtoneSat:   (midtones.saturation ?? 0) / 100,
+    shadowSat:    (shadows.saturation ?? 0) / 100,
+    highlightColor: hslToRgb(highlights.hue ?? 30, 1, 0.5),
+    midtoneColor:   hslToRgb(midtones.hue ?? 0, 1, 0.5),
+    shadowColor:    hslToRgb(shadows.hue ?? 220, 1, 0.5),
+    balance,
+  };
+}
+
+/**
+ * 快速逐像素分离色调（使用预计算的 tint 颜色）。
+ * 每像素只做亮度计算 + 区权重 + RGB lerp，避免 hslToRgb 开销。
+ *
+ * @param {number} r - 红色 (0-255)
+ * @param {number} g - 绿色 (0-255)
+ * @param {number} b - 蓝色 (0-255)
+ * @param {Object} ctx - prepareSplitTone() 返回的上下文
+ * @returns {[number, number, number]} 调整后的 [R, G, B] (0-255)
+ */
+function applySplitToneFast(r, g, b, ctx) {
+  if (!ctx) return [r, g, b];
+
+  const luminance = calculateLuminance(r, g, b);
+  const weights = calculateZoneWeights(luminance, ctx.balance);
+
+  let outR = r, outG = g, outB = b;
+
+  if (ctx.highlightSat > 0 && weights.highlight > 0) {
+    const s = ctx.highlightSat * weights.highlight * 0.3;
+    outR += (ctx.highlightColor[0] - outR) * s;
+    outG += (ctx.highlightColor[1] - outG) * s;
+    outB += (ctx.highlightColor[2] - outB) * s;
+  }
+  if (ctx.midtoneSat > 0 && weights.midtone > 0) {
+    const s = ctx.midtoneSat * weights.midtone * 0.3;
+    outR += (ctx.midtoneColor[0] - outR) * s;
+    outG += (ctx.midtoneColor[1] - outG) * s;
+    outB += (ctx.midtoneColor[2] - outB) * s;
+  }
+  if (ctx.shadowSat > 0 && weights.shadow > 0) {
+    const s = ctx.shadowSat * weights.shadow * 0.3;
+    outR += (ctx.shadowColor[0] - outR) * s;
+    outG += (ctx.shadowColor[1] - outG) * s;
+    outB += (ctx.shadowColor[2] - outB) * s;
+  }
+
+  return [
+    Math.max(0, Math.min(255, Math.round(outR))),
+    Math.max(0, Math.min(255, Math.round(outG))),
+    Math.max(0, Math.min(255, Math.round(outB))),
+  ];
 }
 
 // ============================================================================
@@ -424,6 +496,10 @@ module.exports = {
   applySplitTone,
   applySplitToneToArray,
   isDefaultSplitTone,
+  
+  // Q18: Precomputed per-frame factory (avoids per-pixel hslToRgb)
+  prepareSplitTone,
+  applySplitToneFast,
   
   // 工具函数
   calculateLuminance,

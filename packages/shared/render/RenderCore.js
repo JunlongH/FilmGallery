@@ -30,7 +30,7 @@ const { computeWBGains } = require('../filmLabWhiteBalance');
 const { applyInversion, applyLogBaseCorrectionRGB, applyLinearBaseCorrectionRGB } = require('../filmLabInversion');
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../filmLabCurve');
 const { applyHSL, DEFAULT_HSL_PARAMS, isDefaultHSL } = require('../filmLabHSL');
-const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone } = require('../filmLabSplitTone');
+const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone, prepareSplitTone, applySplitToneFast } = require('../filmLabSplitTone');
 const MathOps = require('./math');
 
 // ============================================================================
@@ -221,6 +221,8 @@ class RenderCore {
       lut1Intensity: p.lut1Intensity,
       lut2: p.lut2,
       lut2Intensity: p.lut2Intensity,
+      // Q18: Precompute split tone tint colors once per frame
+      splitToneCtx: prepareSplitTone(p.splitToning),
     };
 
     return this.luts;
@@ -431,9 +433,9 @@ class RenderCore {
       b = hb / 255;
     }
 
-    // ⑧ Split Toning (perceptual domain — scale to 0-255 for existing code)
-    if (p.splitToning && !isDefaultSplitTone(p.splitToning)) {
-      const [sr, sg, sb] = applySplitTone(r * 255, g * 255, b * 255, p.splitToning);
+    // ⑧ Split Toning (perceptual domain — Q18: use precomputed tint colors)
+    if (luts.splitToneCtx) {
+      const [sr, sg, sb] = applySplitToneFast(r * 255, g * 255, b * 255, luts.splitToneCtx);
       r = sr / 255;
       g = sg / 255;
       b = sb / 255;
@@ -560,9 +562,9 @@ class RenderCore {
       [r, g, b] = applyHSL(r, g, b, p.hslParams);
     }
 
-    // ⑦ 分离色调
-    if (p.splitToning && !isDefaultSplitTone(p.splitToning)) {
-      [r, g, b] = applySplitTone(r, g, b, p.splitToning);
+    // ⑦ 分离色调 (Q18: use precomputed tint colors)
+    if (luts.splitToneCtx) {
+      [r, g, b] = applySplitToneFast(r, g, b, luts.splitToneCtx);
     }
 
     return [

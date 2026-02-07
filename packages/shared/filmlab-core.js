@@ -24,7 +24,7 @@ const { computeWBGains } = require('./filmLabWhiteBalance');
 const { applyInversion } = require('./filmLabInversion');
 const { applyFilmCurve, FILM_CURVE_PROFILES } = require('./filmLabCurve');
 const { applyHSL, DEFAULT_HSL_PARAMS, isDefaultHSL } = require('./filmLabHSL');
-const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone } = require('./filmLabSplitTone');
+const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone, prepareSplitTone, applySplitToneFast } = require('./filmLabSplitTone');
 
 // ============================================================================
 // 辅助函数
@@ -212,9 +212,9 @@ function processPixel(r, g, b, luts, params = {}) {
     [r, g, b] = applyHSL(r, g, b, params.hslParams);
   }
 
-  // ⑦ 分离色调 (如果有非默认参数)
-  if (params.splitToning && !isDefaultSplitTone(params.splitToning)) {
-    [r, g, b] = applySplitTone(r, g, b, params.splitToning);
+  // ⑦ 分离色调 (Q18: use precomputed tint colors)
+  if (luts.splitToneCtx) {
+    [r, g, b] = applySplitToneFast(r, g, b, luts.splitToneCtx);
   }
 
   // ⑧ 3D LUT 应用 (如果存在)
@@ -283,6 +283,8 @@ function prepareLUTs(params = {}) {
     lut1Intensity: params.lut1Intensity ?? 1.0,
     lut2: params.lut2 || null,
     lut2Intensity: params.lut2Intensity ?? 1.0,
+    // Q18: Precompute split tone tint colors once per frame
+    splitToneCtx: prepareSplitTone(params.splitToning),
   };
 }
 

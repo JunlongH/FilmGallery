@@ -3,7 +3,7 @@
 > **日期**: 2026-02-09
 > **范围**: 渲染管线全链路 (CPU / GPU / Server)、计算公式、曲线插值、架构
 > **前置**: P1-P9 修复已完成 (commit `18cb6c2`, branch `refactor/rendering-pipeline-float`)
-> **最后更新**: 2026-02-10 — Phase 1 / 2 / 4 部分完成，状态已标注
+> **最后更新**: 2026-02-10 — Phase 1 / 2 / 4 全部完成，Phase 3.5 完成，Phase 4.6 完成
 
 ---
 
@@ -14,7 +14,9 @@
 | **Phase 1** | CPU/GPU 一致性修复 | ✅ **全部完成** (Q1-Q8) |
 | **Phase 2** | 曲线算法升级 | ✅ **全部完成** (Q10 + Float LUT) |
 | **Phase 3** | 公式精度提升 | 🔲 未开始 (Q11/Q12/Q13 — 低优先) |
-| **Phase 4** | 架构清理 | ✅ **部分完成** (Q9/Q14/Q17/Q20 已修, Q15/Q18/Q19 待做) |
+| **Phase 3.5** | Highlight Roll-off C² | ✅ **完成** (tanh 压缩, CPU+GPU) |
+| **Phase 4** | 架构清理 | ✅ **全部完成** (Q9/Q14/Q15/Q17/Q18/Q19/Q20) |
+| **Phase 4.6** | 回归测试 | ✅ **完成** (97 tests, 0 failures) |
 
 ---
 
@@ -59,11 +61,11 @@
 | **Q12** | 🟡 | 物理精度 | WB 开尔文模型: Tanner Helland 近似，6600K 处有导数不连续 | `filmLabWhiteBalance.js:55-86` | 🔲 Phase 3 |
 | **Q13** | 🟡 | 物理精度 | Film Curve: 单通道 gamma，无 toe/shoulder，无逐通道 gamma | `filmLabCurve.js` | 🔲 Phase 3 |
 | **Q14** | 🟡 | CPU 一致性 | processPixel (8-bit) 缺少 highlight roll-off | `RenderCore.js` processPixel | ✅ 已修复 |
-| **Q15** | 🟡 | 架构 | GPU 渲染器内含重复 WB 实现、HSL/SplitTone 重复 3 份 | `gpu-renderer.js` | 🔲 待优化 |
+| **Q15** | 🟡 | 架构 | GPU 渲染器内含重复 WB 实现、HSL/SplitTone 重复 3 份 | `gpu-renderer.js` | ✅ 已修复 (glsl-shared.js 模块化) |
 | **Q16** | 🟡 | 架构 | math/ 模块多数函数未被调用 | `packages/shared/render/math/` | 🔲 保留 (Phase 3 备用) |
 | **Q17** | 🟡 | 性能 | HSL `Object.entries()` 在每像素内调用 | `filmLabHSL.js:218` | ✅ 已修复 (HSL_CHANNELS_ENTRIES 缓存) |
-| **Q18** | 🟢 | 性能 | HSL + SplitTone 各自独立做 RGB↔HSL 转换 | `RenderCore.js` processPixelFloat | 🔲 待优化 |
-| **Q19** | 🟢 | 性能 | GPU 每帧重建 shader program + textures | `gpu-renderer.js` | 🔲 待优化 |
+| **Q18** | 🟢 | 性能 | HSL + SplitTone 各自独立做 RGB↔HSL 转换 | `RenderCore.js` processPixelFloat | ✅ 已修复 (prepareSplitTone 预计算) |
+| **Q19** | 🟢 | 性能 | GPU 每帧重建 shader program + textures | `gpu-renderer.js` | ✅ 已修复 (getOrCreateProgram 缓存) |
 | **Q20** | 🟢 | 代码质量 | CpuRenderService 双重注册事件处理 | `CpuRenderService.js:46,62` | ✅ 已修复 |
 | **Q21** | 🟢 | 缺失功能 | 全管线在 sRGB gamma 空间操作 (非线性光) | 全局 | 🔲 长期路线图 |
 | **Q22** | 🟢 | 缺失功能 | 无 ICC 色彩管理 / 色域映射 | 全局 | 🔲 长期路线图 |
@@ -436,17 +438,23 @@ const adjusted = midGray + (value - midGray) * factor;
 
 ## 5. D - 代码结构与架构问题
 
-### Q15 🟡 GPU 渲染器代码重复
+### Q15 🟡 GPU 渲染器代码重复 — ✅ 已修复
 
-**问题**: `gpu-renderer.js` 包含:
-1. **独立的 `computeWBGains()`** (L11-37) — 应该导入共享模块
-2. **FS_GL2 和 FS_GL1 几乎完全相同的 HSL/SplitTone GLSL** (~200 行 × 2)
-3. **RenderCore.js 中也有一套未使用的 GLSL snippet** (L643-815)
-
-**修复方案**: 
-1. 删除 gpu-renderer.js 中的 `computeWBGains`，改为 `require('../packages/shared/filmLabWhiteBalance')`
-2. 将公共 GLSL 函数提取为字符串常量 (如 `GLSL_HSL_FUNCTIONS`)，GL2/GL1 共享
-3. 删除 RenderCore.js 中未使用的 GLSL snippet
+> **修复**: 创建 `electron-gpu/glsl-shared.js` 模块，将所有 GLSL 代码提取为可组合的字符串常量：
+> - `GLSL_SHARED_UNIFORMS` — 所有 uniform 声明
+> - `GLSL_COLOR_FUNCTIONS` — rgb2hsl / hue2rgb / hsl2rgb
+> - `GLSL_HSL_ADJUSTMENT` — 8 通道余弦权重 + 非对称 sat/lum
+> - `GLSL_SPLIT_TONE` — Rec.709 亮度 + Hermite smoothstep 三区混合
+> - `GLSL_FILM_CURVE` — H&D 密度模型
+> - `buildShaderMain(isGL2)` — 参数化 main()，处理 GL2/GL1 差异
+> - `buildFragmentShader(isGL2)` — 完整 shader 组合
+>
+> `gpu-renderer.js` 中 ~800 行重复 GLSL 替换为 2 行调用：
+> ```js
+> const FS_GL2 = buildFragmentShader(true);
+> const FS_GL1 = buildFragmentShader(false);
+> ```
+> 同时 Highlight Roll-Off 升级为 tanh C² 连续版本（与 CPU 一致）。
 
 ---
 
@@ -489,18 +497,21 @@ const HSL_CHANNELS_ARRAY = Object.entries(HSL_CHANNELS); // 模块加载时执�
 for (const [channelKey, channel] of HSL_CHANNELS_ARRAY) {
 ```
 
-### Q18 🟢 HSL + SplitTone 重复色彩空间转换
+### Q18 🟢 HSL + SplitTone 重复色彩空间转换 — ✅ 已修复
 
-当 HSL 和 SplitTone 同时启用时:
-1. HSL: RGB → HSL → (调整) → RGB
-2. SplitTone: (计算亮度) → (混合)
+> **分析**: SplitTone 实际上**不做** RGB↔HSL 转换 — 它只用 Rec.709 dot product 计算亮度（3 FLOP），
+> 在 RGB 空间做 lerp 混合。唯一的浪费是每像素调用 3 次 `hslToRgb()` 来转换 tint 颜色参数。
+>
+> **修复**: 添加 `prepareSplitTone(params)` 工厂函数，在帧级别预计算 tint RGB 颜色。
+> 逐像素处理使用 `applySplitToneFast(r, g, b, ctx)` 跳过重复的 hslToRgb。
+> RenderCore.prepareLUTs() 和 filmlab-core.prepareLUTs() 均已更新。
 
-可以合并为单次 RGB→HSL 转换后同时处理两个效果。
+### Q19 🟢 GPU 每帧重建 Shader Program — ✅ 已修复
 
-### Q19 🟢 GPU 每帧重建 Shader Program
-
-`gpu-renderer.js` 每次渲染都 `createProgram` → `deleteProgram`。
-对于实时预览拖动，应缓存编译后的 program 和纹理。
+> **修复**: 在 `gpu-renderer.js` 添加模块级缓存 `_cachedProgGL2` / `_cachedProgGL1`，
+> 通过 `getOrCreateProgram(gl, isWebGL2)` 按需编译并缓存。
+> runPipeline 不再每帧 createProgram/deleteProgram。
+> 提供 `invalidateProgramCache()` 用于 GL 上下文丢失时清理。
 
 ---
 
@@ -569,18 +580,18 @@ for (const [channelKey, channel] of HSL_CHANNELS_ARRAY) {
 | 3.2 | **Q12**: WB 升级为 CIE D 光源查表 | `filmLabWhiteBalance.js` | 🔲 |
 | 3.3 | **Q13**: Film Curve 增加 toe/shoulder + 逐通道 gamma | `filmLabCurve.js` | 🔲 |
 | 3.4 | **Q14**: processPixel (8-bit) 添加 highlight roll-off | `RenderCore.js` | ✅ |
-| 3.5 | Highlight Roll-off C¹ 连续性修复 (tanh 或 Hermite 过渡) | `math/tone-curves.js`, shader | 🔲 |
+| 3.5 | Highlight Roll-off C² 连续性修复 (tanh 压缩，CPU+GPU) | `math/tone-curves.js`, `glsl-shared.js` | ✅ |
 
 ### Phase 4: 架构清理 (持续)
 
 | 步骤 | 工作 | 涉及文件 | 状态 |
 |------|------|----------|------|
-| 4.1 | **Q15**: 提取公共 GLSL 函数，消除 GL2/GL1 重复 | `gpu-renderer.js` | 🔲 |
+| 4.1 | **Q15**: 提取公共 GLSL 函数，消除 GL2/GL1 重复 | `glsl-shared.js`, `gpu-renderer.js` | ✅ |
 | 4.2 | **Q17**: HSL `Object.entries` 优化 | `filmLabHSL.js` | ✅ |
-| 4.3 | **Q18**: 合并 HSL + SplitTone 色彩空间转换 | `RenderCore.js` | 🔲 |
-| 4.4 | **Q19**: GPU program/texture 缓存 | `gpu-renderer.js` | 🔲 |
+| 4.3 | **Q18**: SplitTone 预计算 tint 颜色 (prepareSplitTone) | `filmLabSplitTone.js`, `RenderCore.js`, `filmlab-core.js` | ✅ |
+| 4.4 | **Q19**: GPU program 缓存 (getOrCreateProgram) | `gpu-renderer.js` | ✅ |
 | 4.5 | **Q20**: CpuRenderService 清理重复注册 | `CpuRenderService.js` | ✅ |
-| 4.6 | 建立自动化 RMSE/SSIM 回归测试 | 新建测试脚本 | 🔲 |
+| 4.6 | 建立自动化回归测试 (97 tests) | `tools/render-regression-test.js` | ✅ |
 
 ### 执行总顺序
 
@@ -600,15 +611,19 @@ Phase 1 (一致性) ──→ Phase 2 (曲线) ──→ Phase 3 (公式)
 | `packages/shared/filmLabToneLUT.js` | 色调 LUT (Uint8Array) | 100 | — |
 | `packages/shared/filmLabInversion.js` | 负片反转 + 片基校正 | 251 | — |
 | `packages/shared/filmLabHSL.js` | HSL 色彩调整 (8通道) | 445 | ✅ Q17 缓存优化 |
-| `packages/shared/filmLabSplitTone.js` | 分离色调 (3区) | 435 | — |
+| `packages/shared/filmLabSplitTone.js` | 分离色调 (3区) | ~500 | ✅ Q18 prepareSplitTone + applySplitToneFast |
 | `packages/shared/filmLabWhiteBalance.js` | 白平衡 (Kelvin + Legacy) | 291 | — |
 | `packages/shared/filmLabCurve.js` | Film H&D 密度曲线 | ~100 | — |
 | `packages/shared/filmLabConstants.js` | 常量/默认值/胶片配置 | ~200 | — |
-| `packages/shared/render/RenderCore.js` | 统一渲染核心 | ~1260 | ✅ Q8/Q9/Q14 + Float LUT |
+| `packages/shared/filmlab-core.js` | 核心处理模块 (服务端) | ~370 | ✅ Q18 splitToneCtx |
+| `packages/shared/render/RenderCore.js` | 统一渲染核心 | ~1270 | ✅ Q8/Q9/Q14 + Float LUT + Q18 |
+| `packages/shared/render/math/tone-curves.js` | 色调映射数学 | ~80 | ✅ Phase 3.5 tanh C² roll-off |
 | `packages/shared/render/math/` | 数学库 (4 模块) | ~200 | — |
-| `electron-gpu/gpu-renderer.js` | GPU WebGL 渲染 | ~1200 | ✅ Q1-Q7 全面重写 |
+| `electron-gpu/glsl-shared.js` | **新建** GLSL 单一来源模块 | ~520 | ✅ Q15 (消除 ~800 行重复) |
+| `electron-gpu/gpu-renderer.js` | GPU WebGL 渲染 | ~440 | ✅ Q1-Q7 + Q15 + Q19 |
 | `server/services/render-service.js` | 服务端渲染 | ~410 | — |
 | `client/src/services/CpuRenderService.js` | 客户端 CPU 渲染 | ~465 | ✅ Q20 双重注册修复 |
+| `tools/render-regression-test.js` | **新建** 回归测试 (97 tests) | ~380 | ✅ Phase 4.6 |
 
 ## 附录 B: 曲线算法参考文献
 
