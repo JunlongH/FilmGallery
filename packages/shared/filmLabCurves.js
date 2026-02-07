@@ -309,6 +309,65 @@ function applyCurve(value, points) {
 }
 
 // ============================================================================
+// GPU 复合浮点曲线纹理 (Phase 2.4)
+// ============================================================================
+
+/**
+ * 线性插值采样 Float32 LUT
+ * @param {number} val - 归一化输入 (0.0–1.0)
+ * @param {Float32Array} lut - Float32 LUT
+ * @returns {number} 插值输出
+ */
+function _sampleFloatLUT(val, lut) {
+  const maxIdx = lut.length - 1;
+  const pos = Math.max(0, Math.min(1, val)) * maxIdx;
+  const lo = Math.floor(pos);
+  const hi = Math.min(maxIdx, lo + 1);
+  const frac = pos - lo;
+  return (1 - frac) * lut[lo] + frac * lut[hi];
+}
+
+/**
+ * 构建 GPU 复合浮点曲线 LUT (Phase 2.4)
+ *
+ * 将 RGB 主曲线 + R/G/B 逐通道曲线复合为单张 RGBA Float32 纹理数据。
+ * 处理链: 输入 → RGB 主曲线 → 逐通道曲线 → 输出
+ * 对应 CPU 的 _sampleCurveLUTFloatHQ(masterRGB, then per-channel) 管线。
+ *
+ * 输出: Float32Array(resolution × 4)，每个纹素 [R, G, B, 1.0]
+ * GPU 采样: texture(u_toneCurveTex, vec2(c.r, 0.5)).r 等
+ *
+ * @param {Object} curves - 曲线控制点 { rgb, red, green, blue }
+ * @param {Object} [options]
+ * @param {number} [options.resolution=1024] - 纹理宽度
+ * @returns {Float32Array} RGBA float 纹理数据 (resolution × 4 元素)
+ */
+function buildCompositeFloatCurveLUT(curves = {}, options = {}) {
+  const resolution = options.resolution ?? 1024;
+  const defaultPts = DEFAULT_CURVES.rgb;
+
+  // 构建各通道独立 Float32 LUT
+  const lutRGB = buildCurveLUTFloat(curves.rgb || defaultPts, { resolution });
+  const lutR   = buildCurveLUTFloat(curves.red || defaultPts, { resolution });
+  const lutG   = buildCurveLUTFloat(curves.green || defaultPts, { resolution });
+  const lutB   = buildCurveLUTFloat(curves.blue || defaultPts, { resolution });
+
+  // 复合: 先过 RGB 主曲线，再过逐通道曲线
+  const composite = new Float32Array(resolution * 4);
+  for (let i = 0; i < resolution; i++) {
+    const masterVal = lutRGB[i]; // 主曲线输出 (0.0–1.0)
+
+    // 逐通道采样 (线性插值，匹配 CPU _sampleCurveLUTFloatHQ)
+    composite[i * 4 + 0] = _sampleFloatLUT(masterVal, lutR); // R
+    composite[i * 4 + 1] = _sampleFloatLUT(masterVal, lutG); // G
+    composite[i * 4 + 2] = _sampleFloatLUT(masterVal, lutB); // B
+    composite[i * 4 + 3] = 1.0;                               // A (unused)
+  }
+
+  return composite;
+}
+
+// ============================================================================
 // 模块导出 (CommonJS)
 // ============================================================================
 
@@ -318,5 +377,6 @@ module.exports = {
   buildCurveLUTFloat,
   buildAllCurveLUTs,
   buildAllCurveLUTsFloat,
+  buildCompositeFloatCurveLUT,
   applyCurve,
 };

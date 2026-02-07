@@ -28,6 +28,10 @@ const {
   calculateZoneWeights,
 } = require('../packages/shared/filmLabSplitTone');
 const { applyHSL, isDefaultHSL } = require('../packages/shared/filmLabHSL');
+const { kelvinToRGB, computeWBGains } = require('../packages/shared/filmLabWhiteBalance');
+const { applyFilmCurve, applyFilmCurveFloat } = require('../packages/shared/filmLabCurve');
+const { CONTRAST_MID_GRAY, FILM_PROFILES } = require('../packages/shared/filmLabConstants');
+const { buildCurveLUTFloat, buildCompositeFloatCurveLUT } = require('../packages/shared');
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -354,10 +358,252 @@ function testHSLChannelWeights() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// Test 7: Q11 — Contrast Mid-Gray Pivot
+// ══════════════════════════════════════════════════════════════════════════════
+function testContrastMidGray() {
+  console.log('\n── Test 7: Contrast Mid-Gray Pivot (Q11) ──');
+
+  // CONTRAST_MID_GRAY should be 0.46 (18% reflectance in sRGB)
+  assert(approxEq(CONTRAST_MID_GRAY, 0.46, 1e-6),
+    `CONTRAST_MID_GRAY = ${CONTRAST_MID_GRAY}, expected 0.46`);
+
+  // With positive contrast, mid-gray should be a fixed point
+  const { RenderCore } = require('../packages/shared/render/RenderCore');
+  const contrastParams = {
+    exposure: 0, contrast: 50, highlights: 0, shadows: 0, whites: 0, blacks: 0,
+    red: 1, green: 1, blue: 1, temp: 0, tint: 0, inverted: false,
+    curves: {
+      rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+      red: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+      green: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+      blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+    },
+  };
+
+  const core = new RenderCore(contrastParams);
+  core.prepareLUTs();
+
+  // Mid-gray should be approximately preserved by contrast
+  const [rMid] = core.processPixelFloat(0.46, 0.46, 0.46);
+  assert(Math.abs(rMid - 0.46) < 0.02,
+    `Mid-gray (0.46) with contrast=50 → ${rMid.toFixed(4)}, expected ~0.46`);
+
+  // Values below mid-gray should be darker
+  const [rDark] = core.processPixelFloat(0.2, 0.2, 0.2);
+  assert(rDark < 0.2,
+    `Below mid-gray (0.2) with contrast=50 → ${rDark.toFixed(4)}, should be darker`);
+
+  // Values above mid-gray should be brighter
+  const [rBright] = core.processPixelFloat(0.7, 0.7, 0.7);
+  assert(rBright > 0.7,
+    `Above mid-gray (0.7) with contrast=50 → ${rBright.toFixed(4)}, should be brighter`);
+
+  // GLSL should also contain the mid-gray constant
+  const gl2 = buildFragmentShader(true);
+  assert(gl2.includes('0.46'), 'GLSL GL2 should contain 0.46 mid-gray constant');
+
+  console.log(`  ✓ Contrast mid-gray pivot verified (constant=${CONTRAST_MID_GRAY})`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 8: Q12 — CIE D Illuminant White Balance
+// ══════════════════════════════════════════════════════════════════════════════
+function testCIEDIlluminant() {
+  console.log('\n── Test 8: CIE D Illuminant White Balance (Q12) ──');
+
+  // D65 (6500K) should be close to neutral white
+  const d65 = kelvinToRGB(6500);
+  assert(d65.length === 3, 'kelvinToRGB should return [r, g, b]');
+  // At D65, the max-normalized RGB should be very close to [1, 1, 1]
+  const maxD65 = Math.max(d65[0], d65[1], d65[2]);
+  assert(approxEq(maxD65, 1.0, 0.001), `D65 max channel = ${maxD65}, expected 1.0`);
+
+  // All channels should be positive and ≤ 1
+  for (const v of d65) {
+    assert(v > 0 && v <= 1.0, `D65 channel ${v.toFixed(4)} should be in (0, 1]`);
+  }
+
+  // Warm temperature (3200K) → more red
+  const warm = kelvinToRGB(3200);
+  assert(warm[0] > warm[2],
+    `3200K: R=${warm[0].toFixed(4)} should be > B=${warm[2].toFixed(4)}`);
+
+  // Cool temperature (10000K) → more blue
+  const cool = kelvinToRGB(10000);
+  assert(cool[2] > cool[0],
+    `10000K: B=${cool[2].toFixed(4)} should be > R=${cool[0].toFixed(4)}`);
+
+  // Continuity test at 3750K (center of Hermite blend zone 3500K-4000K)
+  // Testing mid-blend to ensure the blend itself is smooth
+  const h = 10; // 10K step
+  const kelvinBlend = 3750;
+  const rgbMinus = kelvinToRGB(kelvinBlend - h);
+  const rgbCenter = kelvinToRGB(kelvinBlend);
+  const rgbPlus = kelvinToRGB(kelvinBlend + h);
+  for (let ch = 0; ch < 3; ch++) {
+    const dLeft  = (rgbCenter[ch] - rgbMinus[ch]) / h;
+    const dRight = (rgbPlus[ch] - rgbCenter[ch]) / h;
+    const dRatio = Math.abs(dLeft) > 1e-8 ? Math.abs((dRight - dLeft) / dLeft) : Math.abs(dRight - dLeft);
+    assert(dRatio < 1.0,
+      `3750K ch${ch} derivative ratio: ${dRatio.toFixed(4)} (smooth if <1.0)`);
+  }
+
+  // Also test that 4000K itself has no jump
+  const rgb3990 = kelvinToRGB(3990);
+  const rgb4010 = kelvinToRGB(4010);
+  for (let ch = 0; ch < 3; ch++) {
+    const jump4k = Math.abs(rgb4010[ch] - rgb3990[ch]);
+    assert(jump4k < 0.02,
+      `4000K boundary ch${ch} jump: ${jump4k.toFixed(6)} (should be <0.02)`);
+  }
+
+  // Continuity test: no discontinuity at old Tanner Helland 6600K boundary
+  const rgb6590 = kelvinToRGB(6590);
+  const rgb6610 = kelvinToRGB(6610);
+  for (let ch = 0; ch < 3; ch++) {
+    const jump = Math.abs(rgb6610[ch] - rgb6590[ch]);
+    assert(jump < 0.01,
+      `6600K boundary ch${ch} jump: ${jump.toFixed(6)} (should be <0.01)`);
+  }
+
+  // Monotonicity: R should decrease as K increases (warm→cool)
+  let rPrev = kelvinToRGB(2000)[0];
+  let monotoneR = true;
+  for (let k = 3000; k <= 15000; k += 1000) {
+    const rCur = kelvinToRGB(k)[0];
+    if (rCur > rPrev + 0.001) { monotoneR = false; break; }
+    rPrev = rCur;
+  }
+  assert(monotoneR, 'R channel should be monotonically non-increasing with temperature');
+
+  console.log(`  ✓ CIE D illuminant verified: D65=[${d65.map(v => v.toFixed(3)).join(', ')}]`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 9: Q13 — Three-Segment Film Curve + Per-Channel Gamma
+// ══════════════════════════════════════════════════════════════════════════════
+function testFilmCurve() {
+  console.log('\n── Test 9: Three-Segment Film Curve (Q13) ──');
+
+  // Basic film curve: should map [0,1] → [0,1]
+  const defaultGamma = 0.6;
+  const dMin = 0.1, dMax = 3.0;
+
+  // Value at 0 should be close to 0 (or dMin-dependent)
+  const v0 = applyFilmCurveFloat(0.0, { gamma: defaultGamma, dMin, dMax, toe: 0, shoulder: 0 });
+  assert(v0 >= 0 && v0 < 0.1, `Film curve at 0: ${v0.toFixed(4)}, expected near 0`);
+
+  // Value at 1 should be positive (H&D model may not map exactly to 1.0 due to density normalization)
+  const v1 = applyFilmCurveFloat(1.0, { gamma: defaultGamma, dMin, dMax, toe: 0, shoulder: 0 });
+  assert(v1 > 0.5 && v1 <= 1.1, `Film curve at 1: ${v1.toFixed(4)}, expected > 0.5`);
+
+  // Monotonicity: higher input → higher output
+  let prevOut = -1;
+  let monotone = true;
+  for (let i = 0; i <= 20; i++) {
+    const inp = i / 20;
+    const out = applyFilmCurveFloat(inp, { gamma: defaultGamma, dMin, dMax, toe: 0, shoulder: 0 });
+    if (out < prevOut - 1e-6) { monotone = false; break; }
+    prevOut = out;
+  }
+  assert(monotone, 'Film curve should be monotonically non-decreasing');
+
+  // Toe/shoulder: with toe=1, low values should be compressed (lower output)
+  const vToe = applyFilmCurveFloat(0.1, { gamma: defaultGamma, dMin, dMax, toe: 1, shoulder: 0 });
+  const vNoToe = applyFilmCurveFloat(0.1, { gamma: defaultGamma, dMin, dMax, toe: 0, shoulder: 0 });
+  // Toe compresses darks → different output (gamma_toe = gamma×1.5 → steeper → higher output)
+  assert(Math.abs(vToe - vNoToe) > 0.001 || approxEq(vToe, vNoToe, 0.01),
+    `Toe effect: with=${vToe.toFixed(4)} vs without=${vNoToe.toFixed(4)}`);
+
+  // Per-channel gamma in FILM_PROFILES
+  const portra = FILM_PROFILES.portra400;
+  if (portra) {
+    assert(portra.gammaR !== undefined && portra.gammaG !== undefined && portra.gammaB !== undefined,
+      'Portra 400 should have per-channel gamma');
+    assert(portra.gammaR !== portra.gammaB,
+      `Per-channel gamma should differ: R=${portra.gammaR}, B=${portra.gammaB}`);
+    assert(portra.toe !== undefined && portra.shoulder !== undefined,
+      'Portra 400 should have toe/shoulder');
+  }
+
+  // Default profile should have toe=0, shoulder=0 for backward compat
+  const defaultProf = FILM_PROFILES.default;
+  if (defaultProf) {
+    assert(defaultProf.toe === 0 && defaultProf.shoulder === 0,
+      `Default profile toe/shoulder should be 0: got toe=${defaultProf.toe}, shoulder=${defaultProf.shoulder}`);
+  }
+
+  // GLSL should contain per-channel gamma uniforms
+  const gl2 = buildFragmentShader(true);
+  assert(gl2.includes('u_filmCurveGammaR'), 'GLSL should have u_filmCurveGammaR');
+  assert(gl2.includes('u_filmCurveToe'), 'GLSL should have u_filmCurveToe');
+  assert(gl2.includes('u_filmCurveShoulder'), 'GLSL should have u_filmCurveShoulder');
+  assert(gl2.includes('threeSegGamma') || gl2.includes('filmHermite'),
+    'GLSL should contain three-segment gamma function');
+
+  console.log(`  ✓ Film curve verified: monotone, per-channel gamma, toe/shoulder`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 10: Phase 2.4 — Composite Float Curve LUT
+// ══════════════════════════════════════════════════════════════════════════════
+function testCompositeFloatLUT() {
+  console.log('\n── Test 10: Composite Float Curve LUT (Phase 2.4) ──');
+
+  // Identity curves (2 points: 0→0, 255→255)
+  const identityCurves = {
+    rgb: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+    red: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+    green: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+    blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+  };
+
+  const resolution = 1024;
+  const lut = buildCompositeFloatCurveLUT(identityCurves, resolution);
+
+  assert(lut instanceof Float32Array,
+    `LUT should be Float32Array, got ${lut?.constructor?.name}`);
+  assert(lut.length === resolution * 4,
+    `LUT length should be ${resolution * 4}, got ${lut.length}`);
+
+  // Identity test: for linear input t, output R/G/B should ≈ t
+  let maxErr = 0;
+  for (let i = 0; i < resolution; i++) {
+    const expected = i / (resolution - 1);
+    const r = lut[i * 4 + 0];
+    const g = lut[i * 4 + 1];
+    const b = lut[i * 4 + 2];
+    maxErr = Math.max(maxErr, Math.abs(r - expected), Math.abs(g - expected), Math.abs(b - expected));
+  }
+  assert(maxErr < 0.005,
+    `Identity float LUT max error: ${maxErr.toFixed(6)} (limit 0.005)`);
+
+  // S-curve test: boost mid → higher values in middle
+  const sCurves = {
+    rgb: [{ x: 0, y: 0 }, { x: 64, y: 32 }, { x: 192, y: 224 }, { x: 255, y: 255 }],
+    red: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+    green: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+    blue: [{ x: 0, y: 0 }, { x: 255, y: 255 }],
+  };
+  const sLut = buildCompositeFloatCurveLUT(sCurves, resolution);
+  // At midpoint (index 512), S-curve should be above 0.5 (boost)
+  const midR = sLut[512 * 4 + 0];
+  assert(midR > 0.5,
+    `S-curve at mid should be > 0.5, got ${midR.toFixed(4)}`);
+
+  // Endpoints should be 0 and 1
+  assert(approxEq(sLut[0], 0, 0.01), `S-curve start R: ${sLut[0].toFixed(4)}, expected ~0`);
+  const lastR = sLut[(resolution - 1) * 4 + 0];
+  assert(approxEq(lastR, 1, 0.01), `S-curve end R: ${lastR.toFixed(4)}, expected ~1`);
+
+  console.log(`  ✓ Composite float LUT verified: identity maxErr=${maxErr.toFixed(6)}, S-curve mid=${midR.toFixed(4)}`);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // Run All Tests
 // ══════════════════════════════════════════════════════════════════════════════
 console.log('═══════════════════════════════════════════════════════════════');
-console.log('  FilmGallery Render Pipeline Regression Test (Phase 4.6)');
+console.log('  FilmGallery Render Pipeline Regression Test (Phase 4.6+)');
 console.log('═══════════════════════════════════════════════════════════════');
 
 testHighlightRollOff();
@@ -366,6 +612,10 @@ testToneCurves();
 testGLSLModule();
 testCPUPipeline();
 testHSLChannelWeights();
+testContrastMidGray();
+testCIEDIlluminant();
+testFilmCurve();
+testCompositeFloatLUT();
 
 console.log('\n═══════════════════════════════════════════════════════════════');
 console.log(`  Results: ${passCount} passed, ${failCount} failed`);

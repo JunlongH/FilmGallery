@@ -62,6 +62,12 @@ module.exports = {
   /** 构建曲线 LUT */
   buildCurveLUT: curves.buildCurveLUT,
   
+  /** 构建浮点曲线 LUT */
+  buildCurveLUTFloat: curves.buildCurveLUTFloat,
+
+  /** 构建 GPU 复合浮点曲线 LUT (Phase 2.4) */
+  buildCompositeFloatCurveLUT: curves.buildCompositeFloatCurveLUT,
+
   /** 构建所有通道曲线 LUT */
   buildAllCurveLUTs: curves.buildAllCurveLUTs,
   

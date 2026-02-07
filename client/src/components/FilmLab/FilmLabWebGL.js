@@ -242,11 +242,16 @@ export function processImageWebGL(canvas, image, params = {}) {
     uniform float u_whites; // -100..100
     uniform float u_blacks; // -100..100
 
-    // Film Curve parameters
+    // Film Curve parameters (Q13: per-channel gamma + toe/shoulder)
     uniform int u_filmCurveEnabled;
     uniform float u_filmCurveGamma;
+    uniform float u_filmCurveGammaR;
+    uniform float u_filmCurveGammaG;
+    uniform float u_filmCurveGammaB;
     uniform float u_filmCurveDMin;
     uniform float u_filmCurveDMax;
+    uniform float u_filmCurveToe;
+    uniform float u_filmCurveShoulder;
 
     // Film Base Correction (Pre-Inversion)
     uniform int u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
@@ -500,34 +505,59 @@ export function processImageWebGL(canvas, image, params = {}) {
     }
 
     // Film Curve: Apply H&D density model to transmittance
-    // Output is adjusted transmittance (NOT inverted), inversion happens separately
-    float applyFilmCurve(float value) {
+    // Q13: 3-segment S-curve (toe/straight/shoulder) + per-channel gamma
+
+    float filmHermite(float t) {
+      float c = clamp(t, 0.0, 1.0);
+      return c * c * (3.0 - 2.0 * c);
+    }
+
+    float threeSegGamma(float d, float gamma, float toe, float shoulder) {
+      float toeBound = 0.25 * toe;
+      float shBound  = 1.0 - 0.25 * shoulder;
+      float gammaToe = gamma * 1.5;
+      float gammaSh  = gamma * 0.6;
+      float tw = 0.08;
+      if (d < toeBound) {
+        return pow(d, gammaToe);
+      } else if (d < toeBound + tw && toeBound > 0.0) {
+        float t = (d - toeBound) / tw;
+        float blend = filmHermite(t);
+        return mix(pow(d, gammaToe), pow(d, gamma), blend);
+      } else if (d > shBound) {
+        return pow(d, gammaSh);
+      } else if (d > shBound - tw && shoulder > 0.0) {
+        float t = (d - (shBound - tw)) / tw;
+        float blend = filmHermite(t);
+        return mix(pow(d, gamma), pow(d, gammaSh), blend);
+      } else {
+        return pow(d, gamma);
+      }
+    }
+
+    float applyFilmCurveChannel(float value, float gamma) {
       if (u_filmCurveEnabled == 0) return value;
-      
-      float gamma = u_filmCurveGamma;
       float dMin = u_filmCurveDMin;
       float dMax = u_filmCurveDMax;
-      
-      // 1. Normalize input (avoid log(0))
+      float toe = u_filmCurveToe;
+      float shoulder = u_filmCurveShoulder;
       float normalized = clamp(value, 0.001, 1.0);
-      
-      // 2. Calculate density D = -log10(T)
-      // Using change of base: log10(x) = log(x) / log(10)
       float density = -log(normalized) / log(10.0);
-      
-      // 3. Normalize density to dMin-dMax range
       float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
-      
-      // 4. Apply gamma curve to adjust density response
-      float gammaApplied = pow(densityNorm, gamma);
-      
-      // 5. Convert adjusted normalized density back to density value
+      float gammaApplied;
+      if (toe <= 0.0 && shoulder <= 0.0) {
+        gammaApplied = pow(densityNorm, gamma);
+      } else {
+        gammaApplied = threeSegGamma(densityNorm, gamma, toe, shoulder);
+      }
       float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
-      
-      // 6. Convert density back to transmittance: T = 10^(-D)
       float outputT = pow(10.0, -adjustedDensity);
-      
       return clamp(outputT, 0.0, 1.0);
+    }
+
+    // Legacy single-gamma interface (backward compat)
+    float applyFilmCurve(float value) {
+      return applyFilmCurveChannel(value, u_filmCurveGamma);
     }
 
     vec3 sampleLUT3D(vec3 c) {
@@ -603,10 +633,10 @@ export function processImageWebGL(canvas, image, params = {}) {
       return mix(c0, c1, fb);
     }
 
-    // Helper: apply contrast (-1..1)
+    // Helper: apply contrast (-1..1) — Q11: around perceptual mid-gray (0.46)
     float applyContrast(float v, float c) {
       float f = (259.0 * (c * 255.0 + 255.0)) / (255.0 * (259.0 - c * 255.0));
-      return clamp(f * (v - 0.5) + 0.5, 0.0, 1.0);
+      return clamp(f * (v - 0.46) + 0.46, 0.0, 1.0);
     }
 
     float applyTone(float val, float h, float s, float w, float b) {
@@ -635,12 +665,11 @@ export function processImageWebGL(canvas, image, params = {}) {
       vec4 tex = texture2D(u_image, v_uv);
       vec3 col = tex.rgb;
 
-      // ① Film Curve (before inversion) - applies H&D density model to negative scan
-      // Only meaningful when inverting negatives
+      // ① Film Curve (before inversion) — Q13: per-channel gamma + toe/shoulder
       if (u_inverted == 1 && u_filmCurveEnabled == 1) {
-        col.r = applyFilmCurve(col.r);
-        col.g = applyFilmCurve(col.g);
-        col.b = applyFilmCurve(col.b);
+        col.r = applyFilmCurveChannel(col.r, u_filmCurveGammaR);
+        col.g = applyFilmCurveChannel(col.g, u_filmCurveGammaG);
+        col.b = applyFilmCurveChannel(col.b, u_filmCurveGammaB);
       }
 
       // ② Base Correction - neutralize film base color
@@ -889,11 +918,16 @@ export function processImageWebGL(canvas, image, params = {}) {
   locs.u_shadows = gl.getUniformLocation(program, 'u_shadows');
   locs.u_whites = gl.getUniformLocation(program, 'u_whites');
   locs.u_blacks = gl.getUniformLocation(program, 'u_blacks');
-  // Film Curve uniforms
+  // Film Curve uniforms (Q13: per-channel gamma + toe/shoulder)
   locs.u_filmCurveEnabled = gl.getUniformLocation(program, 'u_filmCurveEnabled');
   locs.u_filmCurveGamma = gl.getUniformLocation(program, 'u_filmCurveGamma');
+  locs.u_filmCurveGammaR = gl.getUniformLocation(program, 'u_filmCurveGammaR');
+  locs.u_filmCurveGammaG = gl.getUniformLocation(program, 'u_filmCurveGammaG');
+  locs.u_filmCurveGammaB = gl.getUniformLocation(program, 'u_filmCurveGammaB');
   locs.u_filmCurveDMin = gl.getUniformLocation(program, 'u_filmCurveDMin');
   locs.u_filmCurveDMax = gl.getUniformLocation(program, 'u_filmCurveDMax');
+  locs.u_filmCurveToe = gl.getUniformLocation(program, 'u_filmCurveToe');
+  locs.u_filmCurveShoulder = gl.getUniformLocation(program, 'u_filmCurveShoulder');
   // Base Correction uniforms (Pre-Inversion)
   locs.u_baseMode = gl.getUniformLocation(program, 'u_baseMode');
   locs.u_baseGains = gl.getUniformLocation(program, 'u_baseGains');
@@ -972,12 +1006,17 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.uniform1f(locs.u_whites, params.whites || 0.0);
   gl.uniform1f(locs.u_blacks, params.blacks || 0.0);
 
-  // Film Curve parameters
+  // Film Curve parameters (Q13: per-channel gamma + toe/shoulder)
   const filmCurveEnabled = params.filmCurveEnabled ? 1 : 0;
   gl.uniform1i(locs.u_filmCurveEnabled, filmCurveEnabled);
   gl.uniform1f(locs.u_filmCurveGamma, params.filmCurveGamma ?? 0.6);
+  gl.uniform1f(locs.u_filmCurveGammaR, params.filmCurveGammaR ?? params.filmCurveGamma ?? 0.6);
+  gl.uniform1f(locs.u_filmCurveGammaG, params.filmCurveGammaG ?? params.filmCurveGamma ?? 0.6);
+  gl.uniform1f(locs.u_filmCurveGammaB, params.filmCurveGammaB ?? params.filmCurveGamma ?? 0.6);
   gl.uniform1f(locs.u_filmCurveDMin, params.filmCurveDMin ?? 0.1);
   gl.uniform1f(locs.u_filmCurveDMax, params.filmCurveDMax ?? 3.0);
+  gl.uniform1f(locs.u_filmCurveToe, params.filmCurveToe ?? 0);
+  gl.uniform1f(locs.u_filmCurveShoulder, params.filmCurveShoulder ?? 0);
 
   // Base Correction (Pre-Inversion)
   // Support both linear (gains) and log (density) modes

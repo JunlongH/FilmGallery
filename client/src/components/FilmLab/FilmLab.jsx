@@ -12,6 +12,7 @@ import {
   RenderCore,
   computeWBGains,
   solveTempTintFromSample,
+  buildCompositeFloatCurveLUT,
   PREVIEW_MAX_WIDTH_CLIENT,
   EXPORT_MAX_WIDTH,
   DEFAULT_HSL_PARAMS,
@@ -1029,11 +1030,16 @@ export default function FilmLab({
               const totalRotation = rotation + orientation + rotationOffset;
               const cropRect = isCropping ? null : committedCrop;
               
-              // Get Film Curve profile parameters
+              // Get Film Curve profile parameters (Q13: per-channel gamma + toe/shoulder)
               const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
               const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+              const filmCurveGammaR = currentFilmProfile?.gammaR ?? filmCurveGamma;
+              const filmCurveGammaG = currentFilmProfile?.gammaG ?? filmCurveGamma;
+              const filmCurveGammaB = currentFilmProfile?.gammaB ?? filmCurveGamma;
               const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
               const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+              const filmCurveToe = currentFilmProfile?.toe ?? 0;
+              const filmCurveShoulder = currentFilmProfile?.shoulder ?? 0;
               
               // webglParams.inverted 已经根据 sourceType 计算过了
                 processImageWebGL(webglCanvas, image, {
@@ -1046,7 +1052,8 @@ export default function FilmLab({
                   densityLevelsEnabled: webglParams.densityLevelsEnabled,
                   densityLevels: webglParams.densityLevels,
                   exposure, contrast, highlights, shadows, whites, blacks,
-                  filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
+                  filmCurveEnabled, filmCurveGamma, filmCurveGammaR, filmCurveGammaG, filmCurveGammaB,
+                  filmCurveDMin, filmCurveDMax, filmCurveToe, filmCurveShoulder,
                   rotate: totalRotation,
                   cropRect: cropRect,
                   // pass preview scale to ensure WebGL output uses the same downscale as CPU/geometry
@@ -1617,18 +1624,24 @@ export default function FilmLab({
         };
       };
       
-      // Get Film Curve profile parameters (same as GPU Export)
+      // Get Film Curve profile parameters (Q13: per-channel gamma + toe/shoulder — same as GPU Export)
       const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
       const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+      const filmCurveGammaR = currentFilmProfile?.gammaR ?? filmCurveGamma;
+      const filmCurveGammaG = currentFilmProfile?.gammaG ?? filmCurveGamma;
+      const filmCurveGammaB = currentFilmProfile?.gammaB ?? filmCurveGamma;
       const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
       const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+      const filmCurveToe = currentFilmProfile?.toe ?? 0;
+      const filmCurveShoulder = currentFilmProfile?.shoulder ?? 0;
       
       const params = {
         sourceType, // 传递源类型以便服务器选择正确的源文件
         inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
         inversionMode, filmCurveEnabled, filmCurveProfile,
-        // Explicitly pass film curve parameters for RenderCore (same as GPU Export)
-        filmCurveGamma, filmCurveDMin, filmCurveDMax,
+        // Explicitly pass film curve parameters for RenderCore (Q13: per-channel gamma + toe/shoulder)
+        filmCurveGamma, filmCurveGammaR, filmCurveGammaG, filmCurveGammaB,
+        filmCurveDMin, filmCurveDMax, filmCurveToe, filmCurveShoulder,
         exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
         // 片基校正增益 (Pre-Inversion)
         baseRed, baseGreen, baseBlue,
@@ -1669,19 +1682,25 @@ export default function FilmLab({
     try {
       // 检查 GPU 是否可用
       if (window.__electron?.filmlabGpuProcess) {
-        // Generate 1D LUT for Curves only (tone handled in shader via uniforms)
+        // Phase 2.4: Build Float32 composite curve LUT (1024×1 RGBA)
+        // Replaces the legacy 8-bit 256×1 path — matches CPU float precision
+        const toneCurveLutFloat = buildCompositeFloatCurveLUT({
+          rgb: curves.rgb,
+          red: curves.red,
+          green: curves.green,
+          blue: curves.blue,
+        });
+
+        // Legacy 8-bit LUT (kept as fallback for GPUs without float texture support)
         const lutRGB = getCurveLUT(curves.rgb);
         const lutR = getCurveLUT(curves.red);
         const lutG = getCurveLUT(curves.green);
         const lutB = getCurveLUT(curves.blue);
         
-        // Combine into a single 256x3 array [r,g,b, r,g,b...] for the GPU to sample
         const toneCurveLut = new Uint8Array(256 * 4); // RGBA
         for (let i = 0; i < 256; i++) {
           let r = i, g = i, b = i;
-          // Apply RGB Curve
           r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-          // Apply Channel Curves
           r = lutR[r];
           g = lutG[g];
           b = lutB[b];
@@ -1698,11 +1717,16 @@ export default function FilmLab({
           lut3d = buildCombinedLUT(lut1, lut2);
         }
 
-        // Get Film Curve profile parameters
+        // Get Film Curve profile parameters (Q13: per-channel gamma + toe/shoulder)
         const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
         const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+        const filmCurveGammaR = currentFilmProfile?.gammaR ?? filmCurveGamma;
+        const filmCurveGammaG = currentFilmProfile?.gammaG ?? filmCurveGamma;
+        const filmCurveGammaB = currentFilmProfile?.gammaB ?? filmCurveGamma;
         const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
         const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+        const filmCurveToe = currentFilmProfile?.toe ?? 0;
+        const filmCurveShoulder = currentFilmProfile?.shoulder ?? 0;
 
         const params = { 
           sourceType,
@@ -1713,8 +1737,10 @@ export default function FilmLab({
           baseMode, baseDensityR, baseDensityG, baseDensityB,
           densityLevelsEnabled, densityLevels,
           rotation, orientation,
-          filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
+          filmCurveEnabled, filmCurveGamma, filmCurveGammaR, filmCurveGammaG, filmCurveGammaB,
+          filmCurveDMin, filmCurveDMax, filmCurveToe, filmCurveShoulder,
           cropRect: committedCrop,
+          toneCurveLutFloat: Array.from(toneCurveLutFloat),
           toneCurveLut: Array.from(toneCurveLut),
           lut3d: lut3d ? { size: lut3d.size, data: Array.from(lut3d.data) } : null,
           hslParams, splitToning

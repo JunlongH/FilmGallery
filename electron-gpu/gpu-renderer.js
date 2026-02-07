@@ -2,6 +2,8 @@
 const { ipcRenderer } = require('electron');
 
 let gl, canvas, isWebGL2 = false;
+let _hasFloatTexture = false;   // Phase 2.4: float texture support
+let _hasFloatLinear  = false;   // Phase 2.4: float texture linear filtering
 
 // ============================================================================
 // White Balance: use shared Kelvin model (single source of truth)
@@ -47,6 +49,21 @@ function initGL() {
     console.error('WebGL not available');
     return false;
   }
+
+  // Phase 2.4: Enable float texture extensions
+  if (isWebGL2) {
+    // WebGL2 natively supports RGBA32F textures;
+    // need EXT_color_buffer_float for render-to-float, but for sampling only it's built-in.
+    _hasFloatTexture = true;
+    _hasFloatLinear  = true; // GL2 guarantees float linear filtering for R32F/RGBA32F
+  } else {
+    // WebGL1: request OES_texture_float + OES_texture_float_linear
+    const extF  = gl.getExtension('OES_texture_float');
+    const extFL = gl.getExtension('OES_texture_float_linear');
+    _hasFloatTexture = !!extF;
+    _hasFloatLinear  = !!extFL;
+  }
+
   return true;
 }
 
@@ -214,29 +231,53 @@ function runJob(job) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       }
 
-      // Tone Curve Texture (1D LUT)
+      // Tone Curve Texture (1D LUT) — Phase 2.4: prefer Float32 1024×1 RGBA
       const toneCurveTex = gl.createTexture();
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, toneCurveTex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      
-      let toneCurveData;
-      if (params && params.toneCurveLut && params.toneCurveLut.length === 256 * 4) {
-        toneCurveData = new Uint8Array(params.toneCurveLut);
-      } else {
-        // Default identity LUT
-        toneCurveData = new Uint8Array(256 * 4);
-        for(let i=0; i<256; i++) {
-          toneCurveData[i*4+0] = i;
-          toneCurveData[i*4+1] = i;
-          toneCurveData[i*4+2] = i;
-          toneCurveData[i*4+3] = 255;
+
+      // Choose float or 8-bit path based on data + GPU capability
+      const hasFloatLut = params && params.toneCurveLutFloat && params.toneCurveLutFloat.length > 0;
+      const useFloat = hasFloatLut && _hasFloatTexture;
+
+      if (useFloat) {
+        // Phase 2.4: Float32 RGBA texture (1024×1)
+        const floatArr = new Float32Array(params.toneCurveLutFloat);
+        const resolution = floatArr.length / 4;
+
+        // Filtering: prefer LINEAR if extension available, fallback to NEAREST
+        const filterMode = _hasFloatLinear ? gl.LINEAR : gl.NEAREST;
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filterMode);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filterMode);
+
+        if (isWebGL2) {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, resolution, 1, 0, gl.RGBA, gl.FLOAT, floatArr);
+        } else {
+          // WebGL1 + OES_texture_float
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, resolution, 1, 0, gl.RGBA, gl.FLOAT, floatArr);
         }
+      } else {
+        // Legacy 8-bit path (RGBA UNSIGNED_BYTE 256×1)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+        let toneCurveData;
+        if (params && params.toneCurveLut && params.toneCurveLut.length === 256 * 4) {
+          toneCurveData = new Uint8Array(params.toneCurveLut);
+        } else {
+          // Default identity LUT
+          toneCurveData = new Uint8Array(256 * 4);
+          for(let i=0; i<256; i++) {
+            toneCurveData[i*4+0] = i;
+            toneCurveData[i*4+1] = i;
+            toneCurveData[i*4+2] = i;
+            toneCurveData[i*4+3] = 255;
+          }
+        }
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, toneCurveData);
       }
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, toneCurveData);
 
       // 3D LUT Texture
       let hasLut3d = false;
@@ -305,15 +346,25 @@ function runJob(job) {
       const u_blacks = gl.getUniformLocation(prog, 'u_blacks');
       gl.uniform1f(u_blacks, (params?.blacks ?? 0));
 
-      // Film Curve uniforms
+      // Film Curve uniforms (Q13: per-channel gamma + toe/shoulder)
       const u_filmCurveEnabled = gl.getUniformLocation(prog, 'u_filmCurveEnabled');
       gl.uniform1f(u_filmCurveEnabled, (params?.filmCurveEnabled) ? 1.0 : 0.0);
       const u_filmCurveGamma = gl.getUniformLocation(prog, 'u_filmCurveGamma');
       gl.uniform1f(u_filmCurveGamma, (params?.filmCurveGamma ?? 0.6));
+      const u_filmCurveGammaR = gl.getUniformLocation(prog, 'u_filmCurveGammaR');
+      gl.uniform1f(u_filmCurveGammaR, (params?.filmCurveGammaR ?? params?.filmCurveGamma ?? 0.6));
+      const u_filmCurveGammaG = gl.getUniformLocation(prog, 'u_filmCurveGammaG');
+      gl.uniform1f(u_filmCurveGammaG, (params?.filmCurveGammaG ?? params?.filmCurveGamma ?? 0.6));
+      const u_filmCurveGammaB = gl.getUniformLocation(prog, 'u_filmCurveGammaB');
+      gl.uniform1f(u_filmCurveGammaB, (params?.filmCurveGammaB ?? params?.filmCurveGamma ?? 0.6));
       const u_filmCurveDMin = gl.getUniformLocation(prog, 'u_filmCurveDMin');
       gl.uniform1f(u_filmCurveDMin, (params?.filmCurveDMin ?? 0.1));
       const u_filmCurveDMax = gl.getUniformLocation(prog, 'u_filmCurveDMax');
       gl.uniform1f(u_filmCurveDMax, (params?.filmCurveDMax ?? 3.0));
+      const u_filmCurveToe = gl.getUniformLocation(prog, 'u_filmCurveToe');
+      gl.uniform1f(u_filmCurveToe, (params?.filmCurveToe ?? 0));
+      const u_filmCurveShoulder = gl.getUniformLocation(prog, 'u_filmCurveShoulder');
+      gl.uniform1f(u_filmCurveShoulder, (params?.filmCurveShoulder ?? 0));
 
       // Base Correction (Pre-Inversion)
       // Support both linear (gains) and log (density) modes

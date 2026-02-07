@@ -23,12 +23,12 @@
 
 'use strict';
 
-const { DEFAULT_CURVES, DEFAULT_WB_PARAMS } = require('../filmLabConstants');
+const { DEFAULT_CURVES, DEFAULT_WB_PARAMS, CONTRAST_MID_GRAY } = require('../filmLabConstants');
 const { buildToneLUT } = require('../filmLabToneLUT');
 const { buildCurveLUT, buildCurveLUTFloat } = require('../filmLabCurves');
 const { computeWBGains } = require('../filmLabWhiteBalance');
 const { applyInversion, applyLogBaseCorrectionRGB, applyLinearBaseCorrectionRGB } = require('../filmLabInversion');
-const { applyFilmCurve, FILM_CURVE_PROFILES } = require('../filmLabCurve');
+const { applyFilmCurve, applyFilmCurveFloat, FILM_CURVE_PROFILES } = require('../filmLabCurve');
 const { applyHSL, DEFAULT_HSL_PARAMS, isDefaultHSL } = require('../filmLabHSL');
 const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone, prepareSplitTone, applySplitToneFast } = require('../filmLabSplitTone');
 const MathOps = require('./math');
@@ -97,8 +97,13 @@ class RenderCore {
       filmCurveEnabled: input.filmCurveEnabled ?? false,
       filmCurveProfile: input.filmCurveProfile ?? 'default',
       filmCurveGamma: input.filmCurveGamma ?? DEFAULT_FILM_CURVE.gamma,
+      filmCurveGammaR: input.filmCurveGammaR ?? undefined, // Q13: per-channel, falls back to profile
+      filmCurveGammaG: input.filmCurveGammaG ?? undefined,
+      filmCurveGammaB: input.filmCurveGammaB ?? undefined,
       filmCurveDMin: input.filmCurveDMin ?? DEFAULT_FILM_CURVE.dMin,
       filmCurveDMax: input.filmCurveDMax ?? DEFAULT_FILM_CURVE.dMax,
+      filmCurveToe: input.filmCurveToe ?? undefined,       // Q13: 3-segment toe
+      filmCurveShoulder: input.filmCurveShoulder ?? undefined, // Q13: 3-segment shoulder
 
       // 片基校正 (Pre-Inversion, 独立于场景白平衡)
       // 线性模式参数
@@ -263,17 +268,26 @@ class RenderCore {
     const p = this.params;
     const luts = this.luts || this.prepareLUTs();
 
-    // ① Film Curve (H&D density model) — inline float version
+    // ① Film Curve (H&D density model) — Q13: per-channel gamma + toe/shoulder
     // Only when inverting negatives and film curve is enabled
     if (p.inverted && p.filmCurveEnabled && p.filmCurveProfile) {
       const profile = FILM_CURVE_PROFILES[p.filmCurveProfile];
       if (profile) {
-        const gamma = p.filmCurveGamma ?? profile.gamma;
+        const gammaMain = p.filmCurveGamma ?? profile.gamma;
         const dMin  = p.filmCurveDMin  ?? profile.dMin;
         const dMax  = p.filmCurveDMax  ?? profile.dMax;
-        r = this._applyFilmCurveFloat(r, gamma, dMin, dMax);
-        g = this._applyFilmCurveFloat(g, gamma, dMin, dMax);
-        b = this._applyFilmCurveFloat(b, gamma, dMin, dMax);
+        // Q13: prefer explicit params (from client), then profile, then defaults
+        const toe   = p.filmCurveToe ?? profile.toe ?? 0;
+        const shoulder = p.filmCurveShoulder ?? profile.shoulder ?? 0;
+
+        // Per-channel gamma: prefer explicit params, then profile, then main gamma
+        const gammaR = p.filmCurveGammaR ?? profile.gammaR ?? gammaMain;
+        const gammaG = p.filmCurveGammaG ?? profile.gammaG ?? gammaMain;
+        const gammaB = p.filmCurveGammaB ?? profile.gammaB ?? gammaMain;
+
+        r = applyFilmCurveFloat(r, { gamma: gammaR, dMin, dMax, toe, shoulder });
+        g = applyFilmCurveFloat(g, { gamma: gammaG, dMin, dMax, toe, shoulder });
+        b = applyFilmCurveFloat(b, { gamma: gammaB, dMin, dMax, toe, shoulder });
       }
     }
 
@@ -352,13 +366,13 @@ class RenderCore {
     g *= expFactor;
     b *= expFactor;
 
-    // 5b. Contrast (around 0.5 mid-grey)
+    // 5b. Contrast (around perceptual mid-grey — Q11: 18% reflectance ≈ sRGB 0.46)
     const ctr = Number(p.contrast) || 0;
     if (ctr !== 0) {
       const contrastFactor = (259 * (ctr + 255)) / (255 * (259 - ctr));
-      r = (r - 0.5) * contrastFactor + 0.5;
-      g = (g - 0.5) * contrastFactor + 0.5;
-      b = (b - 0.5) * contrastFactor + 0.5;
+      r = (r - CONTRAST_MID_GRAY) * contrastFactor + CONTRAST_MID_GRAY;
+      g = (g - CONTRAST_MID_GRAY) * contrastFactor + CONTRAST_MID_GRAY;
+      b = (b - CONTRAST_MID_GRAY) * contrastFactor + CONTRAST_MID_GRAY;
     }
 
     // 5c. Blacks & Whites (window remap)

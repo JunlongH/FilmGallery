@@ -27,11 +27,16 @@ const GLSL_SHARED_UNIFORMS = `
   uniform float u_whites;
   uniform float u_blacks;
 
-  // Film Curve parameters
+  // Film Curve parameters (Q13: per-channel gamma + toe/shoulder)
   uniform float u_filmCurveEnabled;
   uniform float u_filmCurveGamma;
+  uniform float u_filmCurveGammaR;
+  uniform float u_filmCurveGammaG;
+  uniform float u_filmCurveGammaB;
   uniform float u_filmCurveDMin;
   uniform float u_filmCurveDMax;
+  uniform float u_filmCurveToe;
+  uniform float u_filmCurveShoulder;
 
   // Film Base Correction (Pre-Inversion)
   uniform float u_baseMode;
@@ -275,22 +280,62 @@ const GLSL_SPLIT_TONE = `
 `;
 
 // ============================================================================
-// Film Curve (H&D Density Model)
+// Film Curve (H&D Density Model — Q13: 3-segment S-curve + per-channel gamma)
 // ============================================================================
 
 const GLSL_FILM_CURVE = `
-  float applyFilmCurve(float value) {
-    float gamma = u_filmCurveGamma;
-    float dMin = u_filmCurveDMin;
-    float dMax = u_filmCurveDMax;
-    
+  // Hermite smoothstep for toe/shoulder blending
+  float filmHermite(float t) {
+    float c = clamp(t, 0.0, 1.0);
+    return c * c * (3.0 - 2.0 * c);
+  }
+
+  // Three-segment gamma mapping (matches CPU _applyThreeSegmentGamma)
+  float threeSegGamma(float d, float gamma, float toe, float shoulder) {
+    float toeBound = 0.25 * toe;
+    float shBound  = 1.0 - 0.25 * shoulder;
+    float gammaToe = gamma * 1.5;
+    float gammaSh  = gamma * 0.6;
+    float tw = 0.08;
+
+    if (d < toeBound) {
+      return pow(d, gammaToe);
+    } else if (d < toeBound + tw && toeBound > 0.0) {
+      float t = (d - toeBound) / tw;
+      float blend = filmHermite(t);
+      return mix(pow(d, gammaToe), pow(d, gamma), blend);
+    } else if (d > shBound) {
+      return pow(d, gammaSh);
+    } else if (d > shBound - tw && shoulder > 0.0) {
+      float t = (d - (shBound - tw)) / tw;
+      float blend = filmHermite(t);
+      return mix(pow(d, gamma), pow(d, gammaSh), blend);
+    } else {
+      return pow(d, gamma);
+    }
+  }
+
+  float applyFilmCurve(float value, float gamma, float dMin, float dMax,
+                        float toe, float shoulder) {
     float normalized = clamp(value, 0.001, 1.0);
     float density = -log(normalized) / log(10.0);
     float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
-    float gammaApplied = pow(densityNorm, gamma);
+
+    float gammaApplied;
+    if (toe <= 0.0 && shoulder <= 0.0) {
+      gammaApplied = pow(densityNorm, gamma);
+    } else {
+      gammaApplied = threeSegGamma(densityNorm, gamma, toe, shoulder);
+    }
+
     float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
     float outputT = pow(10.0, -adjustedDensity);
     return clamp(outputT, 0.0, 1.0);
+  }
+
+  // Legacy single-gamma overload (backward compat — used when toe=shoulder=0)
+  float applyFilmCurveLegacy(float value) {
+    return applyFilmCurve(value, u_filmCurveGamma, u_filmCurveDMin, u_filmCurveDMax, 0.0, 0.0);
   }
 `;
 
@@ -317,10 +362,13 @@ function buildShaderMain(isGL2) {
     vec3 c = ${TEX}(u_tex, v_uv).rgb;
     
     // ① Film Curve (before inversion) - only when inverting negatives
+    // Q13: per-channel gamma + toe/shoulder S-curve
     if (u_inverted > 0.5 && u_filmCurveEnabled > 0.5) {
-      c.r = applyFilmCurve(c.r);
-      c.g = applyFilmCurve(c.g);
-      c.b = applyFilmCurve(c.b);
+      float toe = u_filmCurveToe;
+      float sh  = u_filmCurveShoulder;
+      c.r = applyFilmCurve(c.r, u_filmCurveGammaR, u_filmCurveDMin, u_filmCurveDMax, toe, sh);
+      c.g = applyFilmCurve(c.g, u_filmCurveGammaG, u_filmCurveDMin, u_filmCurveDMax, toe, sh);
+      c.b = applyFilmCurve(c.b, u_filmCurveGammaB, u_filmCurveDMin, u_filmCurveDMax, toe, sh);
     }
     
     // ② Base Correction - neutralize film base color
@@ -414,10 +462,11 @@ ${isGL2 ? `
     float expFactor = pow(2.0, u_exposure / 50.0);
     c *= expFactor;
 
-    // ⑤b Contrast around 0.5
+    // ⑤b Contrast around perceptual mid-gray (Q11: 18% reflectance ≈ sRGB 0.46)
     float ctr = u_contrast;
+    float midGray = 0.46;
     float factor = (259.0 * (ctr + 255.0)) / (255.0 * (259.0 - ctr));
-    c = (c - 0.5) * factor + 0.5;
+    c = (c - midGray) * factor + midGray;
 
     // ⑤c Blacks & Whites window
     float blackPoint = -(u_blacks) * 0.002;

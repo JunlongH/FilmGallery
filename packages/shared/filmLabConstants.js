@@ -33,6 +33,20 @@ const DEFAULT_TONE_PARAMS = {
   blacks: 0,        // -100 to 100
 };
 
+/**
+ * 感知中灰点 (Perceptual Mid-Gray)
+ *
+ * 18% 反射率 (线性 0.18) 在 sRGB gamma 域的值:
+ *   sRGB = ((0.18 / 12.92)              if linear ≤ 0.0031308)
+ *        = (1.055 * 0.18^(1/2.4) - 0.055)  ≈ 0.4586
+ *
+ * 对比度公式应围绕此值操作，而非 sRGB 0.5 (对应线性 ~0.214)。
+ * 这使得对比度调整在感知上对称，与 Lightroom/Photoshop 行为一致。
+ *
+ * Q11: Replaces hardcoded 0.5 in contrast formula across CPU/GPU paths.
+ */
+const CONTRAST_MID_GRAY = 0.46;
+
 /** 默认白平衡参数 */
 const DEFAULT_WB_PARAMS = {
   red: 1.0,
@@ -115,34 +129,40 @@ const DEBUG = false;
 // ============================================================================
 
 /**
- * 胶片特性参数
- * gamma: 胶片 gamma 值 (影响对比度曲线)
- * dMin: 最小密度 (片基+灰雾)
- * dMax: 最大密度 (可达到的最大暗度)
+ * 胶片特性参数 (Q13 增强)
+ *
+ * gamma:    主 gamma 值 (直线段斜率，影响对比度)
+ * gammaR:   红色通道 gamma (默认 = gamma; C-41 彩色负片各层不同)
+ * gammaG:   绿色通道 gamma
+ * gammaB:   蓝色通道 gamma
+ * dMin:     最小密度 (片基+灰雾)
+ * dMax:     最大密度 (可达到的最大暗度)
+ * toe:      趾部强度 (0–1; 0 = 无趾部, 1 = 完全 toe 压缩)
+ * shoulder: 肩部强度 (0–1; 0 = 无肩部, 1 = 完全 shoulder 饱和)
  */
 const FILM_PROFILES = {
-  // 彩色负片
-  portra160: { gamma: 0.58, dMin: 0.10, dMax: 2.8, name: 'Kodak Portra 160' },
-  portra400: { gamma: 0.60, dMin: 0.12, dMax: 3.0, name: 'Kodak Portra 400' },
-  portra800: { gamma: 0.62, dMin: 0.15, dMax: 3.2, name: 'Kodak Portra 800' },
-  ektar100: { gamma: 0.55, dMin: 0.08, dMax: 3.0, name: 'Kodak Ektar 100' },
-  gold200: { gamma: 0.58, dMin: 0.12, dMax: 2.9, name: 'Kodak Gold 200' },
-  colorplus200: { gamma: 0.57, dMin: 0.11, dMax: 2.8, name: 'Kodak ColorPlus 200' },
-  pro400h: { gamma: 0.60, dMin: 0.12, dMax: 3.0, name: 'Fuji Pro 400H' },
-  superia400: { gamma: 0.58, dMin: 0.13, dMax: 2.9, name: 'Fuji Superia 400' },
-  c200: { gamma: 0.56, dMin: 0.10, dMax: 2.8, name: 'Fuji C200' },
+  // 彩色负片 — per-channel gamma 模拟不同乳剂层感光特性
+  portra160: { gamma: 0.58, gammaR: 0.56, gammaG: 0.58, gammaB: 0.54, dMin: 0.10, dMax: 2.8, toe: 0.3, shoulder: 0.2, name: 'Kodak Portra 160' },
+  portra400: { gamma: 0.60, gammaR: 0.58, gammaG: 0.60, gammaB: 0.55, dMin: 0.12, dMax: 3.0, toe: 0.3, shoulder: 0.2, name: 'Kodak Portra 400' },
+  portra800: { gamma: 0.62, gammaR: 0.60, gammaG: 0.62, gammaB: 0.57, dMin: 0.15, dMax: 3.2, toe: 0.35, shoulder: 0.25, name: 'Kodak Portra 800' },
+  ektar100:  { gamma: 0.55, gammaR: 0.53, gammaG: 0.55, gammaB: 0.51, dMin: 0.08, dMax: 3.0, toe: 0.25, shoulder: 0.3, name: 'Kodak Ektar 100' },
+  gold200:   { gamma: 0.58, gammaR: 0.56, gammaG: 0.58, gammaB: 0.54, dMin: 0.12, dMax: 2.9, toe: 0.3, shoulder: 0.2, name: 'Kodak Gold 200' },
+  colorplus200: { gamma: 0.57, gammaR: 0.55, gammaG: 0.57, gammaB: 0.53, dMin: 0.11, dMax: 2.8, toe: 0.3, shoulder: 0.2, name: 'Kodak ColorPlus 200' },
+  pro400h:   { gamma: 0.60, gammaR: 0.58, gammaG: 0.60, gammaB: 0.56, dMin: 0.12, dMax: 3.0, toe: 0.25, shoulder: 0.2, name: 'Fuji Pro 400H' },
+  superia400:{ gamma: 0.58, gammaR: 0.56, gammaG: 0.58, gammaB: 0.54, dMin: 0.13, dMax: 2.9, toe: 0.3, shoulder: 0.2, name: 'Fuji Superia 400' },
+  c200:      { gamma: 0.56, gammaR: 0.54, gammaG: 0.56, gammaB: 0.52, dMin: 0.10, dMax: 2.8, toe: 0.3, shoulder: 0.2, name: 'Fuji C200' },
   
-  // 黑白负片
-  trix400: { gamma: 0.65, dMin: 0.15, dMax: 2.8, name: 'Kodak Tri-X 400' },
-  tmax100: { gamma: 0.62, dMin: 0.10, dMax: 2.6, name: 'Kodak T-Max 100' },
-  tmax400: { gamma: 0.64, dMin: 0.12, dMax: 2.8, name: 'Kodak T-Max 400' },
-  hp5: { gamma: 0.63, dMin: 0.14, dMax: 2.7, name: 'Ilford HP5+' },
-  delta100: { gamma: 0.60, dMin: 0.08, dMax: 2.5, name: 'Ilford Delta 100' },
-  delta400: { gamma: 0.62, dMin: 0.10, dMax: 2.7, name: 'Ilford Delta 400' },
-  acros100: { gamma: 0.60, dMin: 0.09, dMax: 2.6, name: 'Fuji Acros 100' },
+  // 黑白负片 — 单一 gamma (各层感光特性相同)
+  trix400:   { gamma: 0.65, dMin: 0.15, dMax: 2.8, toe: 0.35, shoulder: 0.25, name: 'Kodak Tri-X 400' },
+  tmax100:   { gamma: 0.62, dMin: 0.10, dMax: 2.6, toe: 0.2, shoulder: 0.15, name: 'Kodak T-Max 100' },
+  tmax400:   { gamma: 0.64, dMin: 0.12, dMax: 2.8, toe: 0.25, shoulder: 0.2, name: 'Kodak T-Max 400' },
+  hp5:       { gamma: 0.63, dMin: 0.14, dMax: 2.7, toe: 0.3, shoulder: 0.2, name: 'Ilford HP5+' },
+  delta100:  { gamma: 0.60, dMin: 0.08, dMax: 2.5, toe: 0.2, shoulder: 0.15, name: 'Ilford Delta 100' },
+  delta400:  { gamma: 0.62, dMin: 0.10, dMax: 2.7, toe: 0.25, shoulder: 0.2, name: 'Ilford Delta 400' },
+  acros100:  { gamma: 0.60, dMin: 0.09, dMax: 2.6, toe: 0.2, shoulder: 0.15, name: 'Fuji Acros 100' },
   
-  // 默认 (通用)
-  default: { gamma: 0.60, dMin: 0.10, dMax: 3.0, name: 'Generic Film' },
+  // 默认 (通用 — 无 toe/shoulder，向后兼容)
+  default: { gamma: 0.60, dMin: 0.10, dMax: 3.0, toe: 0, shoulder: 0, name: 'Generic Film' },
 };
 
 // ============================================================================
@@ -178,6 +198,7 @@ module.exports = {
   PREVIEW_MAX_WIDTH_CLIENT,
   EXPORT_MAX_WIDTH,
   DEFAULT_TONE_PARAMS,
+  CONTRAST_MID_GRAY,
   DEFAULT_WB_PARAMS,
   DEFAULT_BASE_GAINS,
   DEFAULT_BASE_CORRECTION,

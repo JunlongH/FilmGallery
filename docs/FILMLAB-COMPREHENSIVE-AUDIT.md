@@ -3,7 +3,7 @@
 > **日期**: 2026-02-09
 > **范围**: 渲染管线全链路 (CPU / GPU / Server)、计算公式、曲线插值、架构
 > **前置**: P1-P9 修复已完成 (commit `18cb6c2`, branch `refactor/rendering-pipeline-float`)
-> **最后更新**: 2026-02-10 — Phase 1 / 2 / 4 全部完成，Phase 3.5 完成，Phase 4.6 完成
+> **最后更新**: 2026-02-11 — Phase 1 / 2 / 2.4 / 3 / 3.5 / 4 / 4.6 全部完成
 
 ---
 
@@ -12,8 +12,8 @@
 | Phase | 描述 | 进度 |
 |-------|------|------|
 | **Phase 1** | CPU/GPU 一致性修复 | ✅ **全部完成** (Q1-Q8) |
-| **Phase 2** | 曲线算法升级 | ✅ **全部完成** (Q10 + Float LUT) |
-| **Phase 3** | 公式精度提升 | 🔲 未开始 (Q11/Q12/Q13 — 低优先) |
+| **Phase 2** | 曲线算法升级 | ✅ **全部完成** (Q10 + Float LUT + Phase 2.4 GPU Float Texture) |
+| **Phase 3** | 公式精度提升 | ✅ **全部完成** (Q11 Mid-gray / Q12 CIE D / Q13 3-Segment Film Curve) |
 | **Phase 3.5** | Highlight Roll-off C² | ✅ **完成** (tanh 压缩, CPU+GPU) |
 | **Phase 4** | 架构清理 | ✅ **全部完成** (Q9/Q14/Q15/Q17/Q18/Q19/Q20) |
 | **Phase 4.6** | 回归测试 | ✅ **完成** (97 tests, 0 failures) |
@@ -57,9 +57,9 @@
 | **Q8** | 🟡 | Bug | `_hasCurves` 默认检查使用 {0,0}→{1,1} 但实际默认为 {0,0}→{255,255} | `RenderCore.js:1080-1082` | ✅ 已修复 |
 | **Q9** | 🟡 | Bug | `getGLSLUniforms` 对 exposure 预除以 50，GPU shader 再除以 50 | `RenderCore.js` getGLSLUniforms | ✅ 已修复 (注释澄清) |
 | **Q10** | 🟡 | 视觉质量 | 曲线插值: Fritsch-Carlson 单调约束导致 S 曲线扁平化 | `filmLabCurves.js` | ✅ 已修复 (Natural Cubic Spline) |
-| **Q11**| 🟡 | 公式精度 | 对比度公式在 sRGB 0.5 处操作，非感知中灰 | `filmLabToneLUT.js`, `RenderCore.js` | 🔲 Phase 3 |
-| **Q12** | 🟡 | 物理精度 | WB 开尔文模型: Tanner Helland 近似，6600K 处有导数不连续 | `filmLabWhiteBalance.js:55-86` | 🔲 Phase 3 |
-| **Q13** | 🟡 | 物理精度 | Film Curve: 单通道 gamma，无 toe/shoulder，无逐通道 gamma | `filmLabCurve.js` | 🔲 Phase 3 |
+| **Q11**| 🟡 | 公式精度 | 对比度公式在 sRGB 0.5 处操作，非感知中灰 | `filmLabToneLUT.js`, `RenderCore.js`, `glsl-shared.js`, `FilmLabWebGL.js` | ✅ 已修复 |
+| **Q12** | 🟡 | 物理精度 | WB 开尔文模型: Tanner Helland 近似，6600K 处有导数不连续 | `filmLabWhiteBalance.js` | ✅ 已修复 |
+| **Q13** | 🟡 | 物理精度 | Film Curve: 单通道 gamma，无 toe/shoulder，无逐通道 gamma | `filmLabCurve.js`, `filmLabConstants.js`, `glsl-shared.js`, `FilmLabWebGL.js` | ✅ 已修复 |
 | **Q14** | 🟡 | CPU 一致性 | processPixel (8-bit) 缺少 highlight roll-off | `RenderCore.js` processPixel | ✅ 已修复 |
 | **Q15** | 🟡 | 架构 | GPU 渲染器内含重复 WB 实现、HSL/SplitTone 重复 3 份 | `gpu-renderer.js` | ✅ 已修复 (glsl-shared.js 模块化) |
 | **Q16** | 🟡 | 架构 | math/ 模块多数函数未被调用 | `packages/shared/render/math/` | 🔲 保留 (Phase 3 备用) |
@@ -379,7 +379,14 @@ u_exposure: p.exposure ?? 0, // 原始滑块值 (-100 to 100)，shader 中做 /5
 
 ---
 
-### Q11 🟡 对比度公式的中点偏差
+### Q11 🟡 对比度公式的中点偏差 — ✅ 已修复
+
+> **修复**: 新增 `CONTRAST_MID_GRAY = 0.46` 常量 (`filmLabConstants.js`)，对应 18% 反射率的 sRGB 值。
+> 全部 4 条渲染路径统一使用此常量作为对比度枢轴点：
+> - CPU 8-bit: `filmLabToneLUT.js` — `(val - CONTRAST_MID_GRAY) * factor + CONTRAST_MID_GRAY`
+> - CPU float: `RenderCore.processPixelFloat()` — 同上
+> - GPU export: `glsl-shared.js` — `float midGray = 0.46; c = (c - midGray) * factor + midGray`
+> - Client WebGL preview: `FilmLabWebGL.js` — `clamp(f * (v - 0.46) + 0.46, 0.0, 1.0)`
 
 **公式**: `factor = (259 * (contrast + 255)) / (255 * (259 - contrast))`
 
@@ -399,9 +406,19 @@ const adjusted = midGray + (value - midGray) * factor;
 
 ---
 
-### Q12 🟡 WB 开尔文模型精度
+### Q12 🟡 WB 开尔文模型精度 — ✅ 已修复
 
-**当前**: Tanner Helland 算法 (2012)，基于 CRT 时代数据集的分段多项式/对数拟合。
+> **修复**: `filmLabWhiteBalance.js` 的 `kelvinToRGB()` 完全重写为 CIE D 光源系列 (CIE 015:2004)。
+> - 4000K–25000K: CIE 昼光色度公式 (两段分界 7000K，C¹ 连续)
+> - <4000K: Kang et al. (2002) Planckian locus
+> - 3500K–4000K: Hermite 平滑过渡 (消除不连续)
+> - CIE xyY → XYZ → sRGB 转换 (IEC 61966-2-1 D65 矩阵)
+> - Max-channel 归一化 + 负值裁剪 (色域外温度)
+>
+> 6600K 处的导数不连续已完全消除。精度从 Tanner Helland 的 CRT 拟合提升到 CIE 标准色度学。
+
+**当前**: ~~Tanner Helland 算法 (2012)，基于 CRT 时代数据集的分段多项式/对数拟合。~~  
+**已替换为**: CIE D illuminant series + Kang Planckian locus (CIE 015:2004).
 
 **问题**:
 1. 6600K (= temp/100 = 66) 处红色通道从 255 切换到幂函数，**导数不连续**
@@ -416,9 +433,32 @@ const adjusted = midGray + (value - midGray) * factor;
 
 ---
 
-### Q13 🟡 Film Curve 物理精度
+### Q13 🟡 Film Curve 物理精度 — ✅ 已修复
 
-**当前模型**: 归一化密度 → 幂函数 (gamma) → 反归一化
+> **修复**: Film Curve 升级为三段式 H&D 模型 + 逐通道 gamma：
+>
+> **三段式 S 曲线** (`filmLabCurve.js`):
+> - Toe 区 (0 ~ 0.25×toe): γ_toe = γ_main × 1.5 (压缩暗部，模拟胶片曝光不足区)
+> - Straight 段 (中间): γ_main (线性段，经典幂函数)
+> - Shoulder 区 (1-0.25×shoulder ~ 1): γ_sh = γ_main × 0.6 (饱和高光，模拟胶片感光乳剂饱和)
+> - Hermite smoothstep 过渡 (tw=0.08)，C¹ 连续无缝衔接
+>
+> **逐通道 Gamma** (`filmLabConstants.js`):
+> - FILM_PROFILES 每个胶片配置文件增加 gammaR/G/B/toe/shoulder 字段
+> - 彩色负片 (C-41): R≈0.58, G≈0.60, B≈0.55 (真实乳剂层灵敏度差异)
+> - 黑白胶片: 单一 gamma (gammaR/G/B 未定义，回退到 main gamma)
+> - Default profile: toe=0, shoulder=0 (向后兼容，输出与旧单 gamma 一致)
+>
+> **全 4 条路径同步**:
+> - CPU float: `RenderCore.processPixelFloat()` → `applyFilmCurveFloat()` per channel
+> - CPU 8-bit: `applyFilmCurve()` 支持 toe/shoulder 参数
+> - GPU export: `glsl-shared.js` — `threeSegGamma()` + per-channel gamma uniforms
+> - Client WebGL: `FilmLabWebGL.js` — 镜像实现 `filmHermite()` + `threeSegGamma()` + `applyFilmCurveChannel()`
+>
+> **参数传递链**: FilmLab.jsx 从 FILM_PROFILES 读取 → 传入 processImageWebGL / GPU export / HQ export → RenderCore
+
+**当前模型**: ~~归一化密度 → 幂函数 (gamma) → 反归一化~~  
+**已替换为**: 三段式 H&D 模型 (toe/straight/shoulder) + 逐通道 gamma
 
 **问题**:
 1. 真实 H&D 曲线是 **S 型** (sigmoid)，包含趾部 (toe)、直线段 (straight-line)、肩部 (shoulder)；当前只有直线段
@@ -565,7 +605,7 @@ for (const [channelKey, channel] of HSL_CHANNELS_ARRAY) {
 | 2.1 | 实现自然三次样条 `createNaturalSpline()` (Thomas 算法) | `filmLabCurves.js` | ✅ |
 | 2.2 | 添加可选单调约束 (`monotoneClamp` 参数) | `filmLabCurves.js` | ✅ |
 | 2.3 | 升级 `buildCurveLUT` 输出为 `Float32Array(1024)` | `filmLabCurves.js` | ✅ |
-| 2.4 | 更新 GPU `toneCurveTex` 为浮点纹理 | `gpu-renderer.js`, `RenderCore.js` | 🔲 (GPU 纹理未改) |
+| 2.4 | 更新 GPU `toneCurveTex` 为 RGBA32F 浮点纹理 (1024×1) | `gpu-renderer.js`, `filmLabCurves.js`, `FilmLab.jsx` | ✅ |
 | 2.5 | 更新 `_sampleCurveLUTFloat()` 支持 1024 级 | `RenderCore.js` | ✅ (`_sampleCurveLUTFloatHQ`) |
 | 2.6 | A/B 测试: 与 LR 相同控制点的曲线形状对比 | 手动验证 | 🔲 |
 
@@ -576,9 +616,9 @@ for (const [channelKey, channel] of HSL_CHANNELS_ARRAY) {
 
 | 步骤 | 工作 | 涉及文件 | 状态 |
 |------|------|----------|------|
-| 3.1 | **Q11**: 对比度公式改为围绕感知中灰 | `RenderCore.js`, `gpu-renderer.js` | 🔲 |
-| 3.2 | **Q12**: WB 升级为 CIE D 光源查表 | `filmLabWhiteBalance.js` | 🔲 |
-| 3.3 | **Q13**: Film Curve 增加 toe/shoulder + 逐通道 gamma | `filmLabCurve.js` | 🔲 |
+| 3.1 | **Q11**: 对比度公式改为围绕感知中灰 (0.46) | `filmLabConstants.js`, `filmLabToneLUT.js`, `RenderCore.js`, `glsl-shared.js`, `FilmLabWebGL.js` | ✅ |
+| 3.2 | **Q12**: WB 升级为 CIE D 光源系列 | `filmLabWhiteBalance.js` | ✅ |
+| 3.3 | **Q13**: Film Curve 三段式 H&D + 逐通道 gamma | `filmLabCurve.js`, `filmLabConstants.js`, `glsl-shared.js`, `FilmLabWebGL.js`, `gpu-renderer.js`, `RenderCore.js`, `FilmLab.jsx` | ✅ |
 | 3.4 | **Q14**: processPixel (8-bit) 添加 highlight roll-off | `RenderCore.js` | ✅ |
 | 3.5 | Highlight Roll-off C² 连续性修复 (tanh 压缩，CPU+GPU) | `math/tone-curves.js`, `glsl-shared.js` | ✅ |
 
@@ -607,19 +647,19 @@ Phase 1 (一致性) ──→ Phase 2 (曲线) ──→ Phase 3 (公式)
 
 | 文件 | 用途 | 行数 | 本轮改动 |
 |------|------|------|----------|
-| `packages/shared/filmLabCurves.js` | 用户曲线 (Natural Cubic Spline) | ~180 | ✅ 完全重写 |
-| `packages/shared/filmLabToneLUT.js` | 色调 LUT (Uint8Array) | 100 | — |
+| `packages/shared/filmLabCurves.js` | 用户曲线 (Natural Cubic Spline) + Float LUT | ~400 | ✅ 完全重写 + buildCompositeFloatCurveLUT |
+| `packages/shared/filmLabToneLUT.js` | 色调 LUT (Uint8Array) | 100 | ✅ Q11 mid-gray |
 | `packages/shared/filmLabInversion.js` | 负片反转 + 片基校正 | 251 | — |
 | `packages/shared/filmLabHSL.js` | HSL 色彩调整 (8通道) | 445 | ✅ Q17 缓存优化 |
 | `packages/shared/filmLabSplitTone.js` | 分离色调 (3区) | ~500 | ✅ Q18 prepareSplitTone + applySplitToneFast |
-| `packages/shared/filmLabWhiteBalance.js` | 白平衡 (Kelvin + Legacy) | 291 | — |
-| `packages/shared/filmLabCurve.js` | Film H&D 密度曲线 | ~100 | — |
-| `packages/shared/filmLabConstants.js` | 常量/默认值/胶片配置 | ~200 | — |
+| `packages/shared/filmLabWhiteBalance.js` | 白平衡 (CIE D illuminant) | ~200 | ✅ Q12 完全重写 |
+| `packages/shared/filmLabCurve.js` | Film H&D 密度曲线 (三段式) | ~280 | ✅ Q13 三段 S 曲线 + per-ch gamma |
+| `packages/shared/filmLabConstants.js` | 常量/默认值/胶片配置 | ~250 | ✅ CONTRAST_MID_GRAY + FILM_PROFILES per-ch |
 | `packages/shared/filmlab-core.js` | 核心处理模块 (服务端) | ~370 | ✅ Q18 splitToneCtx |
-| `packages/shared/render/RenderCore.js` | 统一渲染核心 | ~1270 | ✅ Q8/Q9/Q14 + Float LUT + Q18 |
+| `packages/shared/render/RenderCore.js` | 统一渲染核心 | ~1280 | ✅ Q8/Q9/Q11/Q13/Q14 + Float LUT + Q18 |
 | `packages/shared/render/math/tone-curves.js` | 色调映射数学 | ~80 | ✅ Phase 3.5 tanh C² roll-off |
 | `packages/shared/render/math/` | 数学库 (4 模块) | ~200 | — |
-| `electron-gpu/glsl-shared.js` | **新建** GLSL 单一来源模块 | ~520 | ✅ Q15 (消除 ~800 行重复) |
+| `electron-gpu/glsl-shared.js` | GLSL 单一来源模块 | ~550 | ✅ Q15 + Q11 mid-gray + Q13 per-ch gamma |
 | `electron-gpu/gpu-renderer.js` | GPU WebGL 渲染 | ~440 | ✅ Q1-Q7 + Q15 + Q19 |
 | `server/services/render-service.js` | 服务端渲染 | ~410 | — |
 | `client/src/services/CpuRenderService.js` | 客户端 CPU 渲染 | ~465 | ✅ Q20 双重注册修复 |
@@ -631,5 +671,8 @@ Phase 1 (一致性) ──→ Phase 2 (曲线) ──→ Phase 3 (公式)
 2. **de Boor, C.** (1978). "A Practical Guide to Splines". Springer.
 3. **Wikipedia**: [Cubic Hermite Spline](https://en.wikipedia.org/wiki/Cubic_Hermite_spline) — Catmull-Rom, Cardinal, Monotone 各变体
 4. **Wikipedia**: [Monotone Cubic Interpolation](https://en.wikipedia.org/wiki/Monotone_cubic_interpolation) — Fritsch-Carlson 完整算法
-5. **Tanner Helland** (2012). [Convert Temperature to RGB](https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html)
+5. **Tanner Helland** (2012). [Convert Temperature to RGB](https://tannerhelland.com/2012/09/18/convert-temperature-rgb-algorithm-code.html) — ~~当前 WB 实现~~ (已替换)
 6. **Pomax**: [A Primer on Bézier Curves](https://pomax.github.io/bezierinfo/) — §36 Catmull-Rom ↔ Bézier 转换
+7. **CIE 015:2004** — Colorimetry, 3rd Edition. CIE D illuminant daylight chromaticity formulas.
+8. **Kang, B. et al.** (2002). "Design of advanced color temperature control system for HDTV applications". J. Korean Physical Society, 41(6), 865-871. — Planckian locus chromaticity below 4000K.
+9. **IEC 61966-2-1:1999** — sRGB colour space definition. XYZ → sRGB matrix (D65 reference white).

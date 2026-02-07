@@ -5,7 +5,7 @@
  * @description 构建色调映射查找表，包含曝光、对比度、阴影/高光、黑白场调整
  */
 
-const { DEFAULT_TONE_PARAMS } = require('./filmLabConstants');
+const { DEFAULT_TONE_PARAMS, CONTRAST_MID_GRAY } = require('./filmLabConstants');
 
 /**
  * 构建 256 级色调映射 LUT
@@ -53,8 +53,8 @@ function buildToneLUT(params = {}) {
     // 1. 曝光 (摄影档位公式)
     val *= expFactor;
 
-    // 2. 对比度 (围绕 0.5 中灰点)
-    val = (val - 0.5) * contrastFactor + 0.5;
+    // 2. 对比度 (围绕感知中灰点 — Q11: 使用 18% 灰而非 sRGB 0.5)
+    val = (val - CONTRAST_MID_GRAY) * contrastFactor + CONTRAST_MID_GRAY;
 
     // 3. 黑白场窗口重映射
     if (whitePoint !== blackPoint) {
