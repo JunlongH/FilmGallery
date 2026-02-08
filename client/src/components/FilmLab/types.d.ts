@@ -251,6 +251,9 @@ export interface RenderParams {
   // HSL
   hslParams?: HSLParams;
   
+  // 全局饱和度
+  saturation?: number;
+  
   // 分离色调
   splitToning?: SplitToneParams;
   
@@ -501,7 +504,10 @@ export interface FilmLabPreset {
     filmCurve?: Partial<FilmCurveParams>;
     curves?: Partial<CurvesParams>;
     hsl?: Partial<HSLParams>;
+    hslParams?: Partial<HSLParams>;
+    saturation?: number;
     splitTone?: Partial<SplitToneParams>;
+    splitToning?: Partial<SplitToneParams>;
   };
 }
 

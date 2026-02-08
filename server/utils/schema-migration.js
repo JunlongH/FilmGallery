@@ -430,6 +430,10 @@ async function seedDefaultPresets(run, all, log) {
     red: 1,
     green: 1,
     blue: 1,
+    saturation: 0,
+    baseMode: 'linear',
+    baseRed: 1, baseGreen: 1, baseBlue: 1,
+    baseDensityR: 0, baseDensityG: 0, baseDensityB: 0,
     curves: {
       rgb: [{x:0,y:0},{x:255,y:255}],
       red: [{x:0,y:0},{x:255,y:255}],
@@ -437,13 +441,14 @@ async function seedDefaultPresets(run, all, log) {
       blue: [{x:0,y:0},{x:255,y:255}]
     },
     hslParams: {
-      hue: { red: 0, orange: 0, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 },
-      saturation: { red: 0, orange: 0, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 },
-      luminance: { red: 0, orange: 0, yellow: 0, green: 0, aqua: 0, blue: 0, purple: 0, magenta: 0 }
+      hue: { red: 0, orange: 0, yellow: 0, green: 0, cyan: 0, blue: 0, purple: 0, magenta: 0 },
+      saturation: { red: 0, orange: 0, yellow: 0, green: 0, cyan: 0, blue: 0, purple: 0, magenta: 0 },
+      luminance: { red: 0, orange: 0, yellow: 0, green: 0, cyan: 0, blue: 0, purple: 0, magenta: 0 }
     },
     splitToning: {
-      highlightHue: 0, highlightSaturation: 0,
-      shadowHue: 0, shadowSaturation: 0,
+      highlights: { hue: 30, saturation: 0 },
+      midtones:   { hue: 0,  saturation: 0 },
+      shadows:    { hue: 220, saturation: 0 },
       balance: 0
     },
     filmCurveEnabled: false,
@@ -470,7 +475,7 @@ async function seedDefaultPresets(run, all, log) {
         shadows: 10,
         hslParams: {
           ...basePositiveParams.hslParams,
-          saturation: { red: 15, orange: 20, yellow: 15, green: 15, aqua: 10, blue: 20, purple: 15, magenta: 10 }
+          saturation: { red: 15, orange: 20, yellow: 15, green: 15, cyan: 10, blue: 20, purple: 15, magenta: 10 }
         }
       }
     },
@@ -503,10 +508,9 @@ async function seedDefaultPresets(run, all, log) {
         highlights: -20,
         shadows: 5,
         splitToning: {
-          highlightHue: 45,
-          highlightSaturation: 20,
-          shadowHue: 30,
-          shadowSaturation: 15,
+          highlights: { hue: 45, saturation: 20 },
+          midtones:   { hue: 0,  saturation: 0 },
+          shadows:    { hue: 30, saturation: 15 },
           balance: 10
         }
       }
@@ -522,10 +526,9 @@ async function seedDefaultPresets(run, all, log) {
         contrast: 5,
         blacks: 5,
         splitToning: {
-          highlightHue: 210,
-          highlightSaturation: 15,
-          shadowHue: 240,
-          shadowSaturation: 20,
+          highlights: { hue: 210, saturation: 15 },
+          midtones:   { hue: 0,   saturation: 0 },
+          shadows:    { hue: 240, saturation: 20 },
           balance: -10
         }
       }
@@ -560,7 +563,7 @@ async function seedDefaultPresets(run, all, log) {
         blacks: 10,
         hslParams: {
           ...basePositiveParams.hslParams,
-          saturation: { red: -100, orange: -100, yellow: -100, green: -100, aqua: -100, blue: -100, purple: -100, magenta: -100 }
+          saturation: { red: -100, orange: -100, yellow: -100, green: -100, cyan: -100, blue: -100, purple: -100, magenta: -100 }
         }
       }
     },
@@ -596,7 +599,7 @@ async function seedDefaultPresets(run, all, log) {
         },
         hslParams: {
           ...basePositiveParams.hslParams,
-          saturation: { red: 10, orange: 5, yellow: 10, green: -10, aqua: 15, blue: 20, purple: 5, magenta: 0 }
+          saturation: { red: 10, orange: 5, yellow: 10, green: -10, cyan: 15, blue: 20, purple: 5, magenta: 0 }
         }
       }
     },
@@ -610,16 +613,15 @@ async function seedDefaultPresets(run, all, log) {
         highlights: -5,
         shadows: 5,
         splitToning: {
-          highlightHue: 40,
-          highlightSaturation: 25,
-          shadowHue: 200,
-          shadowSaturation: 30,
+          highlights: { hue: 40, saturation: 25 },
+          midtones:   { hue: 0,  saturation: 0 },
+          shadows:    { hue: 200, saturation: 30 },
           balance: 0
         },
         hslParams: {
           ...basePositiveParams.hslParams,
-          hue: { red: 0, orange: -5, yellow: 0, green: 0, aqua: 10, blue: 5, purple: 0, magenta: 0 },
-          saturation: { red: 0, orange: 15, yellow: 0, green: -20, aqua: 20, blue: 15, purple: 0, magenta: 0 }
+          hue: { red: 0, orange: -5, yellow: 0, green: 0, cyan: 10, blue: 5, purple: 0, magenta: 0 },
+          saturation: { red: 0, orange: 15, yellow: 0, green: -20, cyan: 20, blue: 15, purple: 0, magenta: 0 }
         }
       }
     }

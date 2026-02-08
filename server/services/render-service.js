@@ -94,9 +94,10 @@ async function renderPhoto(options) {
     skipColorOps: true
   });
 
-  // 获取原始像素数据 (Try to get 16-bit if possible conceptually, but Sharp raw() defaults to 8-bit unless configured)
-  // To get 16bpc data from Sharp, we must set pipeline depth or use specific toBuffer options.
-  // Assuming input might be 16-bit, checking buffer size is safest.
+  // 获取原始像素数据
+  // sharp 在仅应用几何变换（rotate/resize/crop）时会保留源数据的原始位深。
+  // 当输入为 16-bit TIFF（RAW 解码产物）时，.raw() 输出也是 16-bit。
+  // 通过 buffer 大小检测实际位深（比依赖 info.depth 更可靠）。
   const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
   const width = info.width;
   const height = info.height;
@@ -104,6 +105,9 @@ async function renderPhoto(options) {
   
   // Inspect actual bit depth from data size
   const is16BitInput = (data.length === width * height * channels * 2);
+  if (is16BitInput) {
+    console.log(`[RenderService] High bit-depth source detected (${width}x${height}, 16-bit), processing with float pipeline`);
+  }
 
   // 使用 RenderCore 处理颜色
   const core = new RenderCore(params);

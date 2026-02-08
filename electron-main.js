@@ -489,9 +489,42 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (e, errorCode, errorDescription, validatedURL) => {
     LOG('did-fail-load', errorCode, errorDescription, validatedURL);
   });
-  mainWindow.webContents.on('crashed', () => {
-    LOG('renderer crashed');
+
+  // ============================================================================
+  // Renderer Crash Recovery — 自动恢复，防止永久黑屏
+  // ============================================================================
+  mainWindow.webContents.on('crashed', (event, killed) => {
+    LOG('renderer crashed, killed=', killed);
+    // 自动重新加载页面以恢复 UI
+    setTimeout(() => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        LOG('renderer crash recovery: reloading...');
+        mainWindow.reload();
+      }
+    }, 1000);
   });
+
+  // render-process-gone (Electron 12+) — 更详细的渲染进程终止信息
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    LOG('render-process-gone reason=', details.reason, 'exitCode=', details.exitCode);
+    if (details.reason !== 'clean-exit') {
+      setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          LOG('render-process-gone recovery: reloading...');
+          mainWindow.reload();
+        }
+      }, 1500);
+    }
+  });
+
+  // 窗口无响应处理
+  mainWindow.on('unresponsive', () => {
+    LOG('window unresponsive');
+  });
+  mainWindow.on('responsive', () => {
+    LOG('window responsive again');
+  });
+
   mainWindow.webContents.on('dom-ready', () => {
     LOG('dom-ready url=', mainWindow.webContents.getURL());
   });

@@ -31,6 +31,7 @@ const { applyInversion, applyLogBaseCorrectionRGB, applyLinearBaseCorrectionRGB 
 const { applyFilmCurve, applyFilmCurveFloat, FILM_CURVE_PROFILES } = require('../filmLabCurve');
 const { applyHSL, DEFAULT_HSL_PARAMS, isDefaultHSL } = require('../filmLabHSL');
 const { applySplitTone, DEFAULT_SPLIT_TONE_PARAMS, isDefaultSplitTone, prepareSplitTone, applySplitToneFast } = require('../filmLabSplitTone');
+const { applySaturationFloat, applySaturation, isDefaultSaturation } = require('../filmLabSaturation');
 const MathOps = require('./math');
 
 // ============================================================================
@@ -142,11 +143,14 @@ class RenderCore {
       // 曲线
       curves: input.curves ?? DEFAULT_CURVES,
 
-      // HSL
-      hslParams: input.hslParams ?? DEFAULT_HSL_PARAMS,
+      // HSL (兼容 hsl 和 hslParams 字段名)
+      hslParams: input.hslParams ?? input.hsl ?? DEFAULT_HSL_PARAMS,
 
-      // 分离色调
-      splitToning: input.splitToning ?? DEFAULT_SPLIT_TONE_PARAMS,
+      // 全局饱和度 (Luma-preserving, -100~100)
+      saturation: input.saturation ?? 0,
+
+      // 分离色调 (兼容 splitTone 和 splitToning 字段名)
+      splitToning: input.splitToning ?? input.splitTone ?? DEFAULT_SPLIT_TONE_PARAMS,
 
       // 3D LUT
       lut1: input.lut1 ?? null,
@@ -447,6 +451,11 @@ class RenderCore {
       b = hb / 255;
     }
 
+    // ⑦b Saturation (Luma-Preserving, Rec.709)
+    if (!isDefaultSaturation(p.saturation)) {
+      [r, g, b] = applySaturationFloat(r, g, b, p.saturation);
+    }
+
     // ⑧ Split Toning (perceptual domain — Q18: use precomputed tint colors)
     if (luts.splitToneCtx) {
       const [sr, sg, sb] = applySplitToneFast(r * 255, g * 255, b * 255, luts.splitToneCtx);
@@ -576,6 +585,11 @@ class RenderCore {
       [r, g, b] = applyHSL(r, g, b, p.hslParams);
     }
 
+    // ⑥b 饱和度 (Luma-Preserving, Rec.709)
+    if (!isDefaultSaturation(p.saturation)) {
+      [r, g, b] = applySaturation(r, g, b, p.saturation);
+    }
+
     // ⑦ 分离色调 (Q18: use precomputed tint colors)
     if (luts.splitToneCtx) {
       [r, g, b] = applySplitToneFast(r, g, b, luts.splitToneCtx);
@@ -609,11 +623,16 @@ class RenderCore {
       u_inverted: p.inverted ? 1.0 : 0.0,
       u_inversionMode: p.inversionMode === 'log' ? 1.0 : 0.0,
 
-      // Film Curve
+      // Film Curve (per-channel gamma + toe/shoulder, matching shared shader)
       u_filmCurveEnabled: p.filmCurveEnabled ? 1.0 : 0.0,
-      u_filmCurveGamma: p.filmCurveGamma,
-      u_filmCurveDMin: p.filmCurveDMin,
-      u_filmCurveDMax: p.filmCurveDMax,
+      u_filmCurveGamma: p.filmCurveGamma ?? 0.6,
+      u_filmCurveGammaR: p.filmCurveGammaR ?? p.filmCurveGamma ?? 0.6,
+      u_filmCurveGammaG: p.filmCurveGammaG ?? p.filmCurveGamma ?? 0.6,
+      u_filmCurveGammaB: p.filmCurveGammaB ?? p.filmCurveGamma ?? 0.6,
+      u_filmCurveDMin: p.filmCurveDMin ?? 0.1,
+      u_filmCurveDMax: p.filmCurveDMax ?? 3.0,
+      u_filmCurveToe: p.filmCurveToe ?? 0,
+      u_filmCurveShoulder: p.filmCurveShoulder ?? 0,
 
       // 片基校正 (Pre-Inversion)
       u_baseMode: p.baseMode === 'log' ? 1.0 : 0.0,
@@ -634,21 +653,19 @@ class RenderCore {
       ],
 
       // 白平衡
-      u_wbGains: wbGains,
+      u_gains: wbGains,
 
-      // 色调
-      // u_exposure: 已预除以 50, 即 pow(2, u_exposure) 即为曝光增益。
-      //   注意: electron-gpu/gpu-renderer.js 直接使用 params.exposure 原始值
-      //   并在 shader 内部做 pow(2, u_exposure / 50.0)，两种用法等价。
-      u_exposure: p.exposure / 50.0,
-      u_contrast: p.contrast / 100.0,
+      // 色调 — 传递原始 UI 值 (-100..100)，着色器内部完成缩放
+      // 共享着色器: pow(2, u_exposure / 50.0)  和  contrast * 2.55 → 标准公式
+      u_exposure: p.exposure,
+      u_contrast: p.contrast,
       u_highlights: p.highlights,
       u_shadows: p.shadows,
       u_whites: p.whites,
       u_blacks: p.blacks,
 
       // 曲线 (作为 1D 纹理上传，需要调用者处理)
-      u_curvesEnabled: this._hasCurves(p.curves) ? 1.0 : 0.0,
+      u_useCurves: this._hasCurves(p.curves) ? 1.0 : 0.0,
       curveLUTs: {
         rgb: luts.lutRGB,
         red: luts.lutR,
@@ -657,29 +674,38 @@ class RenderCore {
       },
 
       // HSL 参数 (作为数组上传)
-      u_hslEnabled: !isDefaultHSL(p.hslParams) ? 1.0 : 0.0,
+      u_useHSL: !isDefaultHSL(p.hslParams) ? 1.0 : 0.0,
       u_hslParams: this._packHSLParams(p.hslParams),
 
-      // 分离色调
-      u_splitToneEnabled: !isDefaultSplitTone(p.splitToning) ? 1.0 : 0.0,
-      u_highlightHue: (p.splitToning?.highlights?.hue ?? 30) / 360.0,
-      u_highlightSat: (p.splitToning?.highlights?.saturation ?? 0) / 100.0,
-      u_shadowHue: (p.splitToning?.shadows?.hue ?? 220) / 360.0,
-      u_shadowSat: (p.splitToning?.shadows?.saturation ?? 0) / 100.0,
+      // 饱和度 (Luma-Preserving, Rec.709)
+      u_useSaturation: !isDefaultSaturation(p.saturation) ? 1.0 : 0.0,
+      u_saturation: p.saturation ?? 0,
+
+      // 分离色调 (u_split* 前缀匹配共享着色器 uniforms.js)
+      u_useSplitTone: !isDefaultSplitTone(p.splitToning) ? 1.0 : 0.0,
+      u_splitHighlightHue: (p.splitToning?.highlights?.hue ?? 30) / 360.0,
+      u_splitHighlightSat: (p.splitToning?.highlights?.saturation ?? 0) / 100.0,
+      u_splitMidtoneHue: (p.splitToning?.midtones?.hue ?? 0) / 360.0,
+      u_splitMidtoneSat: (p.splitToning?.midtones?.saturation ?? 0) / 100.0,
+      u_splitShadowHue: (p.splitToning?.shadows?.hue ?? 220) / 360.0,
+      u_splitShadowSat: (p.splitToning?.shadows?.saturation ?? 0) / 100.0,
       u_splitBalance: (p.splitToning?.balance ?? 0) / 100.0,
 
       // 3D LUT (需要调用者上传纹理)
       u_hasLut3d: p.lut1 ? 1.0 : 0.0,
-      u_lut3dIntensity: p.lut1Intensity,
+      u_lutIntensity: p.lut1Intensity ?? 1.0,
     };
   }
 
   /**
    * 获取 HSL GLSL 代码片段
    * 
+   * @deprecated 使用 packages/shared/shaders/hslAdjust.js (单一事实来源)
+   * 此方法保留以兼容旧代码。新代码应使用 buildFragmentShader() 。
    * @returns {string} HSL 处理的 GLSL 代码
    */
   static getHSLGLSL() {
+    console.warn('[RenderCore] getHSLGLSL() is deprecated. Use packages/shared/shaders/hslAdjust.js instead.');
     return `
 // HSL Channel definitions (hueCenter, hueRange)
 const vec2 HSL_RED     = vec2(0.0,   30.0);
@@ -831,9 +857,12 @@ vec3 applyHSL(vec3 color, vec3 hslParams[8]) {
   /**
    * 获取分离色调 GLSL 代码片段
    * 
+   * @deprecated 使用 packages/shared/shaders/splitTone.js (单一事实来源)
+   * 此方法保留以兼容旧代码。新代码应使用 buildFragmentShader() 。
    * @returns {string} Split Toning 处理的 GLSL 代码
    */
   static getSplitToneGLSL() {
+    console.warn('[RenderCore] getSplitToneGLSL() is deprecated. Use packages/shared/shaders/splitTone.js instead.');
     return `
 // Calculate luminance (Rec. 709, matching CPU filmLabSplitTone.js)
 float calcLuminance(vec3 c) {

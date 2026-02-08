@@ -218,16 +218,16 @@ function testGLSLModule() {
     'GL2 should start with #version 300 es');
   assert(gl2.includes('in vec2 v_uv;'), 'GL2 should use "in" for varying');
   assert(gl2.includes('out vec4 fragColor;'), 'GL2 should have fragColor output');
-  assert(gl2.includes('texture(u_tex'), 'GL2 should use texture() not texture2D()');
+  assert(gl2.includes('texture(u_image'), 'GL2 should use texture() not texture2D()');
   assert(gl2.includes('u_lut3d'), 'GL2 should have 3D LUT support');
   assert(gl2.includes('fragColor = vec4(c, 1.0)'), 'GL2 output to fragColor');
 
   // GL1 specifics
   assert(!gl1.includes('#version'), 'GL1 should NOT have #version header');
   assert(gl1.includes('varying vec2 v_uv;'), 'GL1 should use "varying"');
-  assert(gl1.includes('texture2D(u_tex'), 'GL1 should use texture2D()');
+  assert(gl1.includes('texture2D(u_image'), 'GL1 should use texture2D()');
   assert(gl1.includes('gl_FragColor = vec4(c, 1.0)'), 'GL1 output to gl_FragColor');
-  assert(!gl1.includes('sampler3D'), 'GL1 should NOT reference sampler3D');
+  assert(!gl1.includes('uniform sampler3D'), 'GL1 should NOT have sampler3D uniform');
 
   // Shared content present in both
   const sharedFunctions = [
@@ -247,17 +247,20 @@ function testGLSLModule() {
   assert(gl1.includes('tanhT') && gl1.includes('exp(2.0'),
     'GL1 should have tanh-based highlight roll-off');
 
-  // Uniform declarations present
-  const uniformNames = [
-    'u_tex', 'u_toneCurveTex', 'u_inverted', 'u_exposure', 'u_contrast',
+  // Uniform declarations present in both GL1 and GL2
+  const sharedUniformNames = [
+    'u_image', 'u_inverted', 'u_exposure', 'u_contrast',
     'u_highlights', 'u_shadows', 'u_whites', 'u_blacks',
     'u_hslRed', 'u_hslOrange', 'u_hslYellow', 'u_hslGreen',
     'u_splitHighlightHue', 'u_splitShadowSat', 'u_splitBalance',
   ];
-  for (const u of uniformNames) {
+  for (const u of sharedUniformNames) {
     assert(gl2.includes(u), `GL2 should declare ${u}`);
     assert(gl1.includes(u), `GL1 should declare ${u}`);
   }
+
+  // GL2-only uniforms (composite curve texture)
+  assert(gl2.includes('u_toneCurveTex'), 'GL2 should declare u_toneCurveTex');
 
   console.log(`  ✓ GLSL module: GL2=${gl2.length} chars, GL1=${gl1.length} chars, all functions present`);
 }

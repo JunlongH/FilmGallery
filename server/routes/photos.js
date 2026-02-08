@@ -863,72 +863,126 @@ router.post('/:id/export-positive', async (req, res) => {
       inverted: effectiveInverted, inversionMode,
       filmCurveEnabled, filmCurveProfile,
       hslParams: p.hslParams || null,
-      splitToning: p.splitToning || null
+      splitToning: p.splitToning || null,
+      saturation: Number.isFinite(p.saturation) ? p.saturation : 0
     });
-    core.prepareLUTs();
 
-    // Pull raw, apply RenderCore processing, then encode to JPEG
+    // ── 全浮点管线：充分利用源数据色深和动态范围 ──
+    // Pull raw pixels — sharp 会保留源数据的原始位深（8/16-bit）
     const { data, info } = await imgBase.raw().toBuffer({ resolveWithObject: true });
     const width = info.width; const height = info.height; const channels = info.channels;
-    const out = Buffer.allocUnsafe(width * height * 3);
-    for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
 
-      const [rC, gC, bC] = core.processPixel(r, g, b);
-
-      out[j] = rC;
-      out[j + 1] = gC;
-      out[j + 2] = bC;
+    // 检测实际位深：16-bit 数据大小 = width * height * channels * 2
+    const expectedBytes8 = width * height * channels;
+    const is16bit = (data.length >= expectedBytes8 * 2);
+    if (is16bit) {
+      console.log(`[EXPORT-POSITIVE] High bit-depth source detected (${data.length} bytes, 16-bit), using float pipeline`);
     }
-    await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toFile(destPath);
 
-    // Optional: write 16-bit TIFF sidecar
+    // 始终使用 processPixelFloat (全浮点管线) 保证最高精度
+    // 即使源为 8-bit，float 管线也比 int 管线精度更高（1024-entry Float32 LUT vs 256-entry Uint8 LUT）
+    core.prepareLUTs();
+
+    if (format === 'jpeg' || format === 'both') {
+      // ── JPEG 输出: 全浮点处理 → 最终一步降到 8-bit ──
+      const out = Buffer.allocUnsafe(width * height * 3);
+      if (is16bit) {
+        // 16-bit 输入: 以 Uint16Array 读取，归一化到 0–1
+        const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+        for (let i = 0, j = 0; i < pixels.length; i += channels, j += 3) {
+          const [rF, gF, bF] = core.processPixelFloat(
+            pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+          );
+          out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+          out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+          out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+        }
+      } else {
+        // 8-bit 输入: 归一化到 0–1 → float 处理 → 回到 8-bit
+        for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
+          const [rF, gF, bF] = core.processPixelFloat(
+            data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+          );
+          out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+          out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+          out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+        }
+      }
+      await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toFile(destPath);
+    }
+
+    // Optional: write 16-bit TIFF sidecar — 真正的 16-bit 精度
     let tiffRelPath = null;
     if (format === 'tiff16' || format === 'both') {
       const tiffName = `${baseName}_exp_${timestamp}.tiff`;
       const tiffPath = path.join(fullDir, tiffName);
       try {
-          // Generate TIFF16 with RenderCore parity
-          const imgTiffBase = await buildPipeline(sourceAbs, {
-            inverted, inversionMode, exposure, contrast, temp, tint,
-            red: redGain, green: greenGain, blue: blueGain, rotation, orientation,
-            filmCurveEnabled
-          }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true, skipColorOps: true });
-          
-          const { data: raw8, info: info8 } = await imgTiffBase.raw().toBuffer({ resolveWithObject: true });
-          const width8 = info8.width; const height8 = info8.height; const channels8 = info8.channels;
-          const raw16 = Buffer.allocUnsafe(width8 * height8 * 3 * 2);
-          
-          // Apply RenderCore processing
-          let j16 = 0;
-          for (let i = 0; i < raw8.length; i += channels8) {
-            const r = raw8[i];
-            const g = raw8[i + 1];
-            const b = raw8[i + 2];
-            
-            const [rC, gC, bC] = core.processPixel(r, g, b);
-            
-            // Scale 8-bit to 16-bit
-            const r16 = (rC << 8) | rC;
-            const g16 = (gC << 8) | gC;
-            const b16 = (bC << 8) | bC;
-            
-            raw16[j16++] = r16 & 0xFF;
-            raw16[j16++] = (r16 >> 8) & 0xFF;
-            raw16[j16++] = g16 & 0xFF;
-            raw16[j16++] = (g16 >> 8) & 0xFF;
-            raw16[j16++] = b16 & 0xFF;
-            raw16[j16++] = (b16 >> 8) & 0xFF;
+        // ── TIFF16 输出: 全浮点处理 → 真 16-bit 输出 ──
+        const raw16 = Buffer.allocUnsafe(width * height * 3 * 2);
+        let j16 = 0;
+
+        if (is16bit) {
+          // 16-bit 源 → float → 16-bit 输出（保留完整动态范围）
+          const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+          for (let i = 0; i < pixels.length; i += channels) {
+            const [rF, gF, bF] = core.processPixelFloat(
+              pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+            );
+            const r16 = Math.min(65535, Math.max(0, Math.round(rF * 65535)));
+            const g16 = Math.min(65535, Math.max(0, Math.round(gF * 65535)));
+            const b16 = Math.min(65535, Math.max(0, Math.round(bF * 65535)));
+            raw16[j16++] = r16 & 0xFF; raw16[j16++] = (r16 >> 8) & 0xFF;
+            raw16[j16++] = g16 & 0xFF; raw16[j16++] = (g16 >> 8) & 0xFF;
+            raw16[j16++] = b16 & 0xFF; raw16[j16++] = (b16 >> 8) & 0xFF;
           }
-          await sharp(raw16, { raw: { width: width8, height: height8, channels: 3, depth: 'ushort' } })
-            .tiff({ compression: 'lzw', bitdepth: 16 })
-            .toFile(tiffPath);
+        } else {
+          // 8-bit 源 → float → 16-bit 输出（仍然比 bit-doubling 精度高）
+          for (let i = 0; i < data.length; i += channels) {
+            const [rF, gF, bF] = core.processPixelFloat(
+              data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+            );
+            const r16 = Math.min(65535, Math.max(0, Math.round(rF * 65535)));
+            const g16 = Math.min(65535, Math.max(0, Math.round(gF * 65535)));
+            const b16 = Math.min(65535, Math.max(0, Math.round(bF * 65535)));
+            raw16[j16++] = r16 & 0xFF; raw16[j16++] = (r16 >> 8) & 0xFF;
+            raw16[j16++] = g16 & 0xFF; raw16[j16++] = (g16 >> 8) & 0xFF;
+            raw16[j16++] = b16 & 0xFF; raw16[j16++] = (b16 >> 8) & 0xFF;
+          }
+        }
+
+        await sharp(raw16, { raw: { width, height, channels: 3, depth: 'ushort' } })
+          .tiff({ compression: 'lzw', bitdepth: 16 })
+          .toFile(tiffPath);
         tiffRelPath = path.join('rolls', String(row.roll_id), 'full', tiffName).replace(/\\/g, '/');
       } catch (tErr) {
         console.error('[EXPORT-POSITIVE] TIFF16 generation failed', tErr.message);
       }
+    }
+
+    // 当 format 仅为 'tiff16' 时，仍需生成 JPEG 正片（用于缩略图和库显示）
+    if (format === 'tiff16') {
+      const out = Buffer.allocUnsafe(width * height * 3);
+      if (is16bit) {
+        const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+        for (let i = 0, j = 0; i < pixels.length; i += channels, j += 3) {
+          const [rF, gF, bF] = core.processPixelFloat(
+            pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+          );
+          out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+          out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+          out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+        }
+      } else {
+        for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
+          const [rF, gF, bF] = core.processPixelFloat(
+            data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+          );
+          out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+          out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+          out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+        }
+      }
+      await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toFile(destPath);
     }
 
     // Generate thumbnail (240px inside) with lower quality
@@ -1063,7 +1117,8 @@ router.post('/:id/render-positive', async (req, res) => {
       inverted, inversionMode,
       filmCurveEnabled, filmCurveProfile,
       hslParams: p.hslParams || null,
-      splitToning: p.splitToning || null
+      splitToning: p.splitToning || null,
+      saturation: Number.isFinite(p.saturation) ? p.saturation : 0
     });
     core.prepareLUTs();
 
@@ -1074,28 +1129,46 @@ router.post('/:id/render-positive', async (req, res) => {
       filmCurveEnabled
     }, { maxWidth: null, cropRect: (p && p.cropRect) || null, toneAndCurvesInJs: true, skipColorOps: true });
 
+    // ── 全浮点管线：充分利用源数据色深和动态范围 ──
     const { data, info } = await imgBase.raw().toBuffer({ resolveWithObject: true });
     const width = info.width; const height = info.height; const channels = info.channels;
-    const out = Buffer.allocUnsafe(width * height * 3);
 
-    for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-      const [rC, gC, bC] = core.processPixel(r, g, b);
-      out[j] = rC;
-      out[j + 1] = gC;
-      out[j + 2] = bC;
+    // 检测实际位深
+    const expectedBytes8 = width * height * channels;
+    const is16bit = (data.length >= expectedBytes8 * 2);
+    if (is16bit) {
+      console.log(`[RENDER-POSITIVE] High bit-depth source detected, using float pipeline`);
     }
 
     if (format === 'tiff16') {
-      // Convert 8-bit processed data to 16-bit TIFF
+      // ── 真 16-bit TIFF 输出：全浮点处理 → 16-bit ──
       const raw16 = Buffer.allocUnsafe(width * height * 3 * 2);
-      for (let i = 0, j = 0; i < out.length; i++, j += 2) {
-        const v8 = out[i];
-        const v16 = (v8 << 8) | v8;
-        raw16[j] = v16 & 0xFF;
-        raw16[j + 1] = (v16 >> 8) & 0xFF;
+      let j16 = 0;
+      if (is16bit) {
+        const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+        for (let i = 0; i < pixels.length; i += channels) {
+          const [rF, gF, bF] = core.processPixelFloat(
+            pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+          );
+          const r16 = Math.min(65535, Math.max(0, Math.round(rF * 65535)));
+          const g16 = Math.min(65535, Math.max(0, Math.round(gF * 65535)));
+          const b16 = Math.min(65535, Math.max(0, Math.round(bF * 65535)));
+          raw16[j16++] = r16 & 0xFF; raw16[j16++] = (r16 >> 8) & 0xFF;
+          raw16[j16++] = g16 & 0xFF; raw16[j16++] = (g16 >> 8) & 0xFF;
+          raw16[j16++] = b16 & 0xFF; raw16[j16++] = (b16 >> 8) & 0xFF;
+        }
+      } else {
+        for (let i = 0; i < data.length; i += channels) {
+          const [rF, gF, bF] = core.processPixelFloat(
+            data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+          );
+          const r16 = Math.min(65535, Math.max(0, Math.round(rF * 65535)));
+          const g16 = Math.min(65535, Math.max(0, Math.round(gF * 65535)));
+          const b16 = Math.min(65535, Math.max(0, Math.round(bF * 65535)));
+          raw16[j16++] = r16 & 0xFF; raw16[j16++] = (r16 >> 8) & 0xFF;
+          raw16[j16++] = g16 & 0xFF; raw16[j16++] = (g16 >> 8) & 0xFF;
+          raw16[j16++] = b16 & 0xFF; raw16[j16++] = (b16 >> 8) & 0xFF;
+        }
       }
       const buf = await sharp(raw16, { raw: { width, height, channels: 3, depth: 'ushort' } })
         .tiff({ compression: 'lzw', bitdepth: 16 })
@@ -1105,7 +1178,28 @@ router.post('/:id/render-positive', async (req, res) => {
       return res.send(buf);
     }
 
-    // JPEG path
+    // ── JPEG 输出：全浮点处理 → 最终一步降到 8-bit ──
+    const out = Buffer.allocUnsafe(width * height * 3);
+    if (is16bit) {
+      const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+      for (let i = 0, j = 0; i < pixels.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
+    } else {
+      for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
+    }
     const jpegBuf = await sharp(out, { raw: { width, height, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Content-Disposition', 'attachment; filename="render_positive_' + id + '_' + Date.now() + '.jpg"');

@@ -1,25 +1,41 @@
 /**
  * @filmgallery/shared/shaders
  * 
- * 统一的 GLSL 着色器库，确保客户端预览和服务端导出渲染一致性
+ * 统一的 GLSL 着色器库 — 单一事实来源 (Single Source of Truth)
  * 
  * @module packages/shared/shaders
  * @description
- * 此模块提供共享的 GLSL 着色器代码片段，供 FilmLabWebGL.js（客户端）
- * 和 gpu-renderer.js（服务端）使用，保证色彩科学处理的一致性。
+ * 此模块提供共享的 GLSL 着色器代码片段，供 FilmLabWebGL.js（客户端预览）
+ * 和 gpu-renderer.js（GPU 导出）使用，保证色彩科学处理的一致性。
  * 
  * 架构说明：
- * - colorMath.glsl: RGB/HSL 转换、亮度计算等基础数学函数
- * - hslAdjust.glsl: HSL 通道调整（8通道色相/饱和度/明度）
- * - splitTone.glsl: 分离色调（高光/中间调/阴影着色）
- * - filmCurve.glsl: 胶片特性曲线（H&D 密度模型）
- * - tonemap.glsl: 色调映射（曲线、对比度、曝光、高光/阴影）
- * - lut3d.glsl: 3D LUT 采样（打包2D纹理方式）
- * - inversion.glsl: 负片反转（线性/对数模式）
- * - baseDensity.glsl: 片基校正（密度域减法）
- * - main.glsl: 完整的片元着色器主函数
+ * - colorMath: RGB/HSL 转换、亮度计算等基础数学函数
+ * - hslAdjust: HSL 通道调整（8通道，非对称饱和度/明度，权重归一化）
+ * - splitTone: 分离色调（Hermite smoothstep，lerp-to-tint 混合）
+ * - filmCurve: 胶片特性曲线（3段 S-curve + per-channel gamma）
+ * - tonemap: 色调映射（对比度以0.46中灰为中心，tanh高光压缩）
+ * - lut3d: 3D LUT 采样（打包2D纹理 / WebGL2 sampler3D）
+ * - inversion: 负片反转（线性/对数模式）
+ * - baseDensity: 片基校正（密度域减法）
+ * - uniforms: 统一 uniform 声明
  * 
- * @version 1.0.0
+ * 处理流水线顺序（匹配 CPU RenderCore + GPU glsl-shared.js）：
+ * ① Film Curve (per-channel gamma + toe/shoulder, before inversion)
+ * ② Base Correction (density subtraction / gain multiplication)
+ * ②.5 Density Levels (log domain auto-levels)
+ * ③ Inversion (linear / log)
+ * ③b 3D LUT (applied AFTER inversion, not at end)
+ * ④ White Balance (RGB gains)
+ * ⑤a Exposure (f-stop: pow(2, exp/50))
+ * ⑤b Contrast (around mid-gray 0.46)
+ * ⑤c Blacks & Whites (window remap)
+ * ⑤d Shadows & Highlights (Bernstein basis)
+ * ⑤e Highlight Roll-Off (tanh shoulder compression)
+ * Clamp [0,1]
+ * ⑥ Curves (1D LUT)
+ * ⑦ HSL Adjustment * ⑦b Saturation (Luma-Preserving) * ⑧ Split Toning
+ * 
+ * @version 2.0.0 — 统一所有渲染路径，修复 BUG-01~16
  * @since 2026-01-29
  */
 
@@ -31,154 +47,225 @@ const tonemap = require('./tonemap');
 const lut3d = require('./lut3d');
 const inversion = require('./inversion');
 const baseDensity = require('./baseDensity');
+const saturation = require('./saturation');
 const uniforms = require('./uniforms');
 
 /**
  * 构建完整的片元着色器源码
+ * 
  * @param {Object} options - 构建选项
- * @param {boolean} options.useHSL - 是否包含 HSL 调整
- * @param {boolean} options.useSplitTone - 是否包含分离色调
- * @param {boolean} options.useLUT3D - 是否包含 3D LUT
- * @param {boolean} options.useCurves - 是否包含曲线
+ * @param {boolean} options.isGL2 - 是否为 WebGL2 (支持 sampler3D, texture(), #version 300 es)
+ * @param {boolean} options.useCompositeCurve - 使用单一 RGBA 复合曲线纹理 (gpu-renderer 路径)
  * @param {string} options.precision - 精度 ('lowp', 'mediump', 'highp')
  * @returns {string} 完整的 GLSL 片元着色器代码
  */
 function buildFragmentShader(options = {}) {
   const {
+    isGL2 = false,
+    useCompositeCurve = false,
     precision = 'mediump',
-    useHSL = true,
-    useSplitTone = true,
-    useLUT3D = true,
-    useCurves = true,
   } = options;
 
-  return `
+  if (isGL2) {
+    return `#version 300 es
+precision highp float;
+precision highp sampler3D;
+
+// WebGL2 compat: modules may use texture2D()
+#define texture2D texture
+
+in vec2 v_uv;
+out vec4 fragColor;
+
+// WebGL2: 3D LUT as native sampler3D
+uniform sampler3D u_lut3dTex;
+uniform float u_hasLut3d;
+uniform float u_lut3dSize;
+
+${useCompositeCurve ? `
+// Composite curve texture (gpu-renderer path: R,G,B channels = per-channel curves)
+uniform sampler2D u_toneCurveTex;
+` : ''}
+
+${uniforms.UNIFORMS_GLSL}
+${colorMath.COLOR_MATH_GLSL}
+${filmCurve.FILM_CURVE_GLSL}
+${baseDensity.BASE_DENSITY_GLSL}
+${inversion.INVERSION_GLSL}
+${tonemap.TONEMAP_GLSL}
+${hslAdjust.HSL_ADJUST_GLSL}
+${saturation.getSaturationGLSL()}
+${splitTone.SPLIT_TONE_GLSL}
+${buildMainFunction({ isGL2: true, useCompositeCurve })}
+`;
+  } else {
+    return `
 precision ${precision} float;
 varying vec2 v_uv;
 
-// ============================================================================
-// Uniforms
-// ============================================================================
 ${uniforms.UNIFORMS_GLSL}
-
-// ============================================================================
-// Color Math Functions
-// ============================================================================
 ${colorMath.COLOR_MATH_GLSL}
-
-// ============================================================================
-// HSL Adjustment
-// ============================================================================
-${hslAdjust.HSL_ADJUST_GLSL}
-
-// ============================================================================
-// Split Toning
-// ============================================================================
-${splitTone.SPLIT_TONE_GLSL}
-
-// ============================================================================
-// Film Curve (H&D Density Model)
-// ============================================================================
 ${filmCurve.FILM_CURVE_GLSL}
-
-// ============================================================================
-// Base Density Correction
-// ============================================================================
 ${baseDensity.BASE_DENSITY_GLSL}
-
-// ============================================================================
-// Inversion
-// ============================================================================
 ${inversion.INVERSION_GLSL}
-
-// ============================================================================
-// Tone Mapping
-// ============================================================================
 ${tonemap.TONEMAP_GLSL}
-
-// ============================================================================
-// 3D LUT Sampling
-// ============================================================================
 ${lut3d.LUT3D_GLSL}
-
-// ============================================================================
-// Main
-// ============================================================================
-${buildMainFunction(options)}
+${hslAdjust.HSL_ADJUST_GLSL}
+${saturation.getSaturationGLSL()}
+${splitTone.SPLIT_TONE_GLSL}
+${buildMainFunction({ isGL2: false })}
 `;
+  }
 }
 
 /**
- * 构建主函数
+ * 构建主函数 — 匹配 CPU RenderCore + GPU glsl-shared.js 流水线
+ * 
+ * @param {Object} options
+ * @param {boolean} options.isGL2 - WebGL2 mode
+ * @param {boolean} options.useCompositeCurve - Use single RGBA composite curve texture
  */
-function buildMainFunction(options) {
+function buildMainFunction(options = {}) {
+  const { isGL2 = false, useCompositeCurve = false } = options;
+  const TEX = isGL2 ? 'texture' : 'texture2D';
+  const FRAG_OUT = isGL2 ? 'fragColor' : 'gl_FragColor';
+
+  // Curve sampling: composite RGBA texture vs separate 1D textures
+  const curveSampling = useCompositeCurve ? `
+    // Composite curve texture: R,G,B channels contain per-channel curve data
+    c.r = ${TEX}(u_toneCurveTex, vec2(c.r, 0.5)).r;
+    c.g = ${TEX}(u_toneCurveTex, vec2(c.g, 0.5)).g;
+    c.b = ${TEX}(u_toneCurveTex, vec2(c.b, 0.5)).b;
+  ` : `
+    // Separate 1D curve textures: master RGB + per-channel
+    c = applyCurvesLUT(c);
+  `;
+
   return `
 void main() {
-  vec4 tex = texture2D(u_image, v_uv);
-  vec3 col = tex.rgb;
+  vec3 c = ${TEX}(u_image, v_uv).rgb;
 
-  // ① Film Curve (before inversion) - applies H&D density model to negative scan
-  if (u_inverted == 1 && u_filmCurveEnabled == 1) {
-    col.r = applyFilmCurve(col.r);
-    col.g = applyFilmCurve(col.g);
-    col.b = applyFilmCurve(col.b);
+  // ① Film Curve (before inversion) — Q13: per-channel gamma + toe/shoulder S-curve
+  if (u_inverted > 0.5 && u_filmCurveEnabled > 0.5) {
+    float toe = u_filmCurveToe;
+    float sh  = u_filmCurveShoulder;
+    c.r = applyFilmCurve(c.r, u_filmCurveGammaR, u_filmCurveDMin, u_filmCurveDMax, toe, sh);
+    c.g = applyFilmCurve(c.g, u_filmCurveGammaG, u_filmCurveDMin, u_filmCurveDMax, toe, sh);
+    c.b = applyFilmCurve(c.b, u_filmCurveGammaB, u_filmCurveDMin, u_filmCurveDMax, toe, sh);
   }
 
-  // ② Base Correction - neutralize film base color
-  col = applyBaseDensityCorrection(col);
+  // ② Base Correction — neutralize film base color
+  if (u_baseMode > 0.5) {
+    float minT = 0.001;
+    float log10 = log(10.0);
+    float Tr = max(c.r, minT);
+    c.r = pow(10.0, -(-log(Tr) / log10 - u_baseDensity.r));
+    float Tg = max(c.g, minT);
+    c.g = pow(10.0, -(-log(Tg) / log10 - u_baseDensity.g));
+    float Tb = max(c.b, minT);
+    c.b = pow(10.0, -(-log(Tb) / log10 - u_baseDensity.b));
+    c = clamp(c, 0.0, 1.0);
+  } else {
+    c = clamp(c * u_baseGains, 0.0, 1.0);
+  }
 
   // ②.5 Density Levels (Log domain auto-levels)
-  col = applyDensityLevels(col);
+  if (u_densityLevelsEnabled > 0.5) {
+    float minT = 0.001;
+    float log10 = log(10.0);
+    float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
+    float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
+    float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
+    float avgRange = clamp((rangeR + rangeG + rangeB) / 3.0, 0.5, 2.5);
 
-  // ③ Invert if enabled
-  col = applyInversion(col);
+    if (rangeR > 0.001) {
+      float Dr = -log(max(c.r, minT)) / log10;
+      c.r = pow(10.0, -clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0) * avgRange);
+    }
+    if (rangeG > 0.001) {
+      float Dg = -log(max(c.g, minT)) / log10;
+      c.g = pow(10.0, -clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0) * avgRange);
+    }
+    if (rangeB > 0.001) {
+      float Db = -log(max(c.b, minT)) / log10;
+      c.b = pow(10.0, -clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0) * avgRange);
+    }
+    c = clamp(c, 0.0, 1.0);
+  }
 
-  // ④ White Balance (RGB Gains)
-  col *= u_gains;
+  // ③ Inversion
+  if (u_inverted > 0.5) {
+    if (u_inversionMode > 0.5) {
+      c = vec3(1.0) - log(c * 255.0 + vec3(1.0)) / log(256.0);
+    } else {
+      c = vec3(1.0) - c;
+    }
+  }
 
-  // ⑤ Exposure
+${isGL2 ? `
+  // ③b 3D LUT (WebGL2 native sampler3D — applied AFTER inversion)
+  if (u_hasLut3d > 0.5) {
+    float size = u_lut3dSize;
+    vec3 uvw = c * (size - 1.0) / size + 0.5 / size;
+    vec3 lutColor = texture(u_lut3dTex, uvw).rgb;
+    c = mix(c, lutColor, u_lutIntensity);
+  }
+` : `
+  // ③b 3D LUT (WebGL1 packed 2D texture — applied AFTER inversion)
+  if (u_useLut3d > 0.5) {
+    vec3 lutColor = sampleLUT3D(c);
+    c = mix(c, lutColor, u_lutIntensity);
+  }
+`}
+
+  // ④ White Balance
+  c *= u_gains;
+
+  // ⑤a Exposure (f-stop formula: pow(2, exposure/50))
   float expFactor = pow(2.0, u_exposure / 50.0);
-  col *= expFactor;
+  c *= expFactor;
 
-  // ⑥ Contrast
-  col = applyContrast(col, u_contrast);
+  // ⑤b Contrast around perceptual mid-gray (0.46 = sRGB 18% reflectance)
+  c = applyContrast(c, u_contrast);
 
-  // ⑦ Highlights & Shadows
-  col = applyHighlightsShadows(col);
+  // ⑤c Blacks & Whites (window remap)
+  c = applyWhitesBlacks(c);
 
-  // ⑧ Whites & Blacks
-  col = applyWhitesBlacks(col);
+  // ⑤d Shadows & Highlights (Bernstein basis)
+  c = applyHighlightsShadows(c);
 
-  col = clamp(col, 0.0, 1.0);
+  // ⑤e Highlight Roll-Off (tanh shoulder compression)
+  c = applyHighlightRollOff(c);
 
-  // ⑨ Tone Curves (1D LUT)
-  if (u_useCurves == 1) {
-    col = applyCurvesLUT(col);
+  c = clamp(c, 0.0, 1.0);
+
+  // ⑥ Curves (1D LUT)
+  if (u_useCurves > 0.5) {
+  ${curveSampling}
   }
 
-  // ⑩ HSL Adjustment
-  if (u_useHSL == 1) {
-    col = applyHSLAdjustment(col);
+  // ⑦ HSL Adjustment
+  if (u_useHSL > 0.5) {
+    c = applyHSLAdjustment(c);
   }
 
-  // ⑪ Split Toning
-  if (u_useSplitTone == 1) {
-    col = applySplitToning(col);
+  // ⑦b Saturation (Luma-Preserving, Rec.709)
+  if (u_useSaturation > 0.5) {
+    c = applySaturation(c);
   }
 
-  // ⑫ 3D LUT (applied last for creative looks)
-  if (u_useLut3d == 1) {
-    vec3 lutColor = sampleLUT3D(col);
-    col = mix(col, lutColor, u_lutIntensity);
+  // ⑧ Split Toning
+  if (u_useSplitTone > 0.5) {
+    c = applySplitTone(c);
   }
 
-  gl_FragColor = vec4(col, 1.0);
+  ${FRAG_OUT} = vec4(c, 1.0);
 }
 `;
 }
 
 /**
- * 顶点着色器
+ * 顶点着色器 (WebGL1)
  */
 const VERTEX_SHADER = `
 attribute vec2 a_pos;
@@ -191,17 +278,34 @@ void main() {
 }
 `;
 
+/**
+ * 顶点着色器 (WebGL2)
+ */
+const VERTEX_SHADER_GL2 = `#version 300 es
+in vec2 a_pos;
+in vec2 a_uv;
+out vec2 v_uv;
+
+void main() {
+  v_uv = a_uv;
+  gl_Position = vec4(a_pos, 0.0, 1.0);
+}
+`;
+
 module.exports = {
   // 构建函数
   buildFragmentShader,
+  buildMainFunction,
   
   // 顶点着色器
   VERTEX_SHADER,
+  VERTEX_SHADER_GL2,
   
   // 独立模块（用于自定义组合）
   colorMath,
   hslAdjust,
   splitTone,
+  saturation,
   filmCurve,
   tonemap,
   lut3d,
@@ -210,5 +314,5 @@ module.exports = {
   uniforms,
   
   // 着色器版本标识（用于缓存失效）
-  SHADER_VERSION: '2026-01-29-v1',
+  SHADER_VERSION: '2026-02-08-v3',
 };

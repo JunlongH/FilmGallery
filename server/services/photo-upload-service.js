@@ -457,6 +457,9 @@ async function uploadSinglePhoto({ rollId, file, options = {} }) {
   const { moveFileSync } = require('../utils/file-helpers');
   moveFileSync(file.path, originalPath);
 
+  // Compute original_rel_path for DB (consistent with roll-file-service pattern)
+  const originalRelPath = `rolls/${rollId}/originals/${originalName}`;
+
   // If processInput is still a file path (i.e. non-RAW), update it to the new location
   // since the original upload file has been moved to originals/
   if (typeof processInput === 'string') {
@@ -532,15 +535,15 @@ async function uploadSinglePhoto({ rollId, file, options = {} }) {
   // Insert photo
   const sql = `INSERT INTO photos (
     roll_id, frame_number, filename, full_rel_path, thumb_rel_path, negative_rel_path,
-    positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
-    caption, taken_at, rating, camera, lens, photographer,
+    original_rel_path, positive_rel_path, positive_thumb_rel_path, negative_thumb_rel_path,
+    is_negative_source, caption, taken_at, rating, camera, lens, photographer,
     source_make, source_model, source_software, source_lens
-  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
+  ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`;
 
   const result = await runAsync(sql, [
     rollId, frameNumber, finalName, fullRelPath, thumbRelPath, negativeRelPath,
-    positiveRelPath, positiveThumbRelPath, negativeThumbRelPath,
-    caption, taken_at, rating, finalCamera, finalLens, finalPhotographer,
+    originalRelPath, positiveRelPath, positiveThumbRelPath, negativeThumbRelPath,
+    isNegativeSource, caption, taken_at, rating, finalCamera, finalLens, finalPhotographer,
     sourceMake, sourceModel, sourceSoftware, sourceLens
   ]);
 
@@ -551,6 +554,8 @@ async function uploadSinglePhoto({ rollId, file, options = {} }) {
     fullRelPath,
     thumbRelPath,
     negativeRelPath,
+    originalRelPath,
+    isNegativeSource,
     camera: finalCamera,
     lens: finalLens,
     photographer: finalPhotographer,

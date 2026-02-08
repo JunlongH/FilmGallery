@@ -21,8 +21,7 @@ const LUT3D_GLSL = `
 // Trilinear interpolation for smooth color transitions
 //
 vec3 sampleLUT3D(vec3 c) {
-  int size = u_lutSize;
-  float sz = float(size);
+  float sz = u_lutSize;
   
   // Map input to [0, size-1] range
   float rf = c.r * (sz - 1.0);

@@ -16,11 +16,11 @@ const INVERSION_GLSL = `
 // - Log (u_inversionMode == 1): Logarithmic inversion for better shadow detail
 //
 vec3 applyInversion(vec3 col) {
-  if (u_inverted == 0) return col;
+  if (u_inverted < 0.5) return col;
   
   vec3 c255 = col * 255.0;
   
-  if (u_inversionMode == 1) {
+  if (u_inversionMode > 0.5) {
     // Log inversion: preserves more shadow detail
     // Formula: 255 * (1 - log(x + 1) / log(256))
     c255.r = 255.0 * (1.0 - log(c255.r + 1.0) / log(256.0));

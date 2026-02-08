@@ -302,14 +302,14 @@ function runJob(job) {
 
       // Uniforms
       gl.useProgram(prog); // Ensure program is active
-      const u_tex = gl.getUniformLocation(prog, 'u_tex');
-      gl.uniform1i(u_tex, 0); // Texture unit 0
+      const u_image = gl.getUniformLocation(prog, 'u_image');
+      gl.uniform1i(u_image, 0); // Texture unit 0
       
       const u_toneCurveTex = gl.getUniformLocation(prog, 'u_toneCurveTex');
       gl.uniform1i(u_toneCurveTex, 1); // Texture unit 1
 
-      const u_lut3d = gl.getUniformLocation(prog, 'u_lut3d');
-      gl.uniform1i(u_lut3d, 2); // Texture unit 2
+      const u_lut3dTex = gl.getUniformLocation(prog, 'u_lut3dTex');
+      gl.uniform1i(u_lut3dTex, 2); // Texture unit 2
 
       const u_hasLut3d = gl.getUniformLocation(prog, 'u_hasLut3d');
       gl.uniform1f(u_hasLut3d, hasLut3d ? 1.0 : 0.0);
@@ -320,8 +320,8 @@ function runJob(job) {
       const inverted = params && params.inverted ? 1.0 : 0.0;
       const u_inverted = gl.getUniformLocation(prog, 'u_inverted');
       gl.uniform1f(u_inverted, inverted);
-      const u_logMode = gl.getUniformLocation(prog, 'u_logMode');
-      gl.uniform1f(u_logMode, (params && params.inversionMode === 'log') ? 1.0 : 0.0);
+      const u_inversionMode = gl.getUniformLocation(prog, 'u_inversionMode');
+      gl.uniform1f(u_inversionMode, (params && params.inversionMode === 'log') ? 1.0 : 0.0);
       
       // Compute WB gains using the correct formula (matches server/client)
       const [rBal, gBal, bBal] = computeWBGains({
@@ -412,6 +412,13 @@ function runJob(job) {
       gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslPurple'), new Float32Array(getHSL('purple')));
       gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslMagenta'), new Float32Array(getHSL('magenta')));
 
+      // Curves, HSL, SplitTone enable flags (shared shader requires these)
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_useCurves'), 1.0); // Always pass curves (identity if none)
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_useHSL'), 1.0); // Always enabled, no-op if params are 0
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_useSplitTone'), 1.0); // Always enabled, no-op if sat=0
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_lutIntensity'), params?.lut3dIntensity ?? 1.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_lutSize'), lut3dSize);
+
       // Split Toning Uniforms
       const splitToning = params?.splitToning || {};
       gl.uniform1f(gl.getUniformLocation(prog, 'u_splitHighlightHue'), (splitToning.highlights?.hue ?? 0) / 360.0);
@@ -454,7 +461,7 @@ function runJob(job) {
           ipcRenderer.send('filmlab-gpu:result', { jobId, ok:false, error:'blob_read_failed' });
         };
         reader.readAsArrayBuffer(blobOut);
-      }, 'image/jpeg', 0.95);
+      }, 'image/jpeg', params?.jpegQuality ?? 0.95);
     } catch (err) {
       ipcRenderer.send('filmlab-gpu:result', { jobId, ok:false, error: (err && err.message) || String(err) });
     } finally {
