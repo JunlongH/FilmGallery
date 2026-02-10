@@ -30,6 +30,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
 import { Icon, Badge } from '../components/ui';
 import { ApiContext } from '../context/ApiContext';
+import { getPhotoUrl } from '../utils/urls';
 import LeafletMap from '../components/map/LeafletMap';
 
 const { width, height } = Dimensions.get('window');
@@ -85,21 +86,7 @@ export default function MapScreen() {
       if (photoData.length > 0) {
         // Convert coordinates to numbers and fix thumbnail URLs
         const processedPhotos = photoData.map(p => {
-          let thumbPath = p.thumb_rel_path || p.positive_thumb_rel_path || null;
-          let thumbnailUrl = null;
-          if (thumbPath) {
-            if (thumbPath.startsWith('http')) {
-              thumbnailUrl = thumbPath;
-            } else {
-              // Server serves static files from /uploads/rolls/...
-              if (!thumbPath.startsWith('/')) {
-                thumbPath = '/uploads/' + thumbPath;
-              } else if (!thumbPath.startsWith('/uploads')) {
-                thumbPath = '/uploads' + thumbPath;
-              }
-              thumbnailUrl = `${baseUrl}${thumbPath}`;
-            }
-          }
+          const thumbnailUrl = getPhotoUrl(baseUrl, p, 'thumb');
           return {
             ...p,
             latitude: parseFloat(p.latitude),

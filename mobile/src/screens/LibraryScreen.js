@@ -29,6 +29,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import axios from 'axios';
 import { Icon, Card, Badge } from '../components/ui';
 import { ApiContext } from '../context/ApiContext';
+import { getPhotoUrl } from '../utils/urls';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - 48) / 2;
@@ -95,23 +96,7 @@ export default function LibraryScreen() {
       const favoritesRaw = Array.isArray(favoritesRes.data) ? favoritesRes.data : [];
       console.log('[LibraryScreen] Favorites raw:', favoritesRaw.length, 'items');
       const favorites = favoritesRaw.map(p => {
-        let thumbPath = p.thumb_rel_path || p.positive_thumb_rel_path || null;
-        let thumbnailUrl = null;
-        if (thumbPath) {
-          if (thumbPath.startsWith('http')) {
-            thumbnailUrl = thumbPath;
-          } else {
-            // Server serves static files from /uploads/rolls/... 
-            // Database stores paths as 'rolls/37/thumb/...'
-            // So we need /uploads/ prefix
-            if (!thumbPath.startsWith('/')) {
-              thumbPath = '/uploads/' + thumbPath;
-            } else if (!thumbPath.startsWith('/uploads')) {
-              thumbPath = '/uploads' + thumbPath;
-            }
-            thumbnailUrl = `${baseUrl}${thumbPath}`;
-          }
-        }
+        const thumbnailUrl = getPhotoUrl(baseUrl, p, 'thumb');
         console.log('[LibraryScreen] Photo', p.id, 'thumb:', thumbnailUrl);
         return {
           ...p,

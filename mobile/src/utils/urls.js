@@ -2,14 +2,19 @@ export const getPhotoUrl = (baseUrl, photo, type = 'full') => {
   if (!baseUrl || !photo) return null;
   
   // If photo object has a direct path property for the requested type
-  if (type === 'thumb' && photo.thumb_rel_path) {
-    return `${baseUrl}/uploads/${photo.thumb_rel_path}`;
+  if (type === 'thumb') {
+    if (photo.positive_thumb_rel_path) return `${baseUrl}/uploads/${photo.positive_thumb_rel_path}`;
+    if (photo.thumb_rel_path) return `${baseUrl}/uploads/${photo.thumb_rel_path}`;
   }
-  if (type === 'negative' && photo.negative_rel_path) {
-    return `${baseUrl}/uploads/${photo.negative_rel_path}`;
+  
+  if (type === 'negative') {
+    if (photo.negative_thumb_rel_path) return `${baseUrl}/uploads/${photo.negative_thumb_rel_path}`; // Added negative thumb support just in case
+    if (photo.negative_rel_path) return `${baseUrl}/uploads/${photo.negative_rel_path}`;
   }
-  if (type === 'full' && photo.full_rel_path) {
-    return `${baseUrl}/uploads/${photo.full_rel_path}`;
+  
+  if (type === 'full') {
+    if (photo.positive_rel_path) return `${baseUrl}/uploads/${photo.positive_rel_path}`;
+    if (photo.full_rel_path) return `${baseUrl}/uploads/${photo.full_rel_path}`;
   }
 
   // Fallback for legacy or missing paths (though backend should provide rel_paths now)
