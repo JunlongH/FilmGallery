@@ -35,7 +35,13 @@ export async function loadImageToCanvas(imageUrl, maxWidth = null) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     
+    // 设置超时
+    const timeout = setTimeout(() => {
+      reject(new Error('Image load timeout'));
+    }, 30000);
+
     img.onload = () => {
+      clearTimeout(timeout);
       const scale = maxWidth ? Math.min(1, maxWidth / img.width) : 1;
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
@@ -58,35 +64,8 @@ export async function loadImageToCanvas(imageUrl, maxWidth = null) {
     };
     
     img.onerror = (e) => {
-      reject(new Error(`Failed to load image: ${imageUrl}`));
-    };
-    
-    // 设置超时
-    const timeout = setTimeout(() => {
-      reject(new Error('Image load timeout'));
-    }, 30000);
-    
-    img.onload = function() {
       clearTimeout(timeout);
-      const scale = maxWidth ? Math.min(1, maxWidth / img.width) : 1;
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      
-      const canvas = document.createElement('canvas');
-      canvas.width = w;
-      canvas.height = h;
-      const ctx = canvas.getContext('2d', { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0, w, h);
-      
-      resolve({ 
-        canvas, 
-        ctx, 
-        width: w, 
-        height: h, 
-        originalWidth: img.width, 
-        originalHeight: img.height,
-        image: img
-      });
+      reject(new Error(`Failed to load image: ${imageUrl}`));
     };
     
     img.src = imageUrl;
@@ -155,7 +134,10 @@ export function applyGeometry(sourceCanvas, params) {
 // ============================================================================
 
 /**
- * 使用 RenderCore 处理 Canvas 像素
+ * 使用 RenderCore 处理 Canvas 像素 (Float Pipeline)
+ * Uses processPixelFloat() for consistency with GPU and server rendering.
+ * Input pixels are treated as sRGB 8-bit, linearized internally.
+ *
  * @param {HTMLCanvasElement} canvas - 要处理的 Canvas
  * @param {Object} params - RenderCore 参数
  * @returns {HTMLCanvasElement} 处理后的 Canvas（同一个）
@@ -169,16 +151,27 @@ export function processCanvasWithRenderCore(canvas, params) {
   const core = new RenderCore(params);
   core.prepareLUTs();
   
-  // 像素处理
+  // 像素处理 — float pipeline for CPU/GPU consistency
   const length = data.length;
   for (let i = 0; i < length; i += 4) {
     // 跳过透明像素
     if (data[i + 3] === 0) continue;
     
-    const [r, g, b] = core.processPixel(data[i], data[i + 1], data[i + 2]);
-    data[i] = r;
-    data[i + 1] = g;
-    data[i + 2] = b;
+    // Normalize 8-bit sRGB to 0.0–1.0 float
+    // Note: Canvas data is already sRGB gamma-encoded.
+    // processPixelFloat expects linear input, but since the CPU client receives
+    // the same sRGB-encoded JPEG/PNG data as the GPU path, and the GPU shader
+    // operates in sRGB space (texture is not linearized), we pass sRGB values
+    // directly — matching the GPU behavior where textures are read as-is.
+    const r = data[i]     / 255;
+    const g = data[i + 1] / 255;
+    const b = data[i + 2] / 255;
+    
+    const [rF, gF, bF] = core.processPixelFloat(r, g, b);
+    
+    data[i]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+    data[i + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+    data[i + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
   }
   
   ctx.putImageData(imageData, 0, 0);

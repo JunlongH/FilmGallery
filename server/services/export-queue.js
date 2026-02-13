@@ -16,10 +16,11 @@ const path = require('path');
 const fs = require('fs').promises;
 const sharp = require('sharp');
 
-// 共享处理核心
-const { processPixel, prepareLUTs } = require('../../packages/shared/filmlab-core');
+// 共享处理核心 — 使用统一的 RenderCore (替代 legacy filmlab-core)
+const RenderCore = require('../../packages/shared/render/RenderCore');
 const { buildExportParams, validateExportParams } = require('../../packages/shared/filmLabExport');
 const { JPEG_QUALITY, EXPORT_MAX_WIDTH } = require('../../packages/shared/filmLabConstants');
+const { uploadsDir } = require('../config/paths');
 
 // ============================================================================
 // 常量定义
@@ -453,8 +454,16 @@ class ExportQueue extends EventEmitter {
     const ext = job.format === 'TIFF' ? '.tiff' : job.format === 'PNG' ? '.png' : '.jpg';
     const outputPath = path.join(job.outputDir, `${baseName}${ext}`);
 
+    // 解析源文件路径 — 优先使用原始 RAW，依次回退到 negative、positive、full、path
+    const relSource = photo.original_rel_path || photo.negative_rel_path
+      || photo.positive_rel_path || photo.full_rel_path || photo.path;
+    if (!relSource) {
+      throw new Error(`No source file path found for photo ${photoId}`);
+    }
+    const inputPath = path.join(uploadsDir, relSource);
+
     // 执行导出
-    await this._exportPhoto(photo.file_path, outputPath, params, {
+    await this._exportPhoto(inputPath, outputPath, params, {
       format: job.format,
       quality: job.quality,
       maxWidth: job.maxWidth,
@@ -473,7 +482,7 @@ class ExportQueue extends EventEmitter {
    * @private
    * @param {string} inputPath - 输入文件路径
    * @param {string} outputPath - 输出文件路径
-   * @param {Object} params - 处理参数
+   * @param {Object} params - 处理参数 (完整 RenderCore 参数)
    * @param {Object} options - 导出选项
    */
   async _exportPhoto(inputPath, outputPath, params, options) {
@@ -482,6 +491,12 @@ class ExportQueue extends EventEmitter {
     // 使用 sharp 加载图像
     const image = sharp(inputPath, { failOn: 'none' });
     const metadata = await image.metadata();
+    
+    // 判断源图是否为高位深 (RAW/16-bit TIFF/PNG)
+    // sharp metadata.depth: 'uchar' (8-bit), 'ushort' (16-bit), 'float' (32-bit)
+    const isHighBitDepth = metadata.depth === 'ushort' || metadata.depth === 'float';
+    // TIFF 导出使用 16-bit 以保留动态范围
+    const use16bit = isHighBitDepth && (format === 'TIFF' || format === 'PNG');
     
     // 计算目标尺寸
     const scale = maxWidth ? Math.min(1, maxWidth / metadata.width) : 1;
@@ -498,72 +513,137 @@ class ExportQueue extends EventEmitter {
       pipeline = pipeline.resize({ width: targetWidth, withoutEnlargement: true });
     }
     
-    // 获取像素数据进行处理
+    // 获取像素数据 — 高位深源使用 16-bit 以保留 RAW 动态范围
+    let rawOpts = {};
+    if (use16bit) {
+      rawOpts = { depth: 'ushort' };
+    }
+    
     const { data, info } = await pipeline
-      .raw()
+      .raw(rawOpts)
       .toBuffer({ resolveWithObject: true });
     
-    // 准备 LUT
-    const luts = prepareLUTs(params);
-    const inversionParams = {
-      inverted: params.inverted || false,
-      inversionMode: params.inversionMode || 'linear',
-      filmCurveEnabled: params.filmCurveEnabled || false,
-      filmCurveProfile: params.filmCurveProfile || 'default',
-    };
+    // 创建 RenderCore 实例 — 传入完整参数 (自动归一化/兼容映射)
+    const renderer = new RenderCore(params);
     
     // 处理像素
     const channels = info.channels;
-    const output = Buffer.alloc(data.length);
     
-    for (let i = 0; i < data.length; i += channels) {
-      let r = data[i];
-      let g = data[i + 1];
-      let b = data[i + 2];
+    if (use16bit) {
+      // ── 16-bit 浮点路径: 充分利用 RAW 色深和动态范围 ──
+      // data 是 Uint16Array (0–65535), 使用 processPixelFloat (0–1 范围)
+      const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+      const output = new Uint16Array(pixels.length);
+      const maxVal = 65535;
       
-      [r, g, b] = processPixel(r, g, b, luts, inversionParams);
-      
-      output[i] = r;
-      output[i + 1] = g;
-      output[i + 2] = b;
-      
-      if (channels === 4) {
-        output[i + 3] = data[i + 3]; // 保留 alpha
+      for (let i = 0; i < pixels.length; i += channels) {
+        const rIn = pixels[i] / maxVal;
+        const gIn = pixels[i + 1] / maxVal;
+        const bIn = pixels[i + 2] / maxVal;
+        
+        const [rOut, gOut, bOut] = renderer.processPixelFloat(rIn, gIn, bIn);
+        
+        output[i] = Math.round(rOut * maxVal);
+        output[i + 1] = Math.round(gOut * maxVal);
+        output[i + 2] = Math.round(bOut * maxVal);
+        
+        if (channels === 4) {
+          output[i + 3] = pixels[i + 3]; // 保留 alpha
+        }
       }
-    }
-    
-    // 应用裁剪
-    let finalPipeline = sharp(output, {
-      raw: {
-        width: info.width,
-        height: info.height,
-        channels: info.channels,
-      },
-    });
-    
-    if (params.cropRect) {
-      const { x, y, w, h } = params.cropRect;
-      const left = Math.round(x * info.width);
-      const top = Math.round(y * info.height);
-      const width = Math.round(w * info.width);
-      const height = Math.round(h * info.height);
       
-      if (width > 0 && height > 0) {
-        finalPipeline = finalPipeline.extract({ left, top, width, height });
+      // 重新构造 sharp 管线 (16-bit raw input)
+      let finalPipeline = sharp(Buffer.from(output.buffer), {
+        raw: {
+          width: info.width,
+          height: info.height,
+          channels: info.channels,
+          depth: 'ushort',
+        },
+      });
+      
+      if (params.cropRect) {
+        finalPipeline = this._applyCrop(finalPipeline, params.cropRect, info);
       }
+      
+      await this._writeOutput(finalPipeline, outputPath, format, quality, true);
+    } else {
+      // ── 8-bit 源路径: 使用 processPixelFloat 保证一致性 ──
+      const output = Buffer.alloc(data.length);
+      
+      for (let i = 0; i < data.length; i += channels) {
+        const [rF, gF, bF] = renderer.processPixelFloat(
+          data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+        );
+        
+        output[i] = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        output[i + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        output[i + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+        
+        if (channels === 4) {
+          output[i + 3] = data[i + 3]; // 保留 alpha
+        }
+      }
+      
+      let finalPipeline = sharp(output, {
+        raw: {
+          width: info.width,
+          height: info.height,
+          channels: info.channels,
+        },
+      });
+      
+      if (params.cropRect) {
+        finalPipeline = this._applyCrop(finalPipeline, params.cropRect, info);
+      }
+      
+      await this._writeOutput(finalPipeline, outputPath, format, quality, false);
     }
+  }
+
+  /**
+   * 应用裁剪
+   * @private
+   */
+  _applyCrop(pipeline, cropRect, info) {
+    const { x, y, w, h } = cropRect;
+    const left = Math.round(x * info.width);
+    const top = Math.round(y * info.height);
+    const width = Math.round(w * info.width);
+    const height = Math.round(h * info.height);
     
-    // 输出
+    if (width > 0 && height > 0) {
+      return pipeline.extract({ left, top, width, height });
+    }
+    return pipeline;
+  }
+
+  /**
+   * 写入输出文件
+   * @private
+   * @param {Object} pipeline - sharp 管线
+   * @param {string} outputPath - 输出路径
+   * @param {string} format - 输出格式
+   * @param {number} quality - JPEG 质量
+   * @param {boolean} is16bit - 是否保持 16-bit 输出
+   */
+  async _writeOutput(pipeline, outputPath, format, quality, is16bit) {
     switch (format) {
       case 'TIFF':
-        await finalPipeline.tiff({ compression: 'lzw' }).toFile(outputPath);
+        await pipeline.tiff({
+          compression: 'lzw',
+          bitdepth: is16bit ? 16 : 8,
+        }).toFile(outputPath);
         break;
       case 'PNG':
-        await finalPipeline.png({ compressionLevel: 6 }).toFile(outputPath);
+        await pipeline.png({
+          compressionLevel: 6,
+          // PNG 自动支持 16-bit 输入
+        }).toFile(outputPath);
         break;
       case 'JPEG':
       default:
-        await finalPipeline.jpeg({ quality }).toFile(outputPath);
+        await pipeline.jpeg({ quality }).toFile(outputPath);
         break;
     }
   }

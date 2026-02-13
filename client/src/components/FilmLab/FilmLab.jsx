@@ -12,6 +12,7 @@ import {
   RenderCore,
   computeWBGains,
   solveTempTintFromSample,
+  buildCompositeFloatCurveLUT,
   PREVIEW_MAX_WIDTH_CLIENT,
   EXPORT_MAX_WIDTH,
   DEFAULT_HSL_PARAMS,
@@ -122,6 +123,9 @@ export default function FilmLab({
   // 分离色调 (高光/阴影着色)
   const [splitToning, setSplitToning] = useState({ ...DEFAULT_SPLIT_TONE_PARAMS });
 
+  // 全局饱和度 (Luma-Preserving, Rec.709)
+  const [saturation, setSaturation] = useState(0);
+
   // Zoom & Pan
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -194,6 +198,7 @@ export default function FilmLab({
       curves, lut1, lut2,
       // HSL and Split Toning params for WebGL preview (serialized for cache comparison)
       hslParams, splitToning,
+      saturation,
       hslKey: JSON.stringify(hslParams),
       splitToneKey: JSON.stringify(splitToning),
       // Film Curve params
@@ -211,7 +216,7 @@ export default function FilmLab({
       temp, tint, red, green, blue, baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, 
       densityLevelsEnabled, densityLevels,
       curves, lut1, lut2,
-      hslParams, splitToning, filmCurveEnabled, filmCurveProfile,
+      hslParams, splitToning, saturation, filmCurveEnabled, filmCurveProfile,
       rotation, orientation, rotationOffset, isCropping, committedCrop, image, sourceType]);
 
   // 当前参数（用于 PhotoSwitcher "Apply to batch" 功能）
@@ -247,12 +252,13 @@ export default function FilmLab({
     cropRect: committedCrop,
     curves,
     hslParams,
-    splitToning
+    splitToning,
+    saturation
   }), [inverted, inversionMode, filmCurveEnabled, filmCurveProfile, exposure, contrast, 
       highlights, shadows, whites, blacks, temp, tint, red, green, blue, 
       baseMode, baseRed, baseGreen, baseBlue, baseDensityR, baseDensityG, baseDensityB, 
       densityLevelsEnabled, densityLevels,
-      rotation, orientation, committedCrop, curves, hslParams, splitToning]);
+      rotation, orientation, committedCrop, curves, hslParams, splitToning, saturation]);
 
   // Pre-calculate geometry for canvas sizing and crop overlay sync
   const geometry = React.useMemo(() => {
@@ -341,6 +347,7 @@ export default function FilmLab({
       // New Features
       hslParams,
       splitToning,
+      saturation,
       filmCurveEnabled,
       filmCurveProfile,
       lut1: serializeLut(lut1),
@@ -403,6 +410,7 @@ export default function FilmLab({
     // New Params
     setHslParams(params.hslParams || DEFAULT_HSL_PARAMS);
     setSplitToning(params.splitToning || DEFAULT_SPLIT_TONE_PARAMS);
+    setSaturation(params.saturation ?? 0);
     setFilmCurveEnabled(!!params.filmCurveEnabled);
     if (params.filmCurveProfile) setFilmCurveProfile(params.filmCurveProfile);
 
@@ -916,9 +924,24 @@ export default function FilmLab({
       
       console.log('[WB Picker] Sampled pixel:', { r: rRendered.toFixed(2), g: gRendered.toFixed(2), b: bRendered.toFixed(2) });
       
-      // Since we sampled the rendered canvas (already has base gains applied),
-      // pass {red:1, green:1, blue:1} so the solver doesn't apply them again
-      const solved = solveTempTintFromSample([rRendered, gRendered, bRendered], { red: 1, green: 1, blue: 1 });
+      // CRITICAL FIX: Compensate for current WB gains before solving.
+      // The rendered canvas already has WB gains baked in (c *= u_gains in shader).
+      // Without compensation, the solver sees already-corrected values and computes
+      // near-zero temp/tint, effectively undoing any prior WB adjustment (Auto WB
+      // or manual). We divide out the current gains to approximate the pre-WB pixel,
+      // then solve for the correct absolute temp/tint.
+      // NOTE: Post-WB pipeline effects (exposure, contrast, curves) introduce a small
+      // approximation error, but exposure is a uniform scale (ratio-preserving) and
+      // contrast/curves are typically small — this is accurate for practical use.
+      const currentGains = computeWBGains({ red, green, blue, temp, tint });
+      const preR = rRendered / Math.max(0.001, currentGains[0]);
+      const preG = gRendered / Math.max(0.001, currentGains[1]);
+      const preB = bRendered / Math.max(0.001, currentGains[2]);
+      
+      console.log('[WB Picker] Current gains:', currentGains.map(g => g.toFixed(4)),
+        'Pre-WB estimate:', { r: preR.toFixed(2), g: preG.toFixed(2), b: preB.toFixed(2) });
+      
+      const solved = solveTempTintFromSample([preR, preG, preB], { red, green, blue });
       
       if (solved && Number.isFinite(solved.temp) && Number.isFinite(solved.tint)) {
         pushToHistory();
@@ -977,9 +1000,12 @@ export default function FilmLab({
   // 2. CPU Path: Fallback pixel-by-pixel processing (slower, most compatible)
   // Note: Server preview has been removed - see comment block after this function
   const processImage = () => {
+    try {
     const canvas = canvasRef.current;
+    if (!canvas) return;
     // 重要：指定 colorSpace 为 srgb 以匹配 WebGL 输出
     const ctx = canvas.getContext('2d', { willReadFrequently: true, colorSpace: 'srgb' });
+    if (!ctx) return;
     // Nothing to render if base image is not ready
     if (!image) return;
     
@@ -1029,11 +1055,16 @@ export default function FilmLab({
               const totalRotation = rotation + orientation + rotationOffset;
               const cropRect = isCropping ? null : committedCrop;
               
-              // Get Film Curve profile parameters
+              // Get Film Curve profile parameters (Q13: per-channel gamma + toe/shoulder)
               const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
               const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+              const filmCurveGammaR = currentFilmProfile?.gammaR ?? filmCurveGamma;
+              const filmCurveGammaG = currentFilmProfile?.gammaG ?? filmCurveGamma;
+              const filmCurveGammaB = currentFilmProfile?.gammaB ?? filmCurveGamma;
               const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
               const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+              const filmCurveToe = currentFilmProfile?.toe ?? 0;
+              const filmCurveShoulder = currentFilmProfile?.shoulder ?? 0;
               
               // webglParams.inverted 已经根据 sourceType 计算过了
                 processImageWebGL(webglCanvas, image, {
@@ -1046,7 +1077,8 @@ export default function FilmLab({
                   densityLevelsEnabled: webglParams.densityLevelsEnabled,
                   densityLevels: webglParams.densityLevels,
                   exposure, contrast, highlights, shadows, whites, blacks,
-                  filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
+                  filmCurveEnabled, filmCurveGamma, filmCurveGammaR, filmCurveGammaG, filmCurveGammaB,
+                  filmCurveDMin, filmCurveDMax, filmCurveToe, filmCurveShoulder,
                   rotate: totalRotation,
                   cropRect: cropRect,
                   // pass preview scale to ensure WebGL output uses the same downscale as CPU/geometry
@@ -1107,8 +1139,15 @@ export default function FilmLab({
     let data = null;
     
     if (!webglSuccess || !isRotating) {
-        imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        data = imageData.data;
+        // Safety: ensure canvas has valid dimensions before getImageData (avoids IndexSizeError)
+        if (canvas.width > 0 && canvas.height > 0) {
+          try {
+            imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            data = imageData.data;
+          } catch (readbackErr) {
+            console.warn('[FilmLab] getImageData failed:', readbackErr.message);
+          }
+        }
     }
 
     // Histogram buckets
@@ -1176,6 +1215,7 @@ export default function FilmLab({
           lut2Intensity: lut2?.intensity ?? 1.0,
           inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
           hslParams, splitToning,
+          saturation,
           // 片基校正 (Pre-Inversion)
           baseRed, baseGreen, baseBlue,
           // 对数域片基校正参数
@@ -1235,6 +1275,10 @@ export default function FilmLab({
     }
     if (!isRotating) {
       setHistograms({ rgb: histRGB, red: histR, green: histG, blue: histB });
+    }
+    } catch (processImageError) {
+      // 捕获 processImage 中的所有异常，防止传播到 React 导致整棵组件树卸载（黑屏）
+      console.error('[FilmLab] processImage error (caught, UI preserved):', processImageError);
     }
   } // <-- Close processImage function
 
@@ -1379,9 +1423,21 @@ export default function FilmLab({
     
     console.log('[Auto WB] Sampled averages:', { rAvg: rAvg.toFixed(2), gAvg: gAvg.toFixed(2), bAvg: bAvg.toFixed(2), count });
     
-    // Since we sampled the rendered canvas (already has base gains applied),
-    // pass {red:1, green:1, blue:1} so the solver doesn't apply them again
-    const solved = solveTempTintFromSample([rAvg, gAvg, bAvg], { red: 1, green: 1, blue: 1 });
+    // CRITICAL FIX: Compensate for current WB gains before solving.
+    // The rendered canvas already has WB gains applied. Without compensation,
+    // calling Auto WB a second time would see already-corrected pixels and
+    // compute near-zero temp/tint, undoing the first correction.
+    // By dividing out current gains we recover the approximate pre-WB pixel
+    // values, making Auto WB idempotent (clicking twice gives the same result).
+    const currentGains = computeWBGains({ red, green, blue, temp, tint });
+    const preR = rAvg / Math.max(0.001, currentGains[0]);
+    const preG = gAvg / Math.max(0.001, currentGains[1]);
+    const preB = bAvg / Math.max(0.001, currentGains[2]);
+    
+    console.log('[Auto WB] Current gains:', currentGains.map(g => g.toFixed(4)),
+      'Pre-WB estimate:', { r: preR.toFixed(2), g: preG.toFixed(2), b: preB.toFixed(2) });
+    
+    const solved = solveTempTintFromSample([preR, preG, preB], { red, green, blue });
     
     if (solved && Number.isFinite(solved.temp) && Number.isFinite(solved.tint)) {
       setTemp(solved.temp);
@@ -1470,6 +1526,7 @@ export default function FilmLab({
       lut2Intensity: lut2?.intensity ?? 1.0,
       inverted: effectiveInvertedValue, inversionMode, filmCurveEnabled, filmCurveProfile,
       hslParams, splitToning,
+      saturation,
       // 片基校正 (Pre-Inversion)
       baseRed, baseGreen, baseBlue,
       // 对数域片基校正参数
@@ -1617,18 +1674,24 @@ export default function FilmLab({
         };
       };
       
-      // Get Film Curve profile parameters (same as GPU Export)
+      // Get Film Curve profile parameters (Q13: per-channel gamma + toe/shoulder — same as GPU Export)
       const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
       const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+      const filmCurveGammaR = currentFilmProfile?.gammaR ?? filmCurveGamma;
+      const filmCurveGammaG = currentFilmProfile?.gammaG ?? filmCurveGamma;
+      const filmCurveGammaB = currentFilmProfile?.gammaB ?? filmCurveGamma;
       const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
       const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+      const filmCurveToe = currentFilmProfile?.toe ?? 0;
+      const filmCurveShoulder = currentFilmProfile?.shoulder ?? 0;
       
       const params = {
         sourceType, // 传递源类型以便服务器选择正确的源文件
         inverted: getEffectiveInverted(sourceType, inverted), // 使用统一函数计算有效反转状态
         inversionMode, filmCurveEnabled, filmCurveProfile,
-        // Explicitly pass film curve parameters for RenderCore (same as GPU Export)
-        filmCurveGamma, filmCurveDMin, filmCurveDMax,
+        // Explicitly pass film curve parameters for RenderCore (Q13: per-channel gamma + toe/shoulder)
+        filmCurveGamma, filmCurveGammaR, filmCurveGammaG, filmCurveGammaB,
+        filmCurveDMin, filmCurveDMax, filmCurveToe, filmCurveShoulder,
         exposure, contrast, highlights, shadows, whites, blacks, temp, tint, red, green, blue,
         // 片基校正增益 (Pre-Inversion)
         baseRed, baseGreen, baseBlue,
@@ -1638,6 +1701,7 @@ export default function FilmLab({
         densityLevelsEnabled, densityLevels,
         rotation, orientation, cropRect: committedCrop, curves,
         hslParams, splitToning,
+        saturation,
         lut1: serializeLut(lut1),
         lut2: serializeLut(lut2),
         lut1Intensity: lut1?.intensity ?? 1.0,
@@ -1669,19 +1733,25 @@ export default function FilmLab({
     try {
       // 检查 GPU 是否可用
       if (window.__electron?.filmlabGpuProcess) {
-        // Generate 1D LUT for Curves only (tone handled in shader via uniforms)
+        // Phase 2.4: Build Float32 composite curve LUT (1024×1 RGBA)
+        // Replaces the legacy 8-bit 256×1 path — matches CPU float precision
+        const toneCurveLutFloat = buildCompositeFloatCurveLUT({
+          rgb: curves.rgb,
+          red: curves.red,
+          green: curves.green,
+          blue: curves.blue,
+        });
+
+        // Legacy 8-bit LUT (kept as fallback for GPUs without float texture support)
         const lutRGB = getCurveLUT(curves.rgb);
         const lutR = getCurveLUT(curves.red);
         const lutG = getCurveLUT(curves.green);
         const lutB = getCurveLUT(curves.blue);
         
-        // Combine into a single 256x3 array [r,g,b, r,g,b...] for the GPU to sample
         const toneCurveLut = new Uint8Array(256 * 4); // RGBA
         for (let i = 0; i < 256; i++) {
           let r = i, g = i, b = i;
-          // Apply RGB Curve
           r = lutRGB[r]; g = lutRGB[g]; b = lutRGB[b];
-          // Apply Channel Curves
           r = lutR[r];
           g = lutG[g];
           b = lutB[b];
@@ -1698,11 +1768,16 @@ export default function FilmLab({
           lut3d = buildCombinedLUT(lut1, lut2);
         }
 
-        // Get Film Curve profile parameters
+        // Get Film Curve profile parameters (Q13: per-channel gamma + toe/shoulder)
         const currentFilmProfile = filmCurveProfiles?.find(p => p.key === filmCurveProfile);
         const filmCurveGamma = currentFilmProfile?.gamma ?? 0.6;
+        const filmCurveGammaR = currentFilmProfile?.gammaR ?? filmCurveGamma;
+        const filmCurveGammaG = currentFilmProfile?.gammaG ?? filmCurveGamma;
+        const filmCurveGammaB = currentFilmProfile?.gammaB ?? filmCurveGamma;
         const filmCurveDMin = currentFilmProfile?.dMin ?? 0.1;
         const filmCurveDMax = currentFilmProfile?.dMax ?? 3.0;
+        const filmCurveToe = currentFilmProfile?.toe ?? 0;
+        const filmCurveShoulder = currentFilmProfile?.shoulder ?? 0;
 
         const params = { 
           sourceType,
@@ -1713,8 +1788,10 @@ export default function FilmLab({
           baseMode, baseDensityR, baseDensityG, baseDensityB,
           densityLevelsEnabled, densityLevels,
           rotation, orientation,
-          filmCurveEnabled, filmCurveGamma, filmCurveDMin, filmCurveDMax,
+          filmCurveEnabled, filmCurveGamma, filmCurveGammaR, filmCurveGammaG, filmCurveGammaB,
+          filmCurveDMin, filmCurveDMax, filmCurveToe, filmCurveShoulder,
           cropRect: committedCrop,
+          toneCurveLutFloat: Array.from(toneCurveLutFloat),
           toneCurveLut: Array.from(toneCurveLut),
           lut3d: lut3d ? { size: lut3d.size, data: Array.from(lut3d.data) } : null,
           hslParams, splitToning
@@ -1748,6 +1825,7 @@ export default function FilmLab({
         densityLevelsEnabled, densityLevels,
         rotation, orientation, cropRect: committedCrop, curves,
         hslParams, splitToning,
+        saturation,
         // LUT 需要序列化
         lut1: lut1 ? { size: lut1.size, data: Array.from(lut1.data), intensity: lut1.intensity } : null,
         lut2: lut2 ? { size: lut2.size, data: Array.from(lut2.data), intensity: lut2.intensity } : null,
@@ -2535,6 +2613,7 @@ export default function FilmLab({
         pushToHistory={pushToHistory}
         hslParams={hslParams} setHslParams={setHslParams}
         splitToning={splitToning} setSplitToning={setSplitToning}
+        saturation={saturation} setSaturation={setSaturation}
         lut1={lut1} setLut1={setLut1}
         lut2={lut2} setLut2={setLut2}
         lutExportSize={lutExportSize} setLutExportSize={setLutExportSize}

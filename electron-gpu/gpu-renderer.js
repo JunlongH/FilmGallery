@@ -2,37 +2,41 @@
 const { ipcRenderer } = require('electron');
 
 let gl, canvas, isWebGL2 = false;
+let _hasFloatTexture = false;   // Phase 2.4: float texture support
+let _hasFloatLinear  = false;   // Phase 2.4: float texture linear filtering
 
 // ============================================================================
-// White Balance Calculation (must match server/utils/filmlab-wb.js and client/wb.js)
+// White Balance: use shared Kelvin model (single source of truth)
+// Replaces legacy linear model — now matches CPU/server rendering exactly
 // ============================================================================
-function clampGain(v, min, max) { return Math.max(min, Math.min(max, v)); }
+const { computeWBGains } = require('../packages/shared/filmLabWhiteBalance');
+const { buildFragmentShader } = require('./glsl-shared');
 
-function computeWBGains(params = {}, opts = {}) {
-  const red = Number.isFinite(params.red) ? params.red : 1;
-  const green = Number.isFinite(params.green) ? params.green : 1;
-  const blue = Number.isFinite(params.blue) ? params.blue : 1;
-  const temp = Number.isFinite(params.temp) ? params.temp : 0;
-  const tint = Number.isFinite(params.tint) ? params.tint : 0;
-  const minGain = opts.minGain ?? 0.05;
-  const maxGain = opts.maxGain ?? 50.0;
-  
-  // temp/tint model (matches client wb.js):
-  // temp > 0 → warmer (boost red, reduce blue)
-  // temp < 0 → cooler (boost blue, reduce red)
-  // tint > 0 → more magenta (boost red/blue, reduce green)
-  // tint < 0 → more green (boost green, reduce red/blue)
-  const t = temp / 100;
-  const n = tint / 100;
-  
-  let r = red * (1 + t * 0.5 + n * 0.3);
-  let g = green * (1 - n * 0.5);
-  let b = blue * (1 - t * 0.5 + n * 0.3);
-  
-  r = clampGain(r, minGain, maxGain);
-  g = clampGain(g, minGain, maxGain);
-  b = clampGain(b, minGain, maxGain);
-  return [r, g, b];
+// ============================================================================
+// Shader Program Cache (Q19: avoid recompiling every frame)
+// ============================================================================
+let _cachedProgGL2 = null;
+let _cachedProgGL1 = null;
+
+/**
+ * Return a cached compiled program, or compile & cache on first use.
+ * Shader source is constant — no need to recompile per frame.
+ */
+function getOrCreateProgram(gl, isGL2) {
+  if (isGL2) {
+    if (!_cachedProgGL2) _cachedProgGL2 = createProgram(gl, VS_GL2, FS_GL2);
+    return _cachedProgGL2;
+  } else {
+    if (!_cachedProgGL1) _cachedProgGL1 = createProgram(gl, VS_GL1, FS_GL1);
+    return _cachedProgGL1;
+  }
+}
+
+function invalidateProgramCache() {
+  if (_cachedProgGL2 && gl) { try { gl.deleteProgram(_cachedProgGL2); } catch(_){} }
+  if (_cachedProgGL1 && gl) { try { gl.deleteProgram(_cachedProgGL1); } catch(_){} }
+  _cachedProgGL2 = null;
+  _cachedProgGL1 = null;
 }
 
 function initGL() {
@@ -45,6 +49,21 @@ function initGL() {
     console.error('WebGL not available');
     return false;
   }
+
+  // Phase 2.4: Enable float texture extensions
+  if (isWebGL2) {
+    // WebGL2 natively supports RGBA32F textures;
+    // need EXT_color_buffer_float for render-to-float, but for sampling only it's built-in.
+    _hasFloatTexture = true;
+    _hasFloatLinear  = true; // GL2 guarantees float linear filtering for R32F/RGBA32F
+  } else {
+    // WebGL1: request OES_texture_float + OES_texture_float_linear
+    const extF  = gl.getExtension('OES_texture_float');
+    const extFL = gl.getExtension('OES_texture_float_linear');
+    _hasFloatTexture = !!extF;
+    _hasFloatLinear  = !!extFL;
+  }
+
   return true;
 }
 
@@ -89,399 +108,10 @@ const VS_GL2 = `#version 300 es
   }
 `;
 
-const FS_GL2 = `#version 300 es
-  precision highp float;
-  precision highp sampler3D;
-  
-  in vec2 v_uv;
-  out vec4 fragColor;
-  
-  uniform sampler2D u_tex;
-  uniform sampler2D u_toneCurveTex;
-  uniform sampler3D u_lut3d;
-  uniform float u_hasLut3d;
-  uniform float u_lut3dSize;
-
-  uniform float u_inverted;
-  uniform float u_logMode;
-  uniform vec3 u_gains;
-  uniform float u_exposure;
-  uniform float u_contrast;
-  uniform float u_highlights;
-  uniform float u_shadows;
-  uniform float u_whites;
-  uniform float u_blacks;
-
-  // Film Curve parameters
-  uniform float u_filmCurveEnabled;
-  uniform float u_filmCurveGamma;
-  uniform float u_filmCurveDMin;
-  uniform float u_filmCurveDMax;
-
-  // Film Base Correction (Pre-Inversion)
-  uniform float u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
-  uniform vec3 u_baseGains; // Linear mode: r,g,b gains
-  uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
-
-  // Density Levels (Log domain auto-levels)
-  uniform float u_densityLevelsEnabled; // 0 = disabled, 1 = enabled
-  uniform vec3 u_densityLevelsMin; // R,G,B minimum density values
-  uniform vec3 u_densityLevelsMax; // R,G,B maximum density values
-
-  // HSL parameters (8 channels: red, orange, yellow, green, cyan, blue, purple, magenta)
-  uniform vec3 u_hslRed;
-  uniform vec3 u_hslOrange;
-  uniform vec3 u_hslYellow;
-  uniform vec3 u_hslGreen;
-  uniform vec3 u_hslCyan;
-  uniform vec3 u_hslBlue;
-  uniform vec3 u_hslPurple;
-  uniform vec3 u_hslMagenta;
-
-  // Split Toning parameters
-  uniform float u_splitHighlightHue;
-  uniform float u_splitHighlightSat;
-  uniform float u_splitMidtoneHue;
-  uniform float u_splitMidtoneSat;
-  uniform float u_splitShadowHue;
-  uniform float u_splitShadowSat;
-  uniform float u_splitBalance;
-
-  // HSL helper functions
-  vec3 rgb2hsl(vec3 color) {
-    float maxC = max(max(color.r, color.g), color.b);
-    float minC = min(min(color.r, color.g), color.b);
-    float delta = maxC - minC;
-    float L = (maxC + minC) * 0.5;
-    float H = 0.0;
-    float S = 0.0;
-    if (delta > 0.001) {
-      S = (L < 0.5) ? (delta / (maxC + minC)) : (delta / (2.0 - maxC - minC));
-      if (maxC == color.r) {
-        H = (color.g - color.b) / delta + (color.g < color.b ? 6.0 : 0.0);
-      } else if (maxC == color.g) {
-        H = (color.b - color.r) / delta + 2.0;
-      } else {
-        H = (color.r - color.g) / delta + 4.0;
-      }
-      H *= 60.0;
-    }
-    return vec3(H, S, L);
-  }
-
-  float hue2rgb(float p, float q, float t) {
-    if (t < 0.0) t += 1.0;
-    if (t > 1.0) t -= 1.0;
-    if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
-    if (t < 0.5) return q;
-    if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
-    return p;
-  }
-
-  vec3 hsl2rgb(vec3 hsl) {
-    float h = hsl.x / 360.0;
-    float s = hsl.y;
-    float l = hsl.z;
-    if (s < 0.001) return vec3(l);
-    float q = (l < 0.5) ? (l * (1.0 + s)) : (l + s - l * s);
-    float p = 2.0 * l - q;
-    return vec3(
-      hue2rgb(p, q, h + 1.0/3.0),
-      hue2rgb(p, q, h),
-      hue2rgb(p, q, h - 1.0/3.0)
-    );
-  }
-
-  float hslChannelWeight(float hue, float centerHue) {
-    float dist = min(abs(hue - centerHue), 360.0 - abs(hue - centerHue));
-    return max(0.0, 1.0 - dist / 30.0);
-  }
-
-  vec3 applyHSLAdjustment(vec3 color) {
-    vec3 hsl = rgb2hsl(color);
-    float h = hsl.x;
-    float totalHueShift = 0.0;
-    float totalSatMult = 1.0;
-    float totalLumShift = 0.0;
-    float totalWeight = 0.0;
-    
-    // Red (0°)
-    float w = hslChannelWeight(h, 0.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslRed.x * w;
-      totalSatMult *= 1.0 + (u_hslRed.y / 100.0) * w;
-      totalLumShift += (u_hslRed.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-    // Orange (30°)
-    w = hslChannelWeight(h, 30.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslOrange.x * w;
-      totalSatMult *= 1.0 + (u_hslOrange.y / 100.0) * w;
-      totalLumShift += (u_hslOrange.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-    // Yellow (60°)
-    w = hslChannelWeight(h, 60.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslYellow.x * w;
-      totalSatMult *= 1.0 + (u_hslYellow.y / 100.0) * w;
-      totalLumShift += (u_hslYellow.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-    // Green (120°)
-    w = hslChannelWeight(h, 120.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslGreen.x * w;
-      totalSatMult *= 1.0 + (u_hslGreen.y / 100.0) * w;
-      totalLumShift += (u_hslGreen.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-    // Cyan (180°)
-    w = hslChannelWeight(h, 180.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslCyan.x * w;
-      totalSatMult *= 1.0 + (u_hslCyan.y / 100.0) * w;
-      totalLumShift += (u_hslCyan.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-    // Blue (240°)
-    w = hslChannelWeight(h, 240.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslBlue.x * w;
-      totalSatMult *= 1.0 + (u_hslBlue.y / 100.0) * w;
-      totalLumShift += (u_hslBlue.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-    // Purple (270°)
-    w = hslChannelWeight(h, 270.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslPurple.x * w;
-      totalSatMult *= 1.0 + (u_hslPurple.y / 100.0) * w;
-      totalLumShift += (u_hslPurple.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-    // Magenta (300°)
-    w = hslChannelWeight(h, 300.0);
-    if (w > 0.0) {
-      totalHueShift += u_hslMagenta.x * w;
-      totalSatMult *= 1.0 + (u_hslMagenta.y / 100.0) * w;
-      totalLumShift += (u_hslMagenta.z / 100.0) * 0.5 * w;
-      totalWeight += w;
-    }
-
-    if (totalWeight > 0.0) {
-      hsl.x = mod(hsl.x + totalHueShift, 360.0);
-      hsl.y = clamp(hsl.y * totalSatMult, 0.0, 1.0);
-      hsl.z = clamp(hsl.z + totalLumShift, 0.0, 1.0);
-    }
-    return hsl2rgb(hsl);
-  }
-
-  float calcLuminance(vec3 c) {
-    return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-  }
-
-  vec3 applySplitTone(vec3 color) {
-    float lum = calcLuminance(color);
-    float shadowEnd = 0.25 + u_splitBalance * 0.15;
-    float highlightStart = 0.75 + u_splitBalance * 0.15;
-    float midpoint = 0.5 + u_splitBalance * 0.15;
-    
-    float shadowWeight = smoothstep(shadowEnd + 0.1, shadowEnd - 0.1, lum);
-    float highlightWeight = smoothstep(highlightStart - 0.1, highlightStart + 0.1, lum);
-    
-    // Midtone weight: strongest in the middle zone
-    float midtoneWeight = 1.0 - smoothstep(0.0, shadowEnd + 0.1, abs(lum - midpoint));
-    midtoneWeight *= (1.0 - shadowWeight) * (1.0 - highlightWeight);
-    midtoneWeight = clamp(midtoneWeight * 2.0, 0.0, 1.0);
-    
-    vec3 highlightTint = hsl2rgb(vec3(u_splitHighlightHue * 360.0, 1.0, 0.5));
-    vec3 midtoneTint = hsl2rgb(vec3(u_splitMidtoneHue * 360.0, 1.0, 0.5));
-    vec3 shadowTint = hsl2rgb(vec3(u_splitShadowHue * 360.0, 1.0, 0.5));
-    
-    vec3 result = color;
-    if (shadowWeight > 0.0 && u_splitShadowSat > 0.0) {
-      result = mix(result, result * shadowTint / 0.5, shadowWeight * u_splitShadowSat);
-    }
-    if (midtoneWeight > 0.0 && u_splitMidtoneSat > 0.0) {
-      result = mix(result, result * midtoneTint / 0.5, midtoneWeight * u_splitMidtoneSat);
-    }
-    if (highlightWeight > 0.0 && u_splitHighlightSat > 0.0) {
-      result = mix(result, result * highlightTint / 0.5, highlightWeight * u_splitHighlightSat);
-    }
-    return clamp(result, 0.0, 1.0);
-  }
-
-  // Film Curve: Apply H&D density model to transmittance
-  float applyFilmCurve(float value) {
-    float gamma = u_filmCurveGamma;
-    float dMin = u_filmCurveDMin;
-    float dMax = u_filmCurveDMax;
-    
-    float normalized = clamp(value, 0.001, 1.0);
-    float density = -log(normalized) / log(10.0);
-    float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
-    float gammaApplied = pow(densityNorm, gamma);
-    float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
-    float outputT = pow(10.0, -adjustedDensity);
-    return clamp(outputT, 0.0, 1.0);
-  }
-
-  void main(){
-    vec3 c = texture(u_tex, v_uv).rgb;
-    
-    // Film Curve (before inversion) - only when inverting negatives
-    if (u_inverted > 0.5 && u_filmCurveEnabled > 0.5) {
-      c.r = applyFilmCurve(c.r);
-      c.g = applyFilmCurve(c.g);
-      c.b = applyFilmCurve(c.b);
-    }
-    
-    // Base Correction - neutralize film base color
-    // Supports two modes: linear (gains) or log (density subtraction)
-    if (u_baseMode > 0.5) {
-      // Log mode: density domain subtraction (more accurate)
-      float minT = 0.001;
-      float log10 = log(10.0);
-      
-      float Tr = max(c.r, minT);
-      float Dr = -log(Tr) / log10;
-      c.r = pow(10.0, -(Dr - u_baseDensity.r));
-      
-      float Tg = max(c.g, minT);
-      float Dg = -log(Tg) / log10;
-      c.g = pow(10.0, -(Dg - u_baseDensity.g));
-      
-      float Tb = max(c.b, minT);
-      float Db = -log(Tb) / log10;
-      c.b = pow(10.0, -(Db - u_baseDensity.b));
-      
-      c = clamp(c, 0.0, 1.0);
-    } else {
-      // Linear mode: simple gain multiplication
-      c = c * u_baseGains;
-      c = clamp(c, 0.0, 1.0);
-    }
-    
-    // Density Levels (Log domain auto-levels)
-    // Maps detected [Dmin, Dmax] to output range based on avgRange
-    // Uses dynamic avgRange (average of channel ranges) to preserve overall contrast
-    // while normalizing channel balance - matches FilmLabWebGL.js implementation
-    if (u_densityLevelsEnabled > 0.5) {
-      float minT = 0.001;
-      float log10 = log(10.0);
-      
-      // Calculate average range across channels for output scaling
-      // This preserves overall contrast while normalizing channel balance
-      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
-      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
-      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
-      float avgRange = (rangeR + rangeG + rangeB) / 3.0;
-      // Clamp average range to reasonable bounds
-      avgRange = max(avgRange, 0.5);  // Minimum 0.5 to avoid extreme compression
-      avgRange = min(avgRange, 2.5);  // Maximum 2.5 to avoid extreme expansion
-      
-      // Red channel
-      float Tr = max(c.r, minT);
-      float Dr = -log(Tr) / log10;
-      if (rangeR > 0.001) {
-        // Normalize to [0, 1], then scale to avgRange
-        float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
-        float DrNew = normR * avgRange;
-        c.r = pow(10.0, -DrNew);
-      }
-      
-      // Green channel
-      float Tg = max(c.g, minT);
-      float Dg = -log(Tg) / log10;
-      if (rangeG > 0.001) {
-        float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
-        float DgNew = normG * avgRange;
-        c.g = pow(10.0, -DgNew);
-      }
-      
-      // Blue channel
-      float Tb = max(c.b, minT);
-      float Db = -log(Tb) / log10;
-      if (rangeB > 0.001) {
-        float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
-        float DbNew = normB * avgRange;
-        c.b = pow(10.0, -DbNew);
-      }
-      
-      c = clamp(c, 0.0, 1.0);
-    }
-    
-    // Inversion
-    if (u_inverted > 0.5) {
-      if (u_logMode > 0.5) {
-        c = vec3(1.0) - log(c * 255.0 + vec3(1.0)) / log(256.0);
-      } else {
-        c = vec3(1.0) - c;
-      }
-    }
-
-    // =========================================================================
-    // 【重要】3D LUT - 在反转后立即应用
-    // 对于"反转 LUT"类型，LUT 必须在此处应用才能正确工作
-    // 之后的曝光/对比度等调整将作用于 LUT 输出
-    // =========================================================================
-    if (u_hasLut3d > 0.5) {
-       float size = u_lut3dSize;
-       vec3 uvw = c * (size - 1.0) / size + 0.5 / size;
-       c = texture(u_lut3d, uvw).rgb;
-    }
-
-    // WB gains
-    c *= u_gains;
-
-    // Exposure
-    float expFactor = pow(2.0, u_exposure / 50.0);
-    c *= expFactor;
-
-    // Contrast around 0.5
-    float ctr = u_contrast;
-    float factor = (259.0 * (ctr + 255.0)) / (255.0 * (259.0 - ctr));
-    c = (c - 0.5) * factor + 0.5;
-
-    // Blacks & Whites window
-    float blackPoint = -(u_blacks) * 0.002;
-    float whitePoint = 1.0 - (u_whites) * 0.002;
-    if (whitePoint != blackPoint) {
-      c = (c - vec3(blackPoint)) / (whitePoint - blackPoint);
-    }
-
-    // Shadows and Highlights adjustments
-    float sFactor = u_shadows * 0.005;
-    float hFactor = u_highlights * 0.005;
-    if (sFactor != 0.0) {
-      c += sFactor * pow(1.0 - c, vec3(2.0)) * c * 4.0;
-    }
-    if (hFactor != 0.0) {
-      c += hFactor * pow(c, vec3(2.0)) * (1.0 - c) * 4.0;
-    }
-
-    c = clamp(c, 0.0, 1.0);
-
-    // Tone Curve
-    float r = texture(u_toneCurveTex, vec2(c.r, 0.5)).r;
-    float g = texture(u_toneCurveTex, vec2(c.g, 0.5)).g;
-    float b = texture(u_toneCurveTex, vec2(c.b, 0.5)).b;
-    c = vec3(r, g, b);
-
-    // HSL Adjustment
-    c = applyHSLAdjustment(c);
-
-    // Split Toning
-    c = applySplitTone(c);
-
-    // 【注意】3D LUT 已移动到反转后立即应用（见上方）
-    // 保留此注释以便追溯
-
-    fragColor = vec4(c, 1.0);
-  }
-`;
+// ============================================================================
+// Fragment Shaders — composed from shared GLSL modules (Q15)
+// ============================================================================
+const FS_GL2 = buildFragmentShader(true);
 
 const VS_GL1 = `
   attribute vec2 a_pos;
@@ -493,325 +123,7 @@ const VS_GL1 = `
   }
 `;
 
-const FS_GL1 = `
-  precision highp float;
-  varying vec2 v_uv;
-  uniform sampler2D u_tex;
-  uniform sampler2D u_toneCurveTex;
-  
-  // No 3D LUT support in fallback
-  uniform float u_inverted;
-  uniform float u_logMode;
-  uniform vec3 u_gains;
-  uniform float u_exposure;
-  uniform float u_contrast;
-  uniform float u_highlights;
-  uniform float u_shadows;
-  uniform float u_whites;
-  uniform float u_blacks;
-
-  // Film Curve parameters
-  uniform float u_filmCurveEnabled;
-  uniform float u_filmCurveGamma;
-  uniform float u_filmCurveDMin;
-  uniform float u_filmCurveDMax;
-
-  // Film Base Correction (Pre-Inversion)
-  uniform float u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
-  uniform vec3 u_baseGains; // Linear mode: r,g,b gains
-  uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
-
-  // Density Levels (Log domain auto-levels)
-  uniform float u_densityLevelsEnabled; // 0 = disabled, 1 = enabled
-  uniform vec3 u_densityLevelsMin; // R,G,B minimum density values
-  uniform vec3 u_densityLevelsMax; // R,G,B maximum density values
-
-  // HSL parameters (8 channels)
-  uniform vec3 u_hslRed;
-  uniform vec3 u_hslOrange;
-  uniform vec3 u_hslYellow;
-  uniform vec3 u_hslGreen;
-  uniform vec3 u_hslCyan;
-  uniform vec3 u_hslBlue;
-  uniform vec3 u_hslPurple;
-  uniform vec3 u_hslMagenta;
-
-  // Split Toning parameters
-  uniform float u_splitHighlightHue;
-  uniform float u_splitHighlightSat;
-  uniform float u_splitMidtoneHue;
-  uniform float u_splitMidtoneSat;
-  uniform float u_splitShadowHue;
-  uniform float u_splitShadowSat;
-  uniform float u_splitBalance;
-
-  // HSL helper functions
-  vec3 rgb2hsl(vec3 color) {
-    float maxC = max(max(color.r, color.g), color.b);
-    float minC = min(min(color.r, color.g), color.b);
-    float delta = maxC - minC;
-    float L = (maxC + minC) * 0.5;
-    float H = 0.0;
-    float S = 0.0;
-    if (delta > 0.001) {
-      S = (L < 0.5) ? (delta / (maxC + minC)) : (delta / (2.0 - maxC - minC));
-      if (maxC == color.r) {
-        H = (color.g - color.b) / delta + (color.g < color.b ? 6.0 : 0.0);
-      } else if (maxC == color.g) {
-        H = (color.b - color.r) / delta + 2.0;
-      } else {
-        H = (color.r - color.g) / delta + 4.0;
-      }
-      H *= 60.0;
-    }
-    return vec3(H, S, L);
-  }
-
-  float hue2rgb(float p, float q, float t) {
-    if (t < 0.0) t += 1.0;
-    if (t > 1.0) t -= 1.0;
-    if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
-    if (t < 0.5) return q;
-    if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
-    return p;
-  }
-
-  vec3 hsl2rgb(vec3 hsl) {
-    float h = hsl.x / 360.0;
-    float s = hsl.y;
-    float l = hsl.z;
-    if (s < 0.001) return vec3(l);
-    float q = (l < 0.5) ? (l * (1.0 + s)) : (l + s - l * s);
-    float p = 2.0 * l - q;
-    return vec3(
-      hue2rgb(p, q, h + 1.0/3.0),
-      hue2rgb(p, q, h),
-      hue2rgb(p, q, h - 1.0/3.0)
-    );
-  }
-
-  float hslChannelWeight(float hue, float centerHue) {
-    float dist = min(abs(hue - centerHue), 360.0 - abs(hue - centerHue));
-    return max(0.0, 1.0 - dist / 30.0);
-  }
-
-  vec3 applyHSLAdjustment(vec3 color) {
-    vec3 hsl = rgb2hsl(color);
-    float h = hsl.x;
-    float totalHueShift = 0.0;
-    float totalSatMult = 1.0;
-    float totalLumShift = 0.0;
-    float totalWeight = 0.0;
-    float w;
-    
-    w = hslChannelWeight(h, 0.0);
-    if (w > 0.0) { totalHueShift += u_hslRed.x * w; totalSatMult *= 1.0 + (u_hslRed.y / 100.0) * w; totalLumShift += (u_hslRed.z / 100.0) * 0.5 * w; totalWeight += w; }
-    w = hslChannelWeight(h, 30.0);
-    if (w > 0.0) { totalHueShift += u_hslOrange.x * w; totalSatMult *= 1.0 + (u_hslOrange.y / 100.0) * w; totalLumShift += (u_hslOrange.z / 100.0) * 0.5 * w; totalWeight += w; }
-    w = hslChannelWeight(h, 60.0);
-    if (w > 0.0) { totalHueShift += u_hslYellow.x * w; totalSatMult *= 1.0 + (u_hslYellow.y / 100.0) * w; totalLumShift += (u_hslYellow.z / 100.0) * 0.5 * w; totalWeight += w; }
-    w = hslChannelWeight(h, 120.0);
-    if (w > 0.0) { totalHueShift += u_hslGreen.x * w; totalSatMult *= 1.0 + (u_hslGreen.y / 100.0) * w; totalLumShift += (u_hslGreen.z / 100.0) * 0.5 * w; totalWeight += w; }
-    w = hslChannelWeight(h, 180.0);
-    if (w > 0.0) { totalHueShift += u_hslCyan.x * w; totalSatMult *= 1.0 + (u_hslCyan.y / 100.0) * w; totalLumShift += (u_hslCyan.z / 100.0) * 0.5 * w; totalWeight += w; }
-    w = hslChannelWeight(h, 240.0);
-    if (w > 0.0) { totalHueShift += u_hslBlue.x * w; totalSatMult *= 1.0 + (u_hslBlue.y / 100.0) * w; totalLumShift += (u_hslBlue.z / 100.0) * 0.5 * w; totalWeight += w; }
-    w = hslChannelWeight(h, 270.0);
-    if (w > 0.0) { totalHueShift += u_hslPurple.x * w; totalSatMult *= 1.0 + (u_hslPurple.y / 100.0) * w; totalLumShift += (u_hslPurple.z / 100.0) * 0.5 * w; totalWeight += w; }
-    w = hslChannelWeight(h, 300.0);
-    if (w > 0.0) { totalHueShift += u_hslMagenta.x * w; totalSatMult *= 1.0 + (u_hslMagenta.y / 100.0) * w; totalLumShift += (u_hslMagenta.z / 100.0) * 0.5 * w; totalWeight += w; }
-
-    if (totalWeight > 0.0) {
-      hsl.x = mod(hsl.x + totalHueShift, 360.0);
-      hsl.y = clamp(hsl.y * totalSatMult, 0.0, 1.0);
-      hsl.z = clamp(hsl.z + totalLumShift, 0.0, 1.0);
-    }
-    return hsl2rgb(hsl);
-  }
-
-  float calcLuminance(vec3 c) {
-    return 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-  }
-
-  vec3 applySplitTone(vec3 color) {
-    float lum = calcLuminance(color);
-    float shadowEnd = 0.25 + u_splitBalance * 0.15;
-    float highlightStart = 0.75 + u_splitBalance * 0.15;
-    float midpoint = 0.5 + u_splitBalance * 0.15;
-    
-    float shadowWeight = smoothstep(shadowEnd + 0.1, shadowEnd - 0.1, lum);
-    float highlightWeight = smoothstep(highlightStart - 0.1, highlightStart + 0.1, lum);
-    
-    // Midtone weight: strongest in the middle zone
-    float midtoneWeight = 1.0 - smoothstep(0.0, shadowEnd + 0.1, abs(lum - midpoint));
-    midtoneWeight *= (1.0 - shadowWeight) * (1.0 - highlightWeight);
-    midtoneWeight = clamp(midtoneWeight * 2.0, 0.0, 1.0);
-    
-    vec3 highlightTint = hsl2rgb(vec3(u_splitHighlightHue * 360.0, 1.0, 0.5));
-    vec3 midtoneTint = hsl2rgb(vec3(u_splitMidtoneHue * 360.0, 1.0, 0.5));
-    vec3 shadowTint = hsl2rgb(vec3(u_splitShadowHue * 360.0, 1.0, 0.5));
-    
-    vec3 result = color;
-    if (shadowWeight > 0.0 && u_splitShadowSat > 0.0) {
-      result = mix(result, result * shadowTint / 0.5, shadowWeight * u_splitShadowSat);
-    }
-    if (midtoneWeight > 0.0 && u_splitMidtoneSat > 0.0) {
-      result = mix(result, result * midtoneTint / 0.5, midtoneWeight * u_splitMidtoneSat);
-    }
-    if (highlightWeight > 0.0 && u_splitHighlightSat > 0.0) {
-      result = mix(result, result * highlightTint / 0.5, highlightWeight * u_splitHighlightSat);
-    }
-    return clamp(result, 0.0, 1.0);
-  }
-
-  // Film Curve: Apply H&D density model to transmittance
-  float applyFilmCurve(float value) {
-    float gamma = u_filmCurveGamma;
-    float dMin = u_filmCurveDMin;
-    float dMax = u_filmCurveDMax;
-    
-    float normalized = clamp(value, 0.001, 1.0);
-    float density = -log(normalized) / log(10.0);
-    float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
-    float gammaApplied = pow(densityNorm, gamma);
-    float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
-    float outputT = pow(10.0, -adjustedDensity);
-    return clamp(outputT, 0.0, 1.0);
-  }
-
-  void main(){
-    vec3 c = texture2D(u_tex, v_uv).rgb;
-    
-    // Film Curve (before inversion) - only when inverting negatives
-    if (u_inverted > 0.5 && u_filmCurveEnabled > 0.5) {
-      c.r = applyFilmCurve(c.r);
-      c.g = applyFilmCurve(c.g);
-      c.b = applyFilmCurve(c.b);
-    }
-    
-    // Base Correction - neutralize film base color
-    // Supports two modes: linear (gains) or log (density subtraction)
-    if (u_baseMode > 0.5) {
-      // Log mode: density domain subtraction (more accurate)
-      float minT = 0.001;
-      float log10 = log(10.0);
-      
-      float Tr = max(c.r, minT);
-      float Dr = -log(Tr) / log10;
-      c.r = pow(10.0, -(Dr - u_baseDensity.r));
-      
-      float Tg = max(c.g, minT);
-      float Dg = -log(Tg) / log10;
-      c.g = pow(10.0, -(Dg - u_baseDensity.g));
-      
-      float Tb = max(c.b, minT);
-      float Db = -log(Tb) / log10;
-      c.b = pow(10.0, -(Db - u_baseDensity.b));
-      
-      c = clamp(c, 0.0, 1.0);
-    } else {
-      // Linear mode: simple gain multiplication
-      c = c * u_baseGains;
-      c = clamp(c, 0.0, 1.0);
-    }
-    
-    // Density Levels (Log domain auto-levels)
-    // Maps detected [Dmin, Dmax] to output range based on avgRange
-    // Uses dynamic avgRange (average of channel ranges) to preserve overall contrast
-    // while normalizing channel balance - matches FilmLabWebGL.js implementation
-    if (u_densityLevelsEnabled > 0.5) {
-      float minT = 0.001;
-      float log10 = log(10.0);
-      
-      // Calculate average range across channels for output scaling
-      // This preserves overall contrast while normalizing channel balance
-      float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
-      float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
-      float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
-      float avgRange = (rangeR + rangeG + rangeB) / 3.0;
-      // Clamp average range to reasonable bounds
-      avgRange = max(avgRange, 0.5);  // Minimum 0.5 to avoid extreme compression
-      avgRange = min(avgRange, 2.5);  // Maximum 2.5 to avoid extreme expansion
-      
-      // Red channel
-      float Tr = max(c.r, minT);
-      float Dr = -log(Tr) / log10;
-      if (rangeR > 0.001) {
-        // Normalize to [0, 1], then scale to avgRange
-        float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
-        float DrNew = normR * avgRange;
-        c.r = pow(10.0, -DrNew);
-      }
-      
-      // Green channel
-      float Tg = max(c.g, minT);
-      float Dg = -log(Tg) / log10;
-      if (rangeG > 0.001) {
-        float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
-        float DgNew = normG * avgRange;
-        c.g = pow(10.0, -DgNew);
-      }
-      
-      // Blue channel
-      float Tb = max(c.b, minT);
-      float Db = -log(Tb) / log10;
-      if (rangeB > 0.001) {
-        float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
-        float DbNew = normB * avgRange;
-        c.b = pow(10.0, -DbNew);
-      }
-      
-      c = clamp(c, 0.0, 1.0);
-    }
-    
-    if (u_inverted > 0.5) {
-      if (u_logMode > 0.5) {
-        c = vec3(1.0) - log(c * 255.0 + vec3(1.0)) / log(256.0);
-      } else {
-        c = vec3(1.0) - c;
-      }
-    }
-
-    c *= u_gains;
-
-    float expFactor = pow(2.0, u_exposure / 50.0);
-    c *= expFactor;
-
-    float ctr = u_contrast;
-    float factor = (259.0 * (ctr + 255.0)) / (255.0 * (259.0 - ctr));
-    c = (c - 0.5) * factor + 0.5;
-
-    float blackPoint = -(u_blacks) * 0.002;
-    float whitePoint = 1.0 - (u_whites) * 0.002;
-    if (whitePoint != blackPoint) {
-      c = (c - vec3(blackPoint)) / (whitePoint - blackPoint);
-    }
-
-    float sFactor = u_shadows * 0.005;
-    float hFactor = u_highlights * 0.005;
-    if (sFactor != 0.0) {
-      c += sFactor * pow(1.0 - c, vec3(2.0)) * c * 4.0;
-    }
-    if (hFactor != 0.0) {
-      c += hFactor * pow(c, vec3(2.0)) * (1.0 - c) * 4.0;
-    }
-
-    c = clamp(c, 0.0, 1.0);
-
-    float r = texture2D(u_toneCurveTex, vec2(c.r, 0.5)).r;
-    float g = texture2D(u_toneCurveTex, vec2(c.g, 0.5)).g;
-    float b = texture2D(u_toneCurveTex, vec2(c.b, 0.5)).b;
-    c = vec3(r, g, b);
-
-    // HSL Adjustment
-    c = applyHSLAdjustment(c);
-
-    // Split Toning
-    c = applySplitTone(c);
-
-    gl_FragColor = vec4(c, 1.0);
-  }
-`;
+const FS_GL1 = buildFragmentShader(false);
 
 function runJob(job) {
   if (!gl) throw new Error('WebGL not initialized');
@@ -843,10 +155,8 @@ function runJob(job) {
       canvas.width = Math.max(1, Math.round(rotW * crop.w));
       canvas.height = Math.max(1, Math.round(rotH * crop.h));
 
-      // Setup GL state
-      const vsSrc = isWebGL2 ? VS_GL2 : VS_GL1;
-      const fsSrc = isWebGL2 ? FS_GL2 : FS_GL1;
-      const prog = createProgram(gl, vsSrc, fsSrc);
+      // Setup GL state — use cached shader program (Q19: avoid recompile per frame)
+      const prog = getOrCreateProgram(gl, isWebGL2);
       gl.useProgram(prog);
 
       // Helper to map UV from Rotated Space (0..1) to Source Space (0..1)
@@ -921,29 +231,53 @@ function runJob(job) {
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       }
 
-      // Tone Curve Texture (1D LUT)
+      // Tone Curve Texture (1D LUT) — Phase 2.4: prefer Float32 1024×1 RGBA
       const toneCurveTex = gl.createTexture();
       gl.activeTexture(gl.TEXTURE1);
       gl.bindTexture(gl.TEXTURE_2D, toneCurveTex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      
-      let toneCurveData;
-      if (params && params.toneCurveLut && params.toneCurveLut.length === 256 * 4) {
-        toneCurveData = new Uint8Array(params.toneCurveLut);
-      } else {
-        // Default identity LUT
-        toneCurveData = new Uint8Array(256 * 4);
-        for(let i=0; i<256; i++) {
-          toneCurveData[i*4+0] = i;
-          toneCurveData[i*4+1] = i;
-          toneCurveData[i*4+2] = i;
-          toneCurveData[i*4+3] = 255;
+
+      // Choose float or 8-bit path based on data + GPU capability
+      const hasFloatLut = params && params.toneCurveLutFloat && params.toneCurveLutFloat.length > 0;
+      const useFloat = hasFloatLut && _hasFloatTexture;
+
+      if (useFloat) {
+        // Phase 2.4: Float32 RGBA texture (1024×1)
+        const floatArr = new Float32Array(params.toneCurveLutFloat);
+        const resolution = floatArr.length / 4;
+
+        // Filtering: prefer LINEAR if extension available, fallback to NEAREST
+        const filterMode = _hasFloatLinear ? gl.LINEAR : gl.NEAREST;
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filterMode);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filterMode);
+
+        if (isWebGL2) {
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, resolution, 1, 0, gl.RGBA, gl.FLOAT, floatArr);
+        } else {
+          // WebGL1 + OES_texture_float
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, resolution, 1, 0, gl.RGBA, gl.FLOAT, floatArr);
         }
+      } else {
+        // Legacy 8-bit path (RGBA UNSIGNED_BYTE 256×1)
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+        let toneCurveData;
+        if (params && params.toneCurveLut && params.toneCurveLut.length === 256 * 4) {
+          toneCurveData = new Uint8Array(params.toneCurveLut);
+        } else {
+          // Default identity LUT
+          toneCurveData = new Uint8Array(256 * 4);
+          for(let i=0; i<256; i++) {
+            toneCurveData[i*4+0] = i;
+            toneCurveData[i*4+1] = i;
+            toneCurveData[i*4+2] = i;
+            toneCurveData[i*4+3] = 255;
+          }
+        }
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, toneCurveData);
       }
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 256, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, toneCurveData);
 
       // 3D LUT Texture
       let hasLut3d = false;
@@ -968,14 +302,14 @@ function runJob(job) {
 
       // Uniforms
       gl.useProgram(prog); // Ensure program is active
-      const u_tex = gl.getUniformLocation(prog, 'u_tex');
-      gl.uniform1i(u_tex, 0); // Texture unit 0
+      const u_image = gl.getUniformLocation(prog, 'u_image');
+      gl.uniform1i(u_image, 0); // Texture unit 0
       
       const u_toneCurveTex = gl.getUniformLocation(prog, 'u_toneCurveTex');
       gl.uniform1i(u_toneCurveTex, 1); // Texture unit 1
 
-      const u_lut3d = gl.getUniformLocation(prog, 'u_lut3d');
-      gl.uniform1i(u_lut3d, 2); // Texture unit 2
+      const u_lut3dTex = gl.getUniformLocation(prog, 'u_lut3dTex');
+      gl.uniform1i(u_lut3dTex, 2); // Texture unit 2
 
       const u_hasLut3d = gl.getUniformLocation(prog, 'u_hasLut3d');
       gl.uniform1f(u_hasLut3d, hasLut3d ? 1.0 : 0.0);
@@ -986,8 +320,8 @@ function runJob(job) {
       const inverted = params && params.inverted ? 1.0 : 0.0;
       const u_inverted = gl.getUniformLocation(prog, 'u_inverted');
       gl.uniform1f(u_inverted, inverted);
-      const u_logMode = gl.getUniformLocation(prog, 'u_logMode');
-      gl.uniform1f(u_logMode, (params && params.inversionMode === 'log') ? 1.0 : 0.0);
+      const u_inversionMode = gl.getUniformLocation(prog, 'u_inversionMode');
+      gl.uniform1f(u_inversionMode, (params && params.inversionMode === 'log') ? 1.0 : 0.0);
       
       // Compute WB gains using the correct formula (matches server/client)
       const [rBal, gBal, bBal] = computeWBGains({
@@ -1012,15 +346,25 @@ function runJob(job) {
       const u_blacks = gl.getUniformLocation(prog, 'u_blacks');
       gl.uniform1f(u_blacks, (params?.blacks ?? 0));
 
-      // Film Curve uniforms
+      // Film Curve uniforms (Q13: per-channel gamma + toe/shoulder)
       const u_filmCurveEnabled = gl.getUniformLocation(prog, 'u_filmCurveEnabled');
       gl.uniform1f(u_filmCurveEnabled, (params?.filmCurveEnabled) ? 1.0 : 0.0);
       const u_filmCurveGamma = gl.getUniformLocation(prog, 'u_filmCurveGamma');
       gl.uniform1f(u_filmCurveGamma, (params?.filmCurveGamma ?? 0.6));
+      const u_filmCurveGammaR = gl.getUniformLocation(prog, 'u_filmCurveGammaR');
+      gl.uniform1f(u_filmCurveGammaR, (params?.filmCurveGammaR ?? params?.filmCurveGamma ?? 0.6));
+      const u_filmCurveGammaG = gl.getUniformLocation(prog, 'u_filmCurveGammaG');
+      gl.uniform1f(u_filmCurveGammaG, (params?.filmCurveGammaG ?? params?.filmCurveGamma ?? 0.6));
+      const u_filmCurveGammaB = gl.getUniformLocation(prog, 'u_filmCurveGammaB');
+      gl.uniform1f(u_filmCurveGammaB, (params?.filmCurveGammaB ?? params?.filmCurveGamma ?? 0.6));
       const u_filmCurveDMin = gl.getUniformLocation(prog, 'u_filmCurveDMin');
       gl.uniform1f(u_filmCurveDMin, (params?.filmCurveDMin ?? 0.1));
       const u_filmCurveDMax = gl.getUniformLocation(prog, 'u_filmCurveDMax');
       gl.uniform1f(u_filmCurveDMax, (params?.filmCurveDMax ?? 3.0));
+      const u_filmCurveToe = gl.getUniformLocation(prog, 'u_filmCurveToe');
+      gl.uniform1f(u_filmCurveToe, (params?.filmCurveToe ?? 0));
+      const u_filmCurveShoulder = gl.getUniformLocation(prog, 'u_filmCurveShoulder');
+      gl.uniform1f(u_filmCurveShoulder, (params?.filmCurveShoulder ?? 0));
 
       // Base Correction (Pre-Inversion)
       // Support both linear (gains) and log (density) modes
@@ -1068,6 +412,13 @@ function runJob(job) {
       gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslPurple'), new Float32Array(getHSL('purple')));
       gl.uniform3fv(gl.getUniformLocation(prog, 'u_hslMagenta'), new Float32Array(getHSL('magenta')));
 
+      // Curves, HSL, SplitTone enable flags (shared shader requires these)
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_useCurves'), 1.0); // Always pass curves (identity if none)
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_useHSL'), 1.0); // Always enabled, no-op if params are 0
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_useSplitTone'), 1.0); // Always enabled, no-op if sat=0
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_lutIntensity'), params?.lut3dIntensity ?? 1.0);
+      gl.uniform1f(gl.getUniformLocation(prog, 'u_lutSize'), lut3dSize);
+
       // Split Toning Uniforms
       const splitToning = params?.splitToning || {};
       gl.uniform1f(gl.getUniformLocation(prog, 'u_splitHighlightHue'), (splitToning.highlights?.hue ?? 0) / 360.0);
@@ -1092,7 +443,7 @@ function runJob(job) {
       gl.deleteTexture(toneCurveTex);
       if (lut3dTex) gl.deleteTexture(lut3dTex);
       gl.deleteBuffer(vbo);
-      gl.deleteProgram(prog);
+      // Note: shader program is cached (Q19) — do NOT delete it here
 
       // Encode canvas to JPEG and return
       canvas.toBlob((blobOut) => {
@@ -1110,7 +461,7 @@ function runJob(job) {
           ipcRenderer.send('filmlab-gpu:result', { jobId, ok:false, error:'blob_read_failed' });
         };
         reader.readAsArrayBuffer(blobOut);
-      }, 'image/jpeg', 0.95);
+      }, 'image/jpeg', params?.jpegQuality ?? 0.95);
     } catch (err) {
       ipcRenderer.send('filmlab-gpu:result', { jobId, ok:false, error: (err && err.message) || String(err) });
     } finally {

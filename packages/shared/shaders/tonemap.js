@@ -1,39 +1,41 @@
 /**
  * GLSL Tone Mapping Functions
  * 
- * 色调映射：对比度、曝光、高光/阴影、白/黑电平、曲线LUT
+ * 色调映射：对比度、曝光、高光/阴影、白/黑电平、曲线LUT、高光压缩
+ * 
+ * 算法匹配 CPU RenderCore.processPixelFloat()：
+ * - 对比度以感知中灰 0.46 为中心 (18% 反射率)
+ * - Bernstein basis 阴影/高光恢复
+ * - tanh 高光滚降压缩 (threshold=0.8)
+ * 
+ * @version 2.0.0 — 修复对比度中灰点，添加高光压缩
  */
 
 const TONEMAP_GLSL = `
 // ============================================================================
-// Contrast
+// Contrast — around perceptual mid-gray (0.46, matching CPU CONTRAST_MID_GRAY)
 // ============================================================================
 
-// Apply contrast adjustment using standard formula
-// contrast range: -100 to +100, mapped to factor
 vec3 applyContrast(vec3 c, float contrast) {
-  // Convert from -100..100 to a factor
-  float factor = (259.0 * (contrast + 255.0)) / (255.0 * (259.0 - contrast));
-  return (c - vec3(0.5)) * factor + vec3(0.5);
+  // contrast is UI value -100..100, scale to -255..255 for the standard formula
+  float C = contrast * 2.55;
+  float factor = (259.0 * (C + 255.0)) / (255.0 * (259.0 - C));
+  float midGray = 0.46;
+  return (c - vec3(midGray)) * factor + vec3(midGray);
 }
 
 // ============================================================================
-// Highlights & Shadows
+// Highlights & Shadows — Bernstein basis (matches CPU RenderCore)
 // ============================================================================
 
-// Highlights/Shadows recovery using quadratic falloff
-// shadows: affects dark regions (luminance < 0.5)
-// highlights: affects bright regions (luminance > 0.5)
 vec3 applyHighlightsShadows(vec3 c) {
-  float sFactor = u_shadows * 0.005;    // Scale to reasonable range
+  float sFactor = u_shadows * 0.005;
   float hFactor = u_highlights * 0.005;
   
-  // Shadow lift: stronger effect on darker values
   if (sFactor != 0.0) {
     c += sFactor * pow(1.0 - c, vec3(2.0)) * c * 4.0;
   }
   
-  // Highlight pull: stronger effect on brighter values
   if (hFactor != 0.0) {
     c += hFactor * pow(c, vec3(2.0)) * (1.0 - c) * 4.0;
   }
@@ -45,9 +47,6 @@ vec3 applyHighlightsShadows(vec3 c) {
 // Whites & Blacks (Level Adjustment)
 // ============================================================================
 
-// Adjust black and white points
-// whites: compresses highlights (positive = more headroom)
-// blacks: lifts shadows (positive = crushed blacks)
 vec3 applyWhitesBlacks(vec3 c) {
   float blackPoint = -(u_blacks) * 0.002;
   float whitePoint = 1.0 - (u_whites) * 0.002;
@@ -60,22 +59,37 @@ vec3 applyWhitesBlacks(vec3 c) {
 }
 
 // ============================================================================
+// Highlight Roll-Off — C² continuous tanh shoulder compression
+// Matches CPU MathOps.highlightRollOff()
+// ============================================================================
+
+vec3 applyHighlightRollOff(vec3 c) {
+  float maxVal = max(c.r, max(c.g, c.b));
+  float threshold = 0.8;
+  if (maxVal > threshold) {
+    float headroom = 1.0 - threshold;
+    float tRO = min((maxVal - threshold) / headroom, 10.0);
+    float e2t = exp(2.0 * tRO);
+    float tanhT = (e2t - 1.0) / (e2t + 1.0);
+    float compressed = threshold + headroom * tanhT;
+    c *= (compressed / maxVal);
+  }
+  return c;
+}
+
+// ============================================================================
 // 1D Curve LUT Sampling
 // ============================================================================
 
-// Sample a single 1D curve LUT
 float sampleCurve(sampler2D t, float v) {
   return texture2D(t, vec2(v, 0.5)).r;
 }
 
-// Apply RGB and per-channel curves
 vec3 applyCurvesLUT(vec3 c) {
-  // First apply master RGB curve
   float r = sampleCurve(u_curveRGB, c.r);
   float g = sampleCurve(u_curveRGB, c.g);
   float b = sampleCurve(u_curveRGB, c.b);
   
-  // Then apply individual channel curves
   r = sampleCurve(u_curveR, r);
   g = sampleCurve(u_curveG, g);
   b = sampleCurve(u_curveB, b);

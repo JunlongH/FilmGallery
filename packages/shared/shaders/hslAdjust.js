@@ -2,26 +2,34 @@
  * GLSL HSL Adjustment Functions
  * 
  * 8通道 HSL 调整：红/橙/黄/绿/青/蓝/紫/洋红
- * 每个通道可独立调整色相偏移、饱和度乘数、明度偏移
+ * 每个通道可独立调整色相偏移、饱和度、明度
+ * 
+ * 算法匹配 CPU filmLabHSL.js：
+ * - 余弦平滑权重过渡
+ * - 非对称饱和度映射 (正值：向1扩展，负值：向0压缩)
+ * - 非对称明度映射 (带0.5阻尼因子)
+ * - 重叠通道权重归一化
+ * - 洋红中心色相 330° (匹配 HSL_CHANNELS 定义)
+ * 
+ * @version 2.0.0 — 修复 BUG-04/05/06/07，与 CPU/GPU Export 路径一致
  */
 
 const HSL_ADJUST_GLSL = `
 // ============================================================================
 // HSL Channel Weight Calculation
+// Cosine smooth transition: 0.5*(1+cos(t*PI))  — matches CPU filmLabHSL.js
 // ============================================================================
 
-// 计算当前色相到目标通道中心的权重
-// 使用余弦平滑过渡以避免硬边界
-float hslChannelWeight(float hue, float center, float range) {
-  // 处理色相环绕（0°和360°相邻）
-  float dist = min(abs(hue - center), min(abs(hue - center + 360.0), abs(hue - center - 360.0)));
-  if (dist > range) return 0.0;
-  // Cosine smooth transition
-  return 0.5 * (1.0 + cos(3.14159265 * dist / range));
+float hslChannelWeight(float hue, float centerHue, float hueRange) {
+  float dist = min(abs(hue - centerHue), 360.0 - abs(hue - centerHue));
+  if (dist >= hueRange) return 0.0;
+  float t = dist / hueRange;
+  return 0.5 * (1.0 + cos(t * 3.14159265));
 }
 
 // ============================================================================
 // HSL Adjustment Application
+// Matches CPU filmLabHSL.js — asymmetric sat/lum, weight normalization
 // ============================================================================
 
 vec3 applyHSLAdjustment(vec3 color) {
@@ -29,82 +37,61 @@ vec3 applyHSLAdjustment(vec3 color) {
   float h = hsl.x;
   float s = hsl.y;
   float l = hsl.z;
-  
-  float totalHueShift = 0.0;
-  float totalSatMult = 1.0;
-  float totalLumShift = 0.0;
+
+  float hueAdjust = 0.0;
+  float satAdjust = 0.0;
+  float lumAdjust = 0.0;
+  float totalWeight = 0.0;
   float w;
-  
-  // Red channel (center: 0°, range: 30°)
+
+  // 8 channels: hue centers & ranges from HSL_CHANNELS (filmLabHSL.js)
   w = hslChannelWeight(h, 0.0, 30.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslRed.x * w;
-    totalSatMult *= 1.0 + (u_hslRed.y / 100.0) * w;
-    totalLumShift += (u_hslRed.z / 100.0) * 0.5 * w;
-  }
-  
-  // Orange channel (center: 30°, range: 30°)
+  if (w > 0.0) { hueAdjust += u_hslRed.x * w; satAdjust += (u_hslRed.y / 100.0) * w; lumAdjust += (u_hslRed.z / 100.0) * w; totalWeight += w; }
   w = hslChannelWeight(h, 30.0, 30.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslOrange.x * w;
-    totalSatMult *= 1.0 + (u_hslOrange.y / 100.0) * w;
-    totalLumShift += (u_hslOrange.z / 100.0) * 0.5 * w;
-  }
-  
-  // Yellow channel (center: 60°, range: 30°)
+  if (w > 0.0) { hueAdjust += u_hslOrange.x * w; satAdjust += (u_hslOrange.y / 100.0) * w; lumAdjust += (u_hslOrange.z / 100.0) * w; totalWeight += w; }
   w = hslChannelWeight(h, 60.0, 30.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslYellow.x * w;
-    totalSatMult *= 1.0 + (u_hslYellow.y / 100.0) * w;
-    totalLumShift += (u_hslYellow.z / 100.0) * 0.5 * w;
-  }
-  
-  // Green channel (center: 120°, range: 45°) - wider for green tones
+  if (w > 0.0) { hueAdjust += u_hslYellow.x * w; satAdjust += (u_hslYellow.y / 100.0) * w; lumAdjust += (u_hslYellow.z / 100.0) * w; totalWeight += w; }
   w = hslChannelWeight(h, 120.0, 45.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslGreen.x * w;
-    totalSatMult *= 1.0 + (u_hslGreen.y / 100.0) * w;
-    totalLumShift += (u_hslGreen.z / 100.0) * 0.5 * w;
-  }
-  
-  // Cyan channel (center: 180°, range: 30°)
+  if (w > 0.0) { hueAdjust += u_hslGreen.x * w; satAdjust += (u_hslGreen.y / 100.0) * w; lumAdjust += (u_hslGreen.z / 100.0) * w; totalWeight += w; }
   w = hslChannelWeight(h, 180.0, 30.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslCyan.x * w;
-    totalSatMult *= 1.0 + (u_hslCyan.y / 100.0) * w;
-    totalLumShift += (u_hslCyan.z / 100.0) * 0.5 * w;
-  }
-  
-  // Blue channel (center: 240°, range: 45°) - wider for blue tones
+  if (w > 0.0) { hueAdjust += u_hslCyan.x * w; satAdjust += (u_hslCyan.y / 100.0) * w; lumAdjust += (u_hslCyan.z / 100.0) * w; totalWeight += w; }
   w = hslChannelWeight(h, 240.0, 45.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslBlue.x * w;
-    totalSatMult *= 1.0 + (u_hslBlue.y / 100.0) * w;
-    totalLumShift += (u_hslBlue.z / 100.0) * 0.5 * w;
-  }
-  
-  // Purple channel (center: 280°, range: 30°)
+  if (w > 0.0) { hueAdjust += u_hslBlue.x * w; satAdjust += (u_hslBlue.y / 100.0) * w; lumAdjust += (u_hslBlue.z / 100.0) * w; totalWeight += w; }
   w = hslChannelWeight(h, 280.0, 30.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslPurple.x * w;
-    totalSatMult *= 1.0 + (u_hslPurple.y / 100.0) * w;
-    totalLumShift += (u_hslPurple.z / 100.0) * 0.5 * w;
+  if (w > 0.0) { hueAdjust += u_hslPurple.x * w; satAdjust += (u_hslPurple.y / 100.0) * w; lumAdjust += (u_hslPurple.z / 100.0) * w; totalWeight += w; }
+  // Magenta: center 330° (NOT 320°) — matches CPU HSL_CHANNELS definition
+  w = hslChannelWeight(h, 330.0, 30.0);
+  if (w > 0.0) { hueAdjust += u_hslMagenta.x * w; satAdjust += (u_hslMagenta.y / 100.0) * w; lumAdjust += (u_hslMagenta.z / 100.0) * w; totalWeight += w; }
+
+  // Normalize if overlapping channels sum > 1 (BUG-07 fix)
+  if (totalWeight > 1.0) {
+    hueAdjust /= totalWeight;
+    satAdjust /= totalWeight;
+    lumAdjust /= totalWeight;
   }
-  
-  // Magenta channel (center: 320°, range: 30°)
-  w = hslChannelWeight(h, 320.0, 30.0);
-  if (w > 0.0) {
-    totalHueShift += u_hslMagenta.x * w;
-    totalSatMult *= 1.0 + (u_hslMagenta.y / 100.0) * w;
-    totalLumShift += (u_hslMagenta.z / 100.0) * 0.5 * w;
+
+  if (totalWeight > 0.0) {
+    hsl.x = mod(hsl.x + hueAdjust, 360.0);
+
+    // Asymmetric saturation (BUG-04 fix — matches CPU filmLabHSL.js)
+    // Positive: expand toward 1.0;  Negative: compress toward 0.0
+    if (satAdjust > 0.0) {
+      hsl.y = s + (1.0 - s) * satAdjust;
+    } else if (satAdjust < 0.0) {
+      hsl.y = s * (1.0 + satAdjust);
+    }
+    hsl.y = clamp(hsl.y, 0.0, 1.0);
+
+    // Asymmetric luminance with 0.5 damping (BUG-05 fix — matches CPU filmLabHSL.js)
+    if (lumAdjust > 0.0) {
+      hsl.z = l + (1.0 - l) * lumAdjust * 0.5;
+    } else if (lumAdjust < 0.0) {
+      hsl.z = l * (1.0 + lumAdjust * 0.5);
+    }
+    hsl.z = clamp(hsl.z, 0.0, 1.0);
   }
-  
-  // Apply accumulated adjustments
-  h = mod(h + totalHueShift, 360.0);
-  s = clamp(s * totalSatMult, 0.0, 1.0);
-  l = clamp(l + totalLumShift, 0.0, 1.0);
-  
-  return hsl2rgb(vec3(h, s, l));
+
+  return hsl2rgb(hsl);
 }
 `;
 

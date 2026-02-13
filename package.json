@@ -1,6 +1,6 @@
 {
   "name": "film-gallery-desktop",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "description": "Film Gallery — Electron desktop wrapper for the Film Manager app",
   "main": "electron-main.js",
@@ -23,7 +23,9 @@
     "rebuild:electron": "cd server && npm run rebuild:electron && cd ../packages/@filmgallery/libraw-native && npx @electron/rebuild -v 26.6.10",
     "pack": "npm run build && npm run rebuild:electron && electron-builder --dir",
     "dist": "npm run build && npm run rebuild:electron && electron-builder",
-    "start": "electron ."
+    "start": "electron .",
+    "test": "jest --config tests/jest.config.js",
+    "test:verbose": "jest --config tests/jest.config.js --verbose"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.2",
@@ -31,6 +33,7 @@
     "cross-env": "^7.0.3",
     "electron": "26.6.10",
     "electron-builder": "^24.6.0",
+    "jest": "^30.2.0",
     "wait-on": "^7.0.1"
   },
   "build": {
@@ -82,6 +85,15 @@
         }
       ],
       "icon": "assets/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Graphics",
+      "synopsis": "Film Photography Management Tool"
     },
     "nsis": {
       "oneClick": false,

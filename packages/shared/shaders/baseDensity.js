@@ -17,7 +17,7 @@ const BASE_DENSITY_GLSL = `
 // - Log (u_baseMode == 1): Density domain subtraction (more accurate)
 //
 vec3 applyBaseDensityCorrection(vec3 col) {
-  if (u_baseMode == 1) {
+  if (u_baseMode > 0.5) {
     // Log mode: density domain subtraction
     // D = -log10(T), then subtract base density, then convert back
     float minT = 0.001;
@@ -65,7 +65,7 @@ vec3 applyBaseDensityCorrection(vec3 col) {
 // which preserves overall contrast while normalizing channel balance.
 //
 vec3 applyDensityLevels(vec3 col) {
-  if (u_densityLevelsEnabled == 0) return col;
+  if (u_densityLevelsEnabled < 0.5) return col;
   
   float minT = 0.001;
   float log10 = log(10.0);

@@ -95,10 +95,19 @@ async function renderPhoto(options) {
   });
 
   // 获取原始像素数据
+  // sharp 在仅应用几何变换（rotate/resize/crop）时会保留源数据的原始位深。
+  // 当输入为 16-bit TIFF（RAW 解码产物）时，.raw() 输出也是 16-bit。
+  // 通过 buffer 大小检测实际位深（比依赖 info.depth 更可靠）。
   const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
   const width = info.width;
   const height = info.height;
   const channels = info.channels;
+  
+  // Inspect actual bit depth from data size
+  const is16BitInput = (data.length === width * height * channels * 2);
+  if (is16BitInput) {
+    console.log(`[RenderService] High bit-depth source detected (${width}x${height}, 16-bit), processing with float pipeline`);
+  }
 
   // 使用 RenderCore 处理颜色
   const core = new RenderCore(params);
@@ -108,47 +117,80 @@ async function renderPhoto(options) {
   let outputBuffer;
 
   if (format === 'tiff16') {
-    // 16-bit TIFF
+    // 16-bit TIFF Export - Float Pipeline for maximum quality
     const raw16 = Buffer.allocUnsafe(width * height * 3 * 2);
     let j16 = 0;
 
-    for (let i = 0; i < data.length; i += channels) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
+    const step = is16BitInput ? channels * 2 : channels;
+    
+    for (let i = 0; i < data.length; i += step) {
+      let r, g, b;
+      
+      // Read Input (Normalize to 0.0–1.0)
+      // Input data is sRGB gamma-encoded (from JPEG or libraw default).
+      // processPixelFloat expects sRGB input to match GPU shader behavior.
+      if (is16BitInput) {
+          const r16 = data[i] | (data[i+1] << 8);
+          const g16 = data[i+2] | (data[i+3] << 8);
+          const b16 = data[i+4] | (data[i+5] << 8);
+          r = r16 / 65535.0;
+          g = g16 / 65535.0;
+          b = b16 / 65535.0;
+      } else {
+          r = data[i] / 255.0;
+          g = data[i+1] / 255.0;
+          b = data[i+2] / 255.0;
+      }
 
-      const [rC, gC, bC] = core.processPixel(r, g, b);
+      // Float Processing (no linearization — matches GPU texture sampling)
+      const [rF, gF, bF] = core.processPixelFloat(r, g, b);
 
-      // 8-bit 扩展到 16-bit
-      const r16 = (rC << 8) | rC;
-      const g16 = (gC << 8) | gC;
-      const b16 = (bC << 8) | bC;
+      // Output scale to 16-bit (0-65535)
+      const rOut = Math.min(65535, Math.max(0, Math.round(rF * 65535)));
+      const gOut = Math.min(65535, Math.max(0, Math.round(gF * 65535)));
+      const bOut = Math.min(65535, Math.max(0, Math.round(bF * 65535)));
 
-      raw16[j16++] = r16 & 0xFF;
-      raw16[j16++] = (r16 >> 8) & 0xFF;
-      raw16[j16++] = g16 & 0xFF;
-      raw16[j16++] = (g16 >> 8) & 0xFF;
-      raw16[j16++] = b16 & 0xFF;
-      raw16[j16++] = (b16 >> 8) & 0xFF;
+      // Write 16-bit LE
+      raw16[j16++] = rOut & 0xFF;
+      raw16[j16++] = (rOut >> 8) & 0xFF;
+      raw16[j16++] = gOut & 0xFF;
+      raw16[j16++] = (gOut >> 8) & 0xFF;
+      raw16[j16++] = bOut & 0xFF;
+      raw16[j16++] = (bOut >> 8) & 0xFF;
     }
 
     outputBuffer = await sharp(raw16, { raw: { width, height, channels: 3, depth: 'ushort' } })
       .tiff({ compression: 'lzw', bitdepth: 16 })
       .toBuffer();
   } else {
-    // 8-bit JPEG (默认)
+    // 8-bit JPEG — Float pipeline for CPU/GPU consistency
+    // Even though output is 8-bit, using processPixelFloat ensures identical
+    // results to the GPU shader (which also operates at float precision internally).
+    
     const out = Buffer.allocUnsafe(width * height * 3);
+    const step = is16BitInput ? channels * 2 : channels;
+    
+    for (let i = 0, j = 0; i < data.length; i += step, j += 3) {
+      let r, g, b;
+      
+      if (is16BitInput) {
+          const r16 = data[i] | (data[i+1] << 8);
+          const g16 = data[i+2] | (data[i+3] << 8);
+          const b16 = data[i+4] | (data[i+5] << 8);
+          r = r16 / 65535.0;
+          g = g16 / 65535.0;
+          b = b16 / 65535.0;
+      } else {
+          r = data[i] / 255.0;
+          g = data[i+1] / 255.0;
+          b = data[i+2] / 255.0;
+      }
+      
+      const [rF, gF, bF] = core.processPixelFloat(r, g, b);
 
-    for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
-      const [rC, gC, bC] = core.processPixel(r, g, b);
-
-      out[j] = rC;
-      out[j + 1] = gC;
-      out[j + 2] = bC;
+      out[j] = Math.min(255, Math.max(0, Math.round(rF * 255)));
+      out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+      out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
     }
 
     outputBuffer = await sharp(out, { raw: { width, height, channels: 3 } })

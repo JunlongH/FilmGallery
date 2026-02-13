@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { computeWBGains } from './FilmLab/wb';
+import { computeWBGains } from '@filmgallery/shared';
 
 const SliderControl = ({ label, value, onChange, min, max, step=1, onMouseDown, suffix='' }) => {
   const handleMinus = () => {

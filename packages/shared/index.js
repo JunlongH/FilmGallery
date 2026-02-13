@@ -6,7 +6,8 @@
  */
 
 // 核心处理模块
-const core = require('./filmlab-core');
+const RenderCore = require('./render/RenderCore');
+const saturation = require('./filmLabSaturation');
 const constants = require('./filmLabConstants');
 const toneLUT = require('./filmLabToneLUT');
 const curves = require('./filmLabCurves');
@@ -27,20 +28,24 @@ const shaders = require('./shaders');
 // 统一导出
 module.exports = {
   // ============================================================================
-  // 核心处理函数
+  // 核心处理 (RenderCore — 统一渲染管线)
   // ============================================================================
   
-  /** 处理单个像素 */
-  processPixel: core.processPixel,
+  /** 统一渲染核心 (替代 legacy filmlab-core) */
+  RenderCore,
   
-  /** 预构建所有 LUT */
-  prepareLUTs: core.prepareLUTs,
+  // ============================================================================
+  // 全局饱和度
+  // ============================================================================
   
-  /** 批量处理像素数组 */
-  processPixelArray: core.processPixelArray,
+  /** 应用饱和度 (浮点, 0-1) */
+  applySaturationFloat: saturation.applySaturationFloat,
   
-  /** 3D LUT 采样 */
-  sampleLUT3D: core.sampleLUT3D,
+  /** 应用饱和度 (8-bit, 0-255) */
+  applySaturation: saturation.applySaturation,
+  
+  /** 检查饱和度是否为默认值 */
+  isDefaultSaturation: saturation.isDefaultSaturation,
   
   // ============================================================================
   // 色调映射
@@ -62,6 +67,12 @@ module.exports = {
   /** 构建曲线 LUT */
   buildCurveLUT: curves.buildCurveLUT,
   
+  /** 构建浮点曲线 LUT */
+  buildCurveLUTFloat: curves.buildCurveLUTFloat,
+
+  /** 构建 GPU 复合浮点曲线 LUT (Phase 2.4) */
+  buildCompositeFloatCurveLUT: curves.buildCompositeFloatCurveLUT,
+
   /** 构建所有通道曲线 LUT */
   buildAllCurveLUTs: curves.buildAllCurveLUTs,
   

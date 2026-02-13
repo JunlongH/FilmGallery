@@ -554,6 +554,7 @@ export default function FilmLabControls({
   pushToHistory,
   hslParams, setHslParams,
   splitToning, setSplitToning,
+  saturation, setSaturation,
   lut1, setLut1,
   lut2, setLut2,
   lutExportSize, setLutExportSize,
@@ -1014,6 +1015,10 @@ export default function FilmLabControls({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <SliderControl label="TEMPERATURE" value={temp} onChange={setTemp} onMouseDown={pushToHistory} min={-100} max={100} step={1} displayFormatter={(v) => Number(v).toFixed(2)} />
         <SliderControl label="TINT" value={tint} onChange={setTint} onMouseDown={pushToHistory} min={-100} max={100} step={1} displayFormatter={(v) => Number(v).toFixed(2)} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <SliderControl label="SATURATION" value={saturation} onChange={setSaturation} onMouseDown={pushToHistory} min={-100} max={100} step={1} />
       </div>
 
       {/* Curve Editor UI */}

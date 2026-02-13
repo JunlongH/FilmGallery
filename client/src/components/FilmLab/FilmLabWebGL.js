@@ -2,8 +2,8 @@
 // Provides a basic shader pipeline for inversion (linear/log), white balance (r/g/b gains), exposure and contrast.
 // This is intentionally small and dependency-free. We'll extend it later for curves and 3D LUTs.
 
-// 从共享模块导入 LUT 打包函数以确保与 CPU 路径一致
-import { packLUT3DForWebGL } from '@filmgallery/shared';
+// 从共享模块导入 LUT 打包函数和着色器构建器，确保与 GPU 导出路径一致
+import { packLUT3DForWebGL, buildFragmentShader, VERTEX_SHADER, SHADER_VERSION as SHARED_SHADER_VERSION } from '@filmgallery/shared';
 
 // Debug flag - set to true during development for detailed logging
 const DEBUG_WEBGL = false;
@@ -106,6 +106,33 @@ export function processImageWebGL(canvas, image, params = {}) {
   }
   
   if (!gl) throw new Error('WebGL not available');
+  
+  // WebGL 上下文丢失检测 — 防止在上下文丢失后继续操作导致异常
+  if (gl.isContextLost()) {
+    console.warn('[FilmLabWebGL] WebGL context is lost, skipping render');
+    throw new Error('WebGL context lost');
+  }
+  
+  // 注册上下文丢失/恢复事件（仅注册一次）
+  if (!canvas._contextLostHandlerRegistered) {
+    canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault(); // 允许上下文恢复
+      console.warn('[FilmLabWebGL] WebGL context lost event fired');
+      // 清除缓存，强制下次重建
+      if (processImageWebGL._cache) {
+        processImageWebGL._cache.delete(canvas);
+      }
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      console.log('[FilmLabWebGL] WebGL context restored');
+      // 清除缓存，强制重新编译着色器和创建纹理
+      if (processImageWebGL._cache) {
+        processImageWebGL._cache.delete(canvas);
+      }
+    });
+    canvas._contextLostHandlerRegistered = true;
+  }
+  
   if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Using:', gl.getParameter(gl.VERSION));
 
   // Simple cache per-canvas to reuse programs and textures
@@ -214,593 +241,17 @@ export function processImageWebGL(canvas, image, params = {}) {
     uvBR: mapUV(1, 1)
   };
 
-  // Vertex shader (shared)
-  const vsSource = `
-    attribute vec2 a_pos;
-    attribute vec2 a_uv;
-    varying vec2 v_uv;
-    void main() {
-      v_uv = a_uv;
-      gl_Position = vec4(a_pos, 0.0, 1.0);
-    }
-  `;
+  // Vertex shader — from shared shader library (single source of truth)
+  const vsSource = VERTEX_SHADER;
 
-  // SHADER_BUILD_ID: 2026-01-16-v28 - Fixed pipeline order (LUT at end)
+  // Fragment shader — from shared shader library (single source of truth)
+  // All GLSL code (HSL, Split Tone, Film Curve, Tonemap, Inversion, Base Density,
+  // LUT, Curves) now comes from packages/shared/shaders/ ensuring pixel-perfect
+  // consistency between client preview and GPU export paths.
+  const fsSource = buildFragmentShader({ isGL2: false });
 
-  // Fragment shader with optional curve and 3D LUT support
-  const fsSource = `
-    precision mediump float;
-    varying vec2 v_uv;
-    uniform sampler2D u_image;
-    uniform int u_inverted; // 0 = no inversion, 1 = invert
-    uniform int u_inversionMode; // 0 linear, 1 log
-    uniform vec3 u_gains; // r,g,b gains
-    uniform float u_exposure;
-    uniform float u_contrast; // -1..1
-    uniform float u_highlights; // -100..100
-    uniform float u_shadows; // -100..100
-    uniform float u_whites; // -100..100
-    uniform float u_blacks; // -100..100
-
-    // Film Curve parameters
-    uniform int u_filmCurveEnabled;
-    uniform float u_filmCurveGamma;
-    uniform float u_filmCurveDMin;
-    uniform float u_filmCurveDMax;
-
-    // Film Base Correction (Pre-Inversion)
-    uniform int u_baseMode; // 0 = linear (gains), 1 = log (density subtraction)
-    uniform vec3 u_baseGains; // Linear mode: r,g,b gains
-    uniform vec3 u_baseDensity; // Log mode: r,g,b density values to subtract
-
-    // Density Levels (Log domain auto-levels)
-    uniform int u_densityLevelsEnabled; // 0 = disabled, 1 = enabled
-    uniform vec3 u_densityLevelsMin; // R,G,B minimum density values
-    uniform vec3 u_densityLevelsMax; // R,G,B maximum density values
-
-    // Curve LUTs (1D textures height=1)
-    uniform sampler2D u_curveRGB;
-    uniform sampler2D u_curveR;
-    uniform sampler2D u_curveG;
-    uniform sampler2D u_curveB;
-    uniform int u_useCurves; // 0/1
-
-    // 3D LUT packed into 2D: width = size, height = size*size
-    uniform sampler2D u_lut3d;
-    uniform int u_useLut3d;
-    uniform int u_lutSize;
-    uniform float u_lutIntensity; // LUT 强度 (0-1)
-
-    // HSL adjustments (8 channels x 3 values: hue, saturation, luminance)
-    uniform int u_useHSL;
-    uniform vec3 u_hslRed;
-    uniform vec3 u_hslOrange;
-    uniform vec3 u_hslYellow;
-    uniform vec3 u_hslGreen;
-    uniform vec3 u_hslCyan;
-    uniform vec3 u_hslBlue;
-    uniform vec3 u_hslPurple;
-    uniform vec3 u_hslMagenta;
-
-    // Split Toning
-    uniform int u_useSplitTone;
-    uniform float u_highlightHue;
-    uniform float u_highlightSat;
-    uniform float u_midtoneHue;
-    uniform float u_midtoneSat;
-    uniform float u_shadowHue;
-    uniform float u_shadowSat;
-    uniform float u_splitBalance;
-
-    float sampleCurve(sampler2D t, float v) {
-      return texture2D(t, vec2(v, 0.5)).r;
-    }
-
-    // ============================================================================
-    // RGB <-> HSL Conversion
-    // ============================================================================
-    
-    vec3 rgb2hsl(vec3 c) {
-      float maxC = max(max(c.r, c.g), c.b);
-      float minC = min(min(c.r, c.g), c.b);
-      float l = (maxC + minC) / 2.0;
-      
-      if (maxC == minC) {
-        return vec3(0.0, 0.0, l);
-      }
-      
-      float d = maxC - minC;
-      float s = l > 0.5 ? d / (2.0 - maxC - minC) : d / (maxC + minC);
-      
-      float h;
-      if (maxC == c.r) {
-        h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0);
-      } else if (maxC == c.g) {
-        h = (c.b - c.r) / d + 2.0;
-      } else {
-        h = (c.r - c.g) / d + 4.0;
-      }
-      h /= 6.0;
-      
-      return vec3(h * 360.0, s, l);
-    }
-
-    float hue2rgb(float p, float q, float t) {
-      if (t < 0.0) t += 1.0;
-      if (t > 1.0) t -= 1.0;
-      if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
-      if (t < 1.0/2.0) return q;
-      if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
-      return p;
-    }
-
-    vec3 hsl2rgb(vec3 hsl) {
-      float h = mod(hsl.x, 360.0) / 360.0;
-      float s = clamp(hsl.y, 0.0, 1.0);
-      float l = clamp(hsl.z, 0.0, 1.0);
-      
-      if (s == 0.0) {
-        return vec3(l);
-      }
-      
-      float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
-      float p = 2.0 * l - q;
-      
-      float r = hue2rgb(p, q, h + 1.0/3.0);
-      float g = hue2rgb(p, q, h);
-      float b = hue2rgb(p, q, h - 1.0/3.0);
-      
-      return vec3(r, g, b);
-    }
-
-    // ============================================================================
-    // HSL Channel Weight Calculation
-    // ============================================================================
-    
-    float hslChannelWeight(float hue, float center, float range) {
-      float dist = min(abs(hue - center), min(abs(hue - center + 360.0), abs(hue - center - 360.0)));
-      if (dist > range) return 0.0;
-      // Cosine smooth transition
-      return 0.5 * (1.0 + cos(3.14159265 * dist / range));
-    }
-
-    vec3 applyHSLAdjustment(vec3 color) {
-      vec3 hsl = rgb2hsl(color);
-      float h = hsl.x;
-      float s = hsl.y;
-      float l = hsl.z;
-      
-      float totalHueShift = 0.0;
-      float totalSatMult = 1.0;
-      float totalLumShift = 0.0;
-      
-      // Red channel (center: 0, range: 30)
-      float w = hslChannelWeight(h, 0.0, 30.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslRed.x * w;
-        totalSatMult *= 1.0 + (u_hslRed.y / 100.0) * w;
-        totalLumShift += (u_hslRed.z / 100.0) * 0.5 * w;
-      }
-      
-      // Orange channel (center: 30, range: 30)
-      w = hslChannelWeight(h, 30.0, 30.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslOrange.x * w;
-        totalSatMult *= 1.0 + (u_hslOrange.y / 100.0) * w;
-        totalLumShift += (u_hslOrange.z / 100.0) * 0.5 * w;
-      }
-      
-      // Yellow channel (center: 60, range: 30)
-      w = hslChannelWeight(h, 60.0, 30.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslYellow.x * w;
-        totalSatMult *= 1.0 + (u_hslYellow.y / 100.0) * w;
-        totalLumShift += (u_hslYellow.z / 100.0) * 0.5 * w;
-      }
-      
-      // Green channel (center: 120, range: 45)
-      w = hslChannelWeight(h, 120.0, 45.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslGreen.x * w;
-        totalSatMult *= 1.0 + (u_hslGreen.y / 100.0) * w;
-        totalLumShift += (u_hslGreen.z / 100.0) * 0.5 * w;
-      }
-      
-      // Cyan channel (center: 180, range: 30)
-      w = hslChannelWeight(h, 180.0, 30.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslCyan.x * w;
-        totalSatMult *= 1.0 + (u_hslCyan.y / 100.0) * w;
-        totalLumShift += (u_hslCyan.z / 100.0) * 0.5 * w;
-      }
-      
-      // Blue channel (center: 240, range: 45)
-      w = hslChannelWeight(h, 240.0, 45.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslBlue.x * w;
-        totalSatMult *= 1.0 + (u_hslBlue.y / 100.0) * w;
-        totalLumShift += (u_hslBlue.z / 100.0) * 0.5 * w;
-      }
-      
-      // Purple channel (center: 280, range: 30)
-      w = hslChannelWeight(h, 280.0, 30.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslPurple.x * w;
-        totalSatMult *= 1.0 + (u_hslPurple.y / 100.0) * w;
-        totalLumShift += (u_hslPurple.z / 100.0) * 0.5 * w;
-      }
-      
-      // Magenta channel (center: 320, range: 30)
-      w = hslChannelWeight(h, 320.0, 30.0);
-      if (w > 0.0) {
-        totalHueShift += u_hslMagenta.x * w;
-        totalSatMult *= 1.0 + (u_hslMagenta.y / 100.0) * w;
-        totalLumShift += (u_hslMagenta.z / 100.0) * 0.5 * w;
-      }
-      
-      // Apply adjustments
-      h = mod(h + totalHueShift, 360.0);
-      s = clamp(s * totalSatMult, 0.0, 1.0);
-      l = clamp(l + totalLumShift, 0.0, 1.0);
-      
-      return hsl2rgb(vec3(h, s, l));
-    }
-
-    // ============================================================================
-    // Split Toning
-    // ============================================================================
-    
-    float calcLuminance(vec3 c) {
-      return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
-    }
-
-    vec3 applySplitToning(vec3 color) {
-      float lum = calcLuminance(color);
-      
-      // Calculate zone boundaries with balance
-      float shadowEnd = 0.25 + u_splitBalance * 0.15;
-      float highlightStart = 0.75 + u_splitBalance * 0.15;
-      float midpoint = 0.5 + u_splitBalance * 0.15;
-      
-      // Smooth transitions
-      float shadowWeight = 1.0 - smoothstep(shadowEnd - 0.15, shadowEnd + 0.15, lum);
-      float highlightWeight = smoothstep(highlightStart - 0.15, highlightStart + 0.15, lum);
-      
-      // Midtone weight: strongest in the middle zone, fading to shadow/highlight zones
-      float midtoneWeight = 1.0 - smoothstep(0.0, shadowEnd + 0.1, abs(lum - midpoint));
-      midtoneWeight *= (1.0 - shadowWeight) * (1.0 - highlightWeight);
-      midtoneWeight = clamp(midtoneWeight * 2.0, 0.0, 1.0);
-      
-      // Convert hue to RGB tint (hue is already 0-1)
-      vec3 highlightTint = hsl2rgb(vec3(u_highlightHue * 360.0, 1.0, 0.5));
-      vec3 midtoneTint = hsl2rgb(vec3(u_midtoneHue * 360.0, 1.0, 0.5));
-      vec3 shadowTint = hsl2rgb(vec3(u_shadowHue * 360.0, 1.0, 0.5));
-      
-      vec3 result = color;
-      
-      // Apply shadow tint
-      if (shadowWeight > 0.0 && u_shadowSat > 0.0) {
-        vec3 tinted = result * shadowTint * 2.0; // *2 to normalize since tint is at L=0.5
-        result = mix(result, tinted, shadowWeight * u_shadowSat);
-      }
-      
-      // Apply midtone tint
-      if (midtoneWeight > 0.0 && u_midtoneSat > 0.0) {
-        vec3 tinted = result * midtoneTint * 2.0;
-        result = mix(result, tinted, midtoneWeight * u_midtoneSat);
-      }
-      
-      // Apply highlight tint
-      if (highlightWeight > 0.0 && u_highlightSat > 0.0) {
-        vec3 tinted = result * highlightTint * 2.0;
-        result = mix(result, tinted, highlightWeight * u_highlightSat);
-      }
-      
-      return clamp(result, 0.0, 1.0);
-    }
-
-    // Film Curve: Apply H&D density model to transmittance
-    // Output is adjusted transmittance (NOT inverted), inversion happens separately
-    float applyFilmCurve(float value) {
-      if (u_filmCurveEnabled == 0) return value;
-      
-      float gamma = u_filmCurveGamma;
-      float dMin = u_filmCurveDMin;
-      float dMax = u_filmCurveDMax;
-      
-      // 1. Normalize input (avoid log(0))
-      float normalized = clamp(value, 0.001, 1.0);
-      
-      // 2. Calculate density D = -log10(T)
-      // Using change of base: log10(x) = log(x) / log(10)
-      float density = -log(normalized) / log(10.0);
-      
-      // 3. Normalize density to dMin-dMax range
-      float densityNorm = clamp((density - dMin) / (dMax - dMin), 0.0, 1.0);
-      
-      // 4. Apply gamma curve to adjust density response
-      float gammaApplied = pow(densityNorm, gamma);
-      
-      // 5. Convert adjusted normalized density back to density value
-      float adjustedDensity = dMin + gammaApplied * (dMax - dMin);
-      
-      // 6. Convert density back to transmittance: T = 10^(-D)
-      float outputT = pow(10.0, -adjustedDensity);
-      
-      return clamp(outputT, 0.0, 1.0);
-    }
-
-    vec3 sampleLUT3D(vec3 c) {
-      int size = u_lutSize;
-      float sz = float(size);
-      // Map to [0..size-1]
-      float rf = c.r * (sz - 1.0);
-      float gf = c.g * (sz - 1.0);
-      float bf = c.b * (sz - 1.0);
-
-      float r0 = floor(rf);
-      float g0 = floor(gf);
-      float b0 = floor(bf);
-      float r1 = min(sz - 1.0, r0 + 1.0);
-      float g1 = min(sz - 1.0, g0 + 1.0);
-      float b1 = min(sz - 1.0, b0 + 1.0);
-
-      vec3 c000;
-      vec3 c100;
-      vec3 c010;
-      vec3 c110;
-      vec3 c001;
-      vec3 c101;
-      vec3 c011;
-      vec3 c111;
-
-      // helper to sample packed LUT: x = r / size, y = (g + b*size) / (size*size)
-      vec2 uv;
-      uv.x = (r0 + 0.5) / sz;
-      uv.y = (g0 + b0 * sz + 0.5) / (sz * sz);
-      c000 = texture2D(u_lut3d, uv).rgb;
-
-      uv.x = (r1 + 0.5) / sz;
-      uv.y = (g0 + b0 * sz + 0.5) / (sz * sz);
-      c100 = texture2D(u_lut3d, uv).rgb;
-
-      uv.x = (r0 + 0.5) / sz;
-      uv.y = (g1 + b0 * sz + 0.5) / (sz * sz);
-      c010 = texture2D(u_lut3d, uv).rgb;
-
-      uv.x = (r1 + 0.5) / sz;
-      uv.y = (g1 + b0 * sz + 0.5) / (sz * sz);
-      c110 = texture2D(u_lut3d, uv).rgb;
-
-      uv.x = (r0 + 0.5) / sz;
-      uv.y = (g0 + b1 * sz + 0.5) / (sz * sz);
-      c001 = texture2D(u_lut3d, uv).rgb;
-
-      uv.x = (r1 + 0.5) / sz;
-      uv.y = (g0 + b1 * sz + 0.5) / (sz * sz);
-      c101 = texture2D(u_lut3d, uv).rgb;
-
-      uv.x = (r0 + 0.5) / sz;
-      uv.y = (g1 + b1 * sz + 0.5) / (sz * sz);
-      c011 = texture2D(u_lut3d, uv).rgb;
-
-      uv.x = (r1 + 0.5) / sz;
-      uv.y = (g1 + b1 * sz + 0.5) / (sz * sz);
-      c111 = texture2D(u_lut3d, uv).rgb;
-
-      float fr = rf - r0;
-      float fg = gf - g0;
-      float fb = bf - b0;
-
-      vec3 c00 = mix(c000, c100, fr);
-      vec3 c10 = mix(c010, c110, fr);
-      vec3 c01 = mix(c001, c101, fr);
-      vec3 c11 = mix(c011, c111, fr);
-
-      vec3 c0 = mix(c00, c10, fg);
-      vec3 c1 = mix(c01, c11, fg);
-
-      return mix(c0, c1, fb);
-    }
-
-    // Helper: apply contrast (-1..1)
-    float applyContrast(float v, float c) {
-      float f = (259.0 * (c * 255.0 + 255.0)) / (255.0 * (259.0 - c * 255.0));
-      return clamp(f * (v - 0.5) + 0.5, 0.0, 1.0);
-    }
-
-    float applyTone(float val, float h, float s, float w, float b) {
-      // Blacks & Whites
-      float blackPoint = -b * 0.002;
-      float whitePoint = 1.0 - w * 0.002;
-      if (whitePoint != blackPoint) {
-        val = (val - blackPoint) / (whitePoint - blackPoint);
-      }
-
-      // Shadows
-      if (s != 0.0) {
-        float sFactor = s * 0.005;
-        val += sFactor * pow(1.0 - val, 2.0) * val * 4.0;
-      }
-
-      // Highlights
-      if (h != 0.0) {
-        float hFactor = h * 0.005;
-        val += hFactor * pow(val, 2.0) * (1.0 - val) * 4.0;
-      }
-      return val;
-    }
-
-    void main() {
-      vec4 tex = texture2D(u_image, v_uv);
-      vec3 col = tex.rgb;
-
-      // ① Film Curve (before inversion) - applies H&D density model to negative scan
-      // Only meaningful when inverting negatives
-      if (u_inverted == 1 && u_filmCurveEnabled == 1) {
-        col.r = applyFilmCurve(col.r);
-        col.g = applyFilmCurve(col.g);
-        col.b = applyFilmCurve(col.b);
-      }
-
-      // ② Base Correction - neutralize film base color
-      // Supports two modes: linear (gains) or log (density subtraction)
-      if (u_baseMode == 1) {
-        // Log mode: density domain subtraction (more accurate)
-        // D = -log10(T), then subtract base density, then convert back
-        float minT = 0.001;
-        float log10 = log(10.0);
-        
-        // Red channel
-        float Tr = max(col.r, minT);
-        float Dr = -log(Tr) / log10;
-        float Dr_corrected = Dr - u_baseDensity.r;
-        col.r = pow(10.0, -Dr_corrected);
-        
-        // Green channel
-        float Tg = max(col.g, minT);
-        float Dg = -log(Tg) / log10;
-        float Dg_corrected = Dg - u_baseDensity.g;
-        col.g = pow(10.0, -Dg_corrected);
-        
-        // Blue channel
-        float Tb = max(col.b, minT);
-        float Db = -log(Tb) / log10;
-        float Db_corrected = Db - u_baseDensity.b;
-        col.b = pow(10.0, -Db_corrected);
-        
-        col = clamp(col, 0.0, 1.0);
-      } else {
-        // Linear mode: simple gain multiplication (legacy, compatible with old presets)
-        col = col * u_baseGains;
-        col = clamp(col, 0.0, 1.0);
-      }
-
-      // ②.5 Density Levels (Log domain per-channel normalization)
-      // 
-      // Physical background:
-      // Color negative film has an orange mask and each dye layer has different
-      // characteristics. This means R, G, B channels have different [Dmin, Dmax] ranges.
-      // To properly invert the negative, we need to normalize each channel's density
-      // range to a common output range, effectively "flattening" the channels.
-      //
-      // Algorithm:
-      // 1. Convert transmittance to density: D = -log10(T)
-      // 2. Normalize each channel's [Dmin, Dmax] to [0, 1]
-      // 3. Scale to output range that preserves the AVERAGE density range
-      //    (this prevents extreme contrast boost while still normalizing channels)
-      //
-      if (u_densityLevelsEnabled == 1) {
-        float minT = 0.001;
-        float log10 = log(10.0);
-        
-        // Calculate average range across channels for output scaling
-        // This preserves overall contrast while normalizing channel balance
-        float rangeR = u_densityLevelsMax.r - u_densityLevelsMin.r;
-        float rangeG = u_densityLevelsMax.g - u_densityLevelsMin.g;
-        float rangeB = u_densityLevelsMax.b - u_densityLevelsMin.b;
-        float avgRange = (rangeR + rangeG + rangeB) / 3.0;
-        // Clamp average range to reasonable bounds
-        avgRange = max(avgRange, 0.5);  // Minimum 0.5 to avoid extreme compression
-        avgRange = min(avgRange, 2.5);  // Maximum 2.5 to avoid extreme expansion
-        
-        // Red channel
-        float Tr = max(col.r, minT);
-        float Dr = -log(Tr) / log10;
-        if (rangeR > 0.001) {
-          // Normalize to [0, 1], then scale to avgRange
-          float normR = clamp((Dr - u_densityLevelsMin.r) / rangeR, 0.0, 1.0);
-          float DrNew = normR * avgRange;
-          col.r = pow(10.0, -DrNew);
-        }
-        
-        // Green channel
-        float Tg = max(col.g, minT);
-        float Dg = -log(Tg) / log10;
-        if (rangeG > 0.001) {
-          float normG = clamp((Dg - u_densityLevelsMin.g) / rangeG, 0.0, 1.0);
-          float DgNew = normG * avgRange;
-          col.g = pow(10.0, -DgNew);
-        }
-        
-        // Blue channel
-        float Tb = max(col.b, minT);
-        float Db = -log(Tb) / log10;
-        if (rangeB > 0.001) {
-          float normB = clamp((Db - u_densityLevelsMin.b) / rangeB, 0.0, 1.0);
-          float DbNew = normB * avgRange;
-          col.b = pow(10.0, -DbNew);
-        }
-        
-        col = clamp(col, 0.0, 1.0);
-      }
-
-      // ③ Invert if enabled
-      if (u_inverted == 1) {
-        vec3 c255 = col * 255.0;
-        if (u_inversionMode == 1) {
-          c255.r = 255.0 * (1.0 - log(c255.r + 1.0) / log(256.0));
-          c255.g = 255.0 * (1.0 - log(c255.g + 1.0) / log(256.0));
-          c255.b = 255.0 * (1.0 - log(c255.b + 1.0) / log(256.0));
-        } else {
-          c255 = 255.0 - c255;
-        }
-        col = c255 / 255.0;
-      }
-      
-      vec3 c = col;
-
-      // ④ Apply gains (White Balance)
-      c = c * u_gains;
-
-      // ④ Tone Mapping: Exposure
-      c = c * pow(2.0, u_exposure);
-
-      // Tone Mapping: Contrast
-      c.r = applyContrast(c.r, u_contrast);
-      c.g = applyContrast(c.g, u_contrast);
-      c.b = applyContrast(c.b, u_contrast);
-
-      // Tone Mapping: H/S/B/W
-      c.r = applyTone(c.r, u_highlights, u_shadows, u_whites, u_blacks);
-      c.g = applyTone(c.g, u_highlights, u_shadows, u_whites, u_blacks);
-      c.b = applyTone(c.b, u_highlights, u_shadows, u_whites, u_blacks);
-
-      // ⑤ Apply curves if enabled (match CPU order: RGB curve first, then channel curves)
-      if (u_useCurves == 1) {
-        // First apply RGB combined curve
-        c.r = sampleCurve(u_curveRGB, c.r);
-        c.g = sampleCurve(u_curveRGB, c.g);
-        c.b = sampleCurve(u_curveRGB, c.b);
-        // Then apply individual channel curves
-        c.r = sampleCurve(u_curveR, c.r);
-        c.g = sampleCurve(u_curveG, c.g);
-        c.b = sampleCurve(u_curveB, c.b);
-      }
-
-      // ⑥ HSL Adjustment
-      if (u_useHSL == 1) {
-        c = applyHSLAdjustment(c);
-      }
-
-      // ⑦ Split Toning
-      if (u_useSplitTone == 1) {
-        c = applySplitToning(c);
-      }
-
-      // ⑧ Apply 3D LUT if enabled (at the END to match CPU pipeline order)
-      if (u_useLut3d == 1) {
-        vec3 lutColor = sampleLUT3D(c);
-        c = mix(c, lutColor, u_lutIntensity);
-      }
-
-      gl_FragColor = vec4(clamp(c, 0.0, 1.0), tex.a);
-    }
-  `;
-
-  // Shader version for cache invalidation - increment this when shader code changes
-  // Note: Version 102 - Removed debug visual indicators
-  const SHADER_VERSION = 102;
+  // Shader version from shared library — auto-invalidates cache when shader code changes
+  const SHADER_VERSION = SHARED_SHADER_VERSION;
   
   // Build or reuse program
   if (DEBUG_WEBGL) {
@@ -889,11 +340,16 @@ export function processImageWebGL(canvas, image, params = {}) {
   locs.u_shadows = gl.getUniformLocation(program, 'u_shadows');
   locs.u_whites = gl.getUniformLocation(program, 'u_whites');
   locs.u_blacks = gl.getUniformLocation(program, 'u_blacks');
-  // Film Curve uniforms
+  // Film Curve uniforms (Q13: per-channel gamma + toe/shoulder)
   locs.u_filmCurveEnabled = gl.getUniformLocation(program, 'u_filmCurveEnabled');
   locs.u_filmCurveGamma = gl.getUniformLocation(program, 'u_filmCurveGamma');
+  locs.u_filmCurveGammaR = gl.getUniformLocation(program, 'u_filmCurveGammaR');
+  locs.u_filmCurveGammaG = gl.getUniformLocation(program, 'u_filmCurveGammaG');
+  locs.u_filmCurveGammaB = gl.getUniformLocation(program, 'u_filmCurveGammaB');
   locs.u_filmCurveDMin = gl.getUniformLocation(program, 'u_filmCurveDMin');
   locs.u_filmCurveDMax = gl.getUniformLocation(program, 'u_filmCurveDMax');
+  locs.u_filmCurveToe = gl.getUniformLocation(program, 'u_filmCurveToe');
+  locs.u_filmCurveShoulder = gl.getUniformLocation(program, 'u_filmCurveShoulder');
   // Base Correction uniforms (Pre-Inversion)
   locs.u_baseMode = gl.getUniformLocation(program, 'u_baseMode');
   locs.u_baseGains = gl.getUniformLocation(program, 'u_baseGains');
@@ -921,14 +377,17 @@ export function processImageWebGL(canvas, image, params = {}) {
   locs.u_hslBlue = gl.getUniformLocation(program, 'u_hslBlue');
   locs.u_hslPurple = gl.getUniformLocation(program, 'u_hslPurple');
   locs.u_hslMagenta = gl.getUniformLocation(program, 'u_hslMagenta');
-  // Split Toning uniforms
+  // Saturation uniforms (Luma-Preserving, Rec.709)
+  locs.u_useSaturation = gl.getUniformLocation(program, 'u_useSaturation');
+  locs.u_saturation = gl.getUniformLocation(program, 'u_saturation');
+  // Split Toning uniforms (u_split* prefix — matches shared shader naming)
   locs.u_useSplitTone = gl.getUniformLocation(program, 'u_useSplitTone');
-  locs.u_highlightHue = gl.getUniformLocation(program, 'u_highlightHue');
-  locs.u_highlightSat = gl.getUniformLocation(program, 'u_highlightSat');
-  locs.u_midtoneHue = gl.getUniformLocation(program, 'u_midtoneHue');
-  locs.u_midtoneSat = gl.getUniformLocation(program, 'u_midtoneSat');
-  locs.u_shadowHue = gl.getUniformLocation(program, 'u_shadowHue');
-  locs.u_shadowSat = gl.getUniformLocation(program, 'u_shadowSat');
+  locs.u_splitHighlightHue = gl.getUniformLocation(program, 'u_splitHighlightHue');
+  locs.u_splitHighlightSat = gl.getUniformLocation(program, 'u_splitHighlightSat');
+  locs.u_splitMidtoneHue = gl.getUniformLocation(program, 'u_splitMidtoneHue');
+  locs.u_splitMidtoneSat = gl.getUniformLocation(program, 'u_splitMidtoneSat');
+  locs.u_splitShadowHue = gl.getUniformLocation(program, 'u_splitShadowHue');
+  locs.u_splitShadowSat = gl.getUniformLocation(program, 'u_splitShadowSat');
   locs.u_splitBalance = gl.getUniformLocation(program, 'u_splitBalance');
   
   // Debug: 打印关键 LUT uniform locations
@@ -943,7 +402,7 @@ export function processImageWebGL(canvas, image, params = {}) {
   // Bind image texture to unit 0
   gl.uniform1i(locs.u_image, 0);
 
-  const inverted = params.inverted ? 1 : 0;
+  const inverted = params.inverted ? 1.0 : 0.0;
   if (DEBUG_WEBGL) {
     console.log('[FilmLabWebGL] u_inverted:', inverted, 'params.inverted:', params.inverted);
     console.log('[FilmLabWebGL] locs.u_inverted:', locs.u_inverted);
@@ -951,20 +410,22 @@ export function processImageWebGL(canvas, image, params = {}) {
       console.error('[FilmLabWebGL] ERROR: u_inverted uniform location is NULL!');
     }
   }
-  gl.uniform1i(locs.u_inverted, inverted);
+  gl.uniform1f(locs.u_inverted, inverted);
   
-  const mode = params.inversionMode === 'log' ? 1 : 0;
-  gl.uniform1i(locs.u_inversionMode, mode);
+  const mode = params.inversionMode === 'log' ? 1.0 : 0.0;
+  gl.uniform1f(locs.u_inversionMode, mode);
 
   const gains = params.gains || [1.0, 1.0, 1.0];
   if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting u_gains:', gains);
   gl.uniform3fv(locs.u_gains, new Float32Array(gains));
 
-  const exposure = typeof params.exposure === 'number' ? params.exposure / 50.0 : 0.0;
+  // Pass raw exposure value — shared shader divides by 50 internally: pow(2, exposure/50)
+  const exposure = typeof params.exposure === 'number' ? params.exposure : 0.0;
   if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting u_exposure:', exposure, 'from', params.exposure);
   gl.uniform1f(locs.u_exposure, exposure);
 
-  const contrast = typeof params.contrast === 'number' ? params.contrast / 100.0 : 0.0;
+  // Pass raw contrast value — shared shader scales by *2.55 internally
+  const contrast = typeof params.contrast === 'number' ? params.contrast : 0.0;
   gl.uniform1f(locs.u_contrast, contrast);
 
   gl.uniform1f(locs.u_highlights, params.highlights || 0.0);
@@ -972,27 +433,32 @@ export function processImageWebGL(canvas, image, params = {}) {
   gl.uniform1f(locs.u_whites, params.whites || 0.0);
   gl.uniform1f(locs.u_blacks, params.blacks || 0.0);
 
-  // Film Curve parameters
-  const filmCurveEnabled = params.filmCurveEnabled ? 1 : 0;
-  gl.uniform1i(locs.u_filmCurveEnabled, filmCurveEnabled);
+  // Film Curve parameters (Q13: per-channel gamma + toe/shoulder)
+  const filmCurveEnabled = params.filmCurveEnabled ? 1.0 : 0.0;
+  gl.uniform1f(locs.u_filmCurveEnabled, filmCurveEnabled);
   gl.uniform1f(locs.u_filmCurveGamma, params.filmCurveGamma ?? 0.6);
+  gl.uniform1f(locs.u_filmCurveGammaR, params.filmCurveGammaR ?? params.filmCurveGamma ?? 0.6);
+  gl.uniform1f(locs.u_filmCurveGammaG, params.filmCurveGammaG ?? params.filmCurveGamma ?? 0.6);
+  gl.uniform1f(locs.u_filmCurveGammaB, params.filmCurveGammaB ?? params.filmCurveGamma ?? 0.6);
   gl.uniform1f(locs.u_filmCurveDMin, params.filmCurveDMin ?? 0.1);
   gl.uniform1f(locs.u_filmCurveDMax, params.filmCurveDMax ?? 3.0);
+  gl.uniform1f(locs.u_filmCurveToe, params.filmCurveToe ?? 0);
+  gl.uniform1f(locs.u_filmCurveShoulder, params.filmCurveShoulder ?? 0);
 
   // Base Correction (Pre-Inversion)
   // Support both linear (gains) and log (density) modes
-  const baseMode = params.baseMode === 'log' ? 1 : 0;
+  const baseMode = params.baseMode === 'log' ? 1.0 : 0.0;
   const baseGains = params.baseGains || [1.0, 1.0, 1.0];
   const baseDensity = params.baseDensity || [0.0, 0.0, 0.0];
   if (DEBUG_WEBGL) console.log('[FilmLabWebGL] Setting base correction:', { baseMode, baseGains, baseDensity });
-  gl.uniform1i(locs.u_baseMode, baseMode);
+  gl.uniform1f(locs.u_baseMode, baseMode);
   gl.uniform3fv(locs.u_baseGains, new Float32Array(baseGains));
   gl.uniform3fv(locs.u_baseDensity, new Float32Array(baseDensity));
 
   // Density Levels (Log domain auto-levels)
-  const densityLevelsEnabled = params.densityLevelsEnabled && baseMode === 1 ? 1 : 0;
+  const densityLevelsEnabled = params.densityLevelsEnabled && baseMode > 0.5 ? 1.0 : 0.0;
   const densityLevels = params.densityLevels || { red: { min: 0, max: 3 }, green: { min: 0, max: 3 }, blue: { min: 0, max: 3 } };
-  gl.uniform1i(locs.u_densityLevelsEnabled, densityLevelsEnabled);
+  gl.uniform1f(locs.u_densityLevelsEnabled, densityLevelsEnabled);
   gl.uniform3fv(locs.u_densityLevelsMin, new Float32Array([
     densityLevels.red?.min ?? 0,
     densityLevels.green?.min ?? 0,
@@ -1042,9 +508,9 @@ export function processImageWebGL(canvas, image, params = {}) {
     if (tR)   { gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, tR);   gl.uniform1i(locs.u_curveR, 2); }
     if (tG)   { gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, tG);   gl.uniform1i(locs.u_curveG, 3); }
     if (tB)   { gl.activeTexture(gl.TEXTURE4); gl.bindTexture(gl.TEXTURE_2D, tB);   gl.uniform1i(locs.u_curveB, 4); }
-    gl.uniform1i(locs.u_useCurves, 1);
+    gl.uniform1f(locs.u_useCurves, 1.0);
   } else {
-    gl.uniform1i(locs.u_useCurves, 0);
+    gl.uniform1f(locs.u_useCurves, 0.0);
   }
 
   // Handle 3D LUT: expect params.lut3 = { size, data(Float32Array 0..1), intensity? }
@@ -1123,15 +589,15 @@ export function processImageWebGL(canvas, image, params = {}) {
     }
     
     gl.uniform1i(locs.u_lut3d, 5);
-    gl.uniform1i(locs.u_useLut3d, 1);
-    gl.uniform1i(locs.u_lutSize, size);
+    gl.uniform1f(locs.u_useLut3d, 1.0);
+    gl.uniform1f(locs.u_lutSize, size);
     gl.uniform1f(locs.u_lutIntensity, intensity);
     
     if (DEBUG_LUT) {
       console.log('  - u_useLut3d: 1, u_lutSize:', size, 'u_lutIntensity:', intensity);
     }
   } else {
-    gl.uniform1i(locs.u_useLut3d, 0);
+    gl.uniform1f(locs.u_useLut3d, 0.0);
     gl.uniform1f(locs.u_lutIntensity, 0.0);
     if (DEBUG_LUT && params.lut3) {
       console.log('[FilmLabWebGL] LUT skipped - invalid data:', params.lut3);
@@ -1141,7 +607,7 @@ export function processImageWebGL(canvas, image, params = {}) {
   // HSL Adjustments
   const hslParams = params.hslParams;
   if (hslParams && !isDefaultHSLParams(hslParams)) {
-    gl.uniform1i(locs.u_useHSL, 1);
+    gl.uniform1f(locs.u_useHSL, 1.0);
     gl.uniform3fv(locs.u_hslRed, new Float32Array([
       hslParams.red?.hue ?? 0,
       hslParams.red?.saturation ?? 0,
@@ -1183,22 +649,32 @@ export function processImageWebGL(canvas, image, params = {}) {
       hslParams.magenta?.luminance ?? 0
     ]));
   } else {
-    gl.uniform1i(locs.u_useHSL, 0);
+    gl.uniform1f(locs.u_useHSL, 0.0);
+  }
+
+  // Saturation (Luma-Preserving, Rec.709)
+  const saturationVal = params.saturation ?? 0;
+  if (saturationVal !== 0) {
+    gl.uniform1f(locs.u_useSaturation, 1.0);
+    gl.uniform1f(locs.u_saturation, saturationVal);
+  } else {
+    gl.uniform1f(locs.u_useSaturation, 0.0);
+    gl.uniform1f(locs.u_saturation, 0.0);
   }
 
   // Split Toning
   const splitToning = params.splitToning;
   if (splitToning && !isDefaultSplitToneParams(splitToning)) {
-    gl.uniform1i(locs.u_useSplitTone, 1);
-    gl.uniform1f(locs.u_highlightHue, (splitToning.highlights?.hue ?? 30) / 360.0);
-    gl.uniform1f(locs.u_highlightSat, (splitToning.highlights?.saturation ?? 0) / 100.0);
-    gl.uniform1f(locs.u_midtoneHue, (splitToning.midtones?.hue ?? 0) / 360.0);
-    gl.uniform1f(locs.u_midtoneSat, (splitToning.midtones?.saturation ?? 0) / 100.0);
-    gl.uniform1f(locs.u_shadowHue, (splitToning.shadows?.hue ?? 220) / 360.0);
-    gl.uniform1f(locs.u_shadowSat, (splitToning.shadows?.saturation ?? 0) / 100.0);
+    gl.uniform1f(locs.u_useSplitTone, 1.0);
+    gl.uniform1f(locs.u_splitHighlightHue, (splitToning.highlights?.hue ?? 30) / 360.0);
+    gl.uniform1f(locs.u_splitHighlightSat, (splitToning.highlights?.saturation ?? 0) / 100.0);
+    gl.uniform1f(locs.u_splitMidtoneHue, (splitToning.midtones?.hue ?? 0) / 360.0);
+    gl.uniform1f(locs.u_splitMidtoneSat, (splitToning.midtones?.saturation ?? 0) / 100.0);
+    gl.uniform1f(locs.u_splitShadowHue, (splitToning.shadows?.hue ?? 220) / 360.0);
+    gl.uniform1f(locs.u_splitShadowSat, (splitToning.shadows?.saturation ?? 0) / 100.0);
     gl.uniform1f(locs.u_splitBalance, (splitToning.balance ?? 0) / 100.0);
   } else {
-    gl.uniform1i(locs.u_useSplitTone, 0);
+    gl.uniform1f(locs.u_useSplitTone, 0.0);
   }
 
   // 重要：在绘制前确保所有纹理都绑定到正确的纹理单元

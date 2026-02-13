@@ -67,12 +67,16 @@ router.post('/preview', async (req, res) => {
       skipColorOps: true // Skip all color ops in Sharp, do everything in JS for consistency
     });
 
-    // Pull raw buffer
+    // Pull raw buffer — sharp 保留源数据原始位深
     const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
     const width = info.width;
     const height = info.height;
     const channels = info.channels; // expect 3
     const out = Buffer.allocUnsafe(width * height * 3);
+
+    // 检测 16-bit 源
+    const expectedBytes8 = width * height * channels;
+    const is16bit = (data.length >= expectedBytes8 * 2);
 
     // 使用统一渲染核心
     // 使用 getEffectiveInverted 计算有效反转状态，正片模式不需要反转
@@ -80,17 +84,26 @@ router.post('/preview', async (req, res) => {
     const core = new RenderCore({ ...params, inverted: effectiveInverted });
     core.prepareLUTs();
 
-    // Process pixels using RenderCore
-    for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
-      const [rC, gC, bC] = core.processPixel(r, g, b);
-
-      out[j] = rC;
-      out[j + 1] = gC;
-      out[j + 2] = bC;
+    // 使用 processPixelFloat 全浮点处理（预览也用浮点以确保一致性）
+    if (is16bit) {
+      const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+      for (let i = 0, j = 0; i < pixels.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
+    } else {
+      for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
     }
 
     // Encode to JPEG and send
@@ -156,21 +169,36 @@ router.post('/render', async (req, res) => {
     const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    // 使用统一渲染核心
+    // 检测 16-bit 源
+    const expectedBytes8Render = width * height * channels;
+    const is16bitRender = (data.length >= expectedBytes8Render * 2);
+    if (is16bitRender) {
+      console.log(`[FilmLab Render] High bit-depth source detected, using float pipeline`);
+    }
+
+    // 使用统一渲染核心（全浮点管线，充分利用源数据色深）
     const core = new RenderCore(params || {});
     core.prepareLUTs();
 
-    // Process pixels using RenderCore
-    for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
-      const [rC, gC, bC] = core.processPixel(r, g, b);
-
-      out[j] = rC;
-      out[j + 1] = gC;
-      out[j + 2] = bC;
+    if (is16bitRender) {
+      const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+      for (let i = 0, j = 0; i < pixels.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
+    } else {
+      for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
     }
 
     // Save to positive file
@@ -275,21 +303,36 @@ router.post('/export', async (req, res) => {
     const channels = info.channels;
     const out = Buffer.allocUnsafe(width * height * 3);
 
-    // 使用统一渲染核心
+    // 检测 16-bit 源
+    const expectedBytes8Export = width * height * channels;
+    const is16bitExport = (data.length >= expectedBytes8Export * 2);
+    if (is16bitExport) {
+      console.log(`[FilmLab Export] High bit-depth source detected, using float pipeline`);
+    }
+
+    // 使用统一渲染核心（全浮点管线，充分利用源数据色深）
     const core = new RenderCore(params || {});
     core.prepareLUTs();
 
-    // Process pixels using RenderCore
-    for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
-      const [rC, gC, bC] = core.processPixel(r, g, b);
-
-      out[j] = rC;
-      out[j + 1] = gC;
-      out[j + 2] = bC;
+    if (is16bitExport) {
+      const pixels = new Uint16Array(data.buffer, data.byteOffset, data.byteLength / 2);
+      for (let i = 0, j = 0; i < pixels.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          pixels[i] / 65535, pixels[i + 1] / 65535, pixels[i + 2] / 65535
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
+    } else {
+      for (let i = 0, j = 0; i < data.length; i += channels, j += 3) {
+        const [rF, gF, bF] = core.processPixelFloat(
+          data[i] / 255, data[i + 1] / 255, data[i + 2] / 255
+        );
+        out[j]     = Math.min(255, Math.max(0, Math.round(rF * 255)));
+        out[j + 1] = Math.min(255, Math.max(0, Math.round(gF * 255)));
+        out[j + 2] = Math.min(255, Math.max(0, Math.round(bF * 255)));
+      }
     }
 
     // Persist export to disk and update DB paths consistently

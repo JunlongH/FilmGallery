@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ApiContext } from '../context/ApiContext';
 import axios from 'axios';
 import CachedImage from '../components/CachedImage';
+import { getPhotoUrl } from '../utils/urls';
 import { Icon } from '../components/ui';
 
 const numColumns = 3;
@@ -35,12 +36,7 @@ export default function TagDetailScreen({ route, navigation }) {
   }, [baseUrl, tagId]);
 
   const renderItem = ({ item, index }) => {
-    let thumbUrl;
-    if (item.thumb_rel_path) {
-      thumbUrl = `${baseUrl}/uploads/${item.thumb_rel_path}`;
-    } else {
-      thumbUrl = `${baseUrl}/uploads/rolls/${item.roll_id}/thumb/${item.filename}`;
-    }
+    const thumbUrl = getPhotoUrl(baseUrl, item, 'thumb');
     
     return (
       <TouchableOpacity 
