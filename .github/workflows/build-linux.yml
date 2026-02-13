@@ -31,9 +31,9 @@ jobs:
       # 安装项目依赖
       - name: Install Dependencies
         run: |
-          npm install
-          cd client && npm install && cd ..
-          cd server && npm install && cd ..
+          npm install --legacy-peer-deps
+          cd client && npm install --legacy-peer-deps && cd ..
+          cd server && npm install --legacy-peer-deps && cd ..
 
       # 构建前端
       - name: Build React Client
