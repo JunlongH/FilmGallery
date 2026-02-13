@@ -1,0 +1,73 @@
+name: Build Linux Desktop
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # 安装 Linux 系统依赖 (关键步骤)
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3 libraw-dev libvips-dev libarchive-tools
+
+      # 安装项目依赖
+      - name: Install Dependencies
+        run: |
+          npm install
+          cd client && npm install && cd ..
+          cd server && npm install && cd ..
+
+      # 构建前端
+      - name: Build React Client
+        run: npm run build-client
+
+      # 重新编译原生模块 (最关键步骤)
+      - name: Rebuild Native Modules
+        run: npm run rebuild:electron
+
+      # 打包 Linux 应用
+      - name: Build Linux App (AppImage & Deb)
+        run: npx electron-builder --linux
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 上传构建产物到 GitHub Actions Artifacts
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: FilmGallery-Linux-${{ github.sha }}
+          path: |
+            dist_v9/*.AppImage
+            dist_v9/*.deb
+          if-no-files-found: warn
+
+      # 如果是 tag 推送，创建 Release
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            dist_v9/*.AppImage
+            dist_v9/*.deb
+          draft: true
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

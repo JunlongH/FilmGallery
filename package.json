@@ -86,6 +86,15 @@
       ],
       "icon": "assets/icon.png"
     },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "assets/icon.png",
+      "category": "Graphics",
+      "synopsis": "Film Photography Management Tool"
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
