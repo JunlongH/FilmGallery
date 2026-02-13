@@ -100,7 +100,8 @@
         "Name": "FilmGallery",
         "Comment": "Film Photography Management Tool",
         "Categories": "Graphics;Photography;",
-        "StartupWMClass": "FilmGallery"
+        "Icon": "filmgallery",
+        "StartupWMClass": "film-gallery-desktop"
       }
     },
     "nsis": {
