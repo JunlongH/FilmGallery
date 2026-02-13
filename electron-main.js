@@ -419,6 +419,17 @@ function createWindow() {
     ? { x: desired.x, y: desired.y }
     : {};
 
+  // Find icon for the window
+  const iconCandidates = [
+    path.join(process.resourcesPath || __dirname, 'assets', 'icon.png'),
+    path.join(process.resourcesPath || __dirname, 'build', 'icon.png'),
+    path.join(process.resourcesPath || __dirname, 'app.asar.unpacked', 'assets', 'icon.png'),
+    path.join(__dirname, 'assets', 'icon.png'),
+    path.join(__dirname, 'build', 'icon.png')
+  ];
+  const iconPath = iconCandidates.find(p => fs.existsSync(p));
+  const windowIcon = iconPath ? nativeImage.createFromPath(iconPath) : undefined;
+
   mainWindow = new BrowserWindow({
     ...position,
     width: desired.width,
@@ -427,6 +438,7 @@ function createWindow() {
     minHeight: 600,
     show: false,
     frame: false,
+    icon: windowIcon, // Add icon for Linux desktop
     backgroundColor: '#000000', // Ensure background matches dark theme to avoid blue flashes
     // titleBarStyle: 'hidden', // Removed to prevent conflict with frame: false on Windows
     webPreferences: {
