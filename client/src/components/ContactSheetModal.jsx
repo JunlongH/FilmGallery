@@ -88,10 +88,6 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
   const canvasRef = useRef(null);
   const abortControllerRef = useRef(null);
 
-  // Theme detection
-  const isDark = document.documentElement.classList.contains('dark') || 
-                 document.documentElement.getAttribute('data-theme') === 'dark';
-
   // Helper to get image path based on selected source
   const getImagePath = useCallback((photo) => {
     switch (imageSource) {
