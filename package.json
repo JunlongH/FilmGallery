@@ -93,7 +93,8 @@
       ],
       "icon": "assets/icon.png",
       "category": "Graphics",
-      "synopsis": "Film Photography Management Tool"
+      "synopsis": "Film Photography Management Tool",
+      "maintainer": "FilmGallery <filmgallery@example.com>"
     },
     "nsis": {
       "oneClick": false,
