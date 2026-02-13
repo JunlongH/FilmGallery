@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { buildUploadUrl, getApiBase } from '../api';
+import GlassModal from './ui/GlassModal';
+import { Button } from '@heroui/react';
+import { Grid } from 'lucide-react';
 import '../styles/FilmInventory.css';
 
 // Style presets metadata
@@ -425,27 +428,45 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
   if (!isOpen) return null;
 
   return (
-    <div className="fg-modal-overlay" onClick={onClose}>
-      <div 
-        className="fg-modal-content" 
-        style={{ maxWidth: 900, width: '90%' }}
-        onClick={e => e.stopPropagation()}
-      >
-        <div className="fg-modal-header">
-          <h3>Export Contact Sheet</h3>
-          <button className="fg-modal-close" onClick={onClose}>&times;</button>
+    <GlassModal
+      isOpen={isOpen}
+      onClose={isGenerating ? undefined : onClose}
+      size="4xl"
+      title="Export Contact Sheet"
+      icon={<Grid className="w-5 h-5" />}
+      isDismissable={!isGenerating}
+      hideCloseButton={isGenerating}
+      footer={
+        <div className="flex gap-3 justify-end w-full">
+            <Button 
+                variant="flat" 
+                onPress={isGenerating ? handleCancel : onClose}
+                className="font-medium"
+            >
+                {isGenerating ? 'Cancel' : 'Close'}
+            </Button>
+            <Button 
+                color="primary" 
+                onPress={handleGenerate}
+                isDisabled={isGenerating || photos.length === 0}
+                isLoading={isGenerating}
+                className="font-medium"
+            >
+                {isGenerating ? 'Generating...' : 'Generate & Download'}
+            </Button>
         </div>
-
-        <div className="fg-modal-body" style={{ padding: 24 }}>
+      }
+    >
+        <div className="flex flex-col gap-6">
           {error && (
-            <div className="fg-alert fg-alert-error" style={{ marginBottom: 20 }}>
+            <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm border border-red-200 dark:border-red-900/50">
               {error}
             </div>
           )}
 
           {/* Info */}
-          <div style={{ marginBottom: 20, padding: 16, background: isDark ? '#27272a' : '#f8f9fa', borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, color: isDark ? '#a1a1aa' : '#666' }}>
+          <div className="p-4 bg-zinc-50 dark:bg-zinc-900/50 rounded-lg border border-zinc-100 dark:border-zinc-800">
+            <div className="flex flex-wrap justify-between gap-4 text-sm text-zinc-600 dark:text-zinc-400">
               <span><strong>{photos.length}</strong> photos</span>
               <span><strong>{COLUMNS}</strong> columns × <strong>{rows}</strong> rows</span>
               <span>Max size: <strong>4000px</strong></span>
@@ -453,93 +474,73 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
           </div>
 
           {/* Preview */}
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', marginBottom: 8, fontWeight: 600, color: isDark ? '#ECEDEE' : '#333' }}>
+          <div>
+            <label className="block mb-2 font-semibold text-zinc-900 dark:text-zinc-100">
               Preview
             </label>
-            <div style={{ 
-              background: '#000', 
-              borderRadius: 8, 
-              padding: 20, 
-              display: 'flex', 
-              justifyContent: 'center',
-              alignItems: 'center',
-              minHeight: 300
-            }}>
+            <div className="bg-zinc-950 rounded-lg p-5 flex justify-center items-center min-h-[300px] border border-zinc-800">
               <canvas 
                 ref={canvasRef} 
-                style={{ 
-                  maxWidth: '100%', 
-                  height: 'auto',
-                  border: '1px solid #333'
-                }}
+                className="max-w-full h-auto border border-zinc-800"
               />
             </div>
           </div>
 
           {/* Style selector */}
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, color: isDark ? '#ECEDEE' : '#333' }}>
+          <div>
+            <label className="block mb-3 font-semibold text-zinc-900 dark:text-zinc-100">
               Choose Style
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {Object.entries(STYLE_PRESETS).map(([key, preset]) => (
                 <button
                   key={key}
                   onClick={() => setSelectedStyle(key)}
                   disabled={isGenerating}
-                  style={{
-                    padding: 16,
-                    border: selectedStyle === key ? `3px solid ${preset.preview}` : (isDark ? '2px solid #3f3f46' : '2px solid #ddd'),
-                    borderRadius: 8,
-                    background: selectedStyle === key ? (isDark ? '#1e3a5f' : '#f0f9ff') : (isDark ? '#27272a' : '#fff'),
-                    cursor: isGenerating ? 'not-allowed' : 'pointer',
-                    textAlign: 'left',
-                    transition: 'all 0.2s',
-                    opacity: isGenerating ? 0.6 : 1
-                  }}
+                  className={`
+                    p-4 rounded-lg text-left transition-all border outline-none
+                    ${selectedStyle === key 
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-500 ring-1 ring-blue-500' 
+                      : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                    }
+                    ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                  `}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div className="flex items-center gap-2 mb-1">
                     <div 
-                      style={{ 
-                        width: 20, 
-                        height: 20, 
-                        borderRadius: 4, 
-                        background: preset.preview,
-                        border: isDark ? '1px solid #52525b' : '1px solid #ccc'
-                      }}
+                      className="w-5 h-5 rounded border border-zinc-200 dark:border-zinc-700 shadow-sm"
+                      style={{ background: preset.preview }}
                     />
-                    <span style={{ fontWeight: 600, fontSize: 14, color: isDark ? '#ECEDEE' : '#333' }}>{preset.name}</span>
+                    <span className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">{preset.name}</span>
                   </div>
-                  <div style={{ fontSize: 12, color: isDark ? '#a1a1aa' : '#666' }}>{preset.description}</div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400">{preset.description}</div>
                 </button>
               ))}
             </div>
           </div>
 
           {/* Image source selector */}
-          <div style={{ marginBottom: 24 }}>
-            <label style={{ display: 'block', marginBottom: 12, fontWeight: 600, color: isDark ? '#ECEDEE' : '#333' }}>
+          <div>
+            <label className="block mb-3 font-semibold text-zinc-900 dark:text-zinc-100">
               Image Source
             </label>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div className="flex gap-3 flex-wrap">
               {Object.entries(IMAGE_SOURCES).map(([key, source]) => (
                 <button
                   key={key}
                   onClick={() => setImageSource(key)}
                   disabled={isGenerating}
-                  style={{
-                    padding: '10px 16px',
-                    border: imageSource === key ? '2px solid #0ea5e9' : (isDark ? '2px solid #3f3f46' : '2px solid #ddd'),
-                    borderRadius: 8,
-                    background: imageSource === key ? (isDark ? '#1e3a5f' : '#f0f9ff') : (isDark ? '#27272a' : '#fff'),
-                    cursor: isGenerating ? 'not-allowed' : 'pointer',
-                    transition: 'all 0.2s',
-                    opacity: isGenerating ? 0.6 : 1
-                  }}
+                  className={`
+                    px-4 py-2.5 rounded-lg text-left transition-all border outline-none
+                    ${imageSource === key 
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-500 dark:border-blue-500' 
+                      : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+                    }
+                    ${isGenerating ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                  `}
                 >
-                  <div style={{ fontWeight: 600, fontSize: 13, color: isDark ? '#ECEDEE' : '#333' }}>{source.name}</div>
-                  <div style={{ fontSize: 11, color: isDark ? '#a1a1aa' : '#666', marginTop: 2 }}>{source.description}</div>
+                  <div className="font-semibold text-sm text-zinc-900 dark:text-zinc-100">{source.name}</div>
+                  <div className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{source.description}</div>
                 </button>
               ))}
             </div>
@@ -547,53 +548,22 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
           {/* Progress bar */}
           {isGenerating && (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <span style={{ fontSize: 14, color: isDark ? '#a1a1aa' : '#666' }}>{progress.message}</span>
-                <span style={{ fontSize: 14, fontWeight: 600, color: '#0ea5e9' }}>
+            <div>
+              <div className="flex justify-between mb-2">
+                <span className="text-sm text-zinc-600 dark:text-zinc-400">{progress.message}</span>
+                <span className="text-sm font-semibold text-blue-500">
                   {progress.percentage}%
                 </span>
               </div>
-              <div style={{ 
-                width: '100%', 
-                height: 8, 
-                background: isDark ? '#27272a' : '#e5e7eb', 
-                borderRadius: 4,
-                overflow: 'hidden'
-              }}>
-                <div style={{
-                  width: `${progress.percentage}%`,
-                  height: '100%',
-                  background: 'linear-gradient(90deg, #0ea5e9, #06b6d4)',
-                  transition: 'width 0.3s ease',
-                  borderRadius: 4
-                }} />
+              <div className="w-full h-2 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full transition-all duration-300"
+                  style={{ width: `${progress.percentage}%` }}
+                />
               </div>
             </div>
           )}
         </div>
-
-        <div className="fg-modal-footer" style={{ padding: 20, borderTop: isDark ? '1px solid #27272a' : '1px solid #e5e7eb' }}>
-          <button 
-            className="fg-btn" 
-            onClick={isGenerating ? handleCancel : onClose}
-            style={{ marginRight: 12 }}
-          >
-            {isGenerating ? 'Cancel' : 'Close'}
-          </button>
-          <button 
-            className="fg-btn fg-btn-primary" 
-            onClick={handleGenerate}
-            disabled={isGenerating || photos.length === 0}
-            style={{
-              opacity: (isGenerating || photos.length === 0) ? 0.6 : 1,
-              cursor: (isGenerating || photos.length === 0) ? 'not-allowed' : 'pointer'
-            }}
-          >
-            {isGenerating ? 'Generating...' : 'Generate & Download'}
-          </button>
-        </div>
-      </div>
-    </div>
+    </GlassModal>
   );
 }
