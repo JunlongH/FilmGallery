@@ -94,7 +94,14 @@
       "icon": "assets/icon.png",
       "category": "Graphics",
       "synopsis": "Film Photography Management Tool",
-      "maintainer": "FilmGallery <filmgallery@example.com>"
+      "maintainer": "FilmGallery <filmgallery@example.com>",
+      "executableName": "filmgallery",
+      "desktop": {
+        "Name": "FilmGallery",
+        "Comment": "Film Photography Management Tool",
+        "Categories": "Graphics;Photography;",
+        "StartupWMClass": "FilmGallery"
+      }
     },
     "nsis": {
       "oneClick": false,
