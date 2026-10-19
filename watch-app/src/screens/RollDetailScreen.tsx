@@ -62,7 +62,7 @@ const RollDetailScreen: React.FC = () => {
       >
         {imageUrl ? (
           <Image
-            source={{ uri: imageUrl }}
+            source={{ uri: imageUrl, ...(api.getAuthToken() ? { headers: { Authorization: `Bearer ${api.getAuthToken()}` } } : {}) }}
             style={styles.thumbnail}
             resizeMode="cover"
           />

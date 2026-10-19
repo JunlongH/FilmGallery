@@ -126,7 +126,7 @@ function createHttpHelpers({ getBaseUrl, setBaseUrl, primaryBaseUrl, backupUrl, 
   };
 
   // Phase 2B #1 — auth token injection.
-  // `authToken` is the plaintext bearer secret (shared-secret auth).
+  // `authToken` is the short-lived bearer session returned after login.
   // Stored in-memory only; mobile/watch persist it via platform secure storage
   // (expo-secure-store / keychain) and feed it back through setAuthToken.
   let authToken = null;
@@ -177,7 +177,7 @@ function createHttpHelpers({ getBaseUrl, setBaseUrl, primaryBaseUrl, backupUrl, 
     try {
       const response = await fetchFn(
         url,
-        controller ? { ...authedInit, signal: controller.signal } : authedInit
+        { credentials: 'include', ...(controller ? { ...authedInit, signal: controller.signal } : authedInit) }
       );
       // 401 hook: lets mobile/watch navigate to the re-pair flow when the
       // server has revoked the token. Fire-once-per-request; the response is
@@ -280,6 +280,7 @@ function createHttpHelpers({ getBaseUrl, setBaseUrl, primaryBaseUrl, backupUrl, 
         return new Promise((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           xhr.open('POST', `${getBaseUrl()}${path}`);
+          xhr.withCredentials = true;
           if (authedHeaders) xhr.setRequestHeader('Authorization', authedHeaders.Authorization);
           // Large multi-file uploads + server-side preview (hash + EXIF per
           // file) can legitimately take minutes; set a generous ceiling so a
@@ -323,7 +324,7 @@ function createHttpHelpers({ getBaseUrl, setBaseUrl, primaryBaseUrl, backupUrl, 
         });
       }
       try {
-        const response = await fetchFn(`${getBaseUrl()}${path}`, withAuth({ method: 'POST', body: formData }));
+        const response = await fetchFn(`${getBaseUrl()}${path}`, withAuth({ method: 'POST', body: formData, credentials: 'include' }));
         if (response.status === 401 && onUnauthorized) {
           try { onUnauthorized(response); } catch { /* swallow */ }
         }

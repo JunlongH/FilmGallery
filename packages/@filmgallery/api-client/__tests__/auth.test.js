@@ -25,7 +25,7 @@ test('no token set → no Authorization header', async () => {
   const fetch = jest.fn().mockResolvedValue(okRes({ ok: true }));
   const api = createApiClient({ baseUrl: 'http://x', fetch });
   await api.http.get('/api/rolls');
-  expect(fetch).toHaveBeenCalledWith('http://x/api/rolls', { method: 'GET' });
+  expect(fetch).toHaveBeenCalledWith('http://x/api/rolls', { method: 'GET', credentials: 'include' });
 });
 
 test('setAuthToken injects Authorization: Bearer <token>', async () => {
@@ -34,7 +34,7 @@ test('setAuthToken injects Authorization: Bearer <token>', async () => {
   api.setAuthToken('abc123');
   await api.http.get('/api/rolls');
   expect(fetch).toHaveBeenCalledWith('http://x/api/rolls', {
-    method: 'GET',
+    method: 'GET', credentials: 'include',
     headers: { Authorization: 'Bearer abc123' },
   });
 });
@@ -54,7 +54,7 @@ test('setAuthToken(null) clears the token', async () => {
   api.setAuthToken('abc');
   api.setAuthToken(null);
   await api.http.get('/api/rolls');
-  expect(fetch).toHaveBeenLastCalledWith('http://x/api/rolls', { method: 'GET' });
+  expect(fetch).toHaveBeenLastCalledWith('http://x/api/rolls', { method: 'GET', credentials: 'include' });
 });
 
 test('header is preserved across retries', async () => {
@@ -70,10 +70,10 @@ test('header is preserved across retries', async () => {
   await api.http.get('/api/rolls');
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(fetch).toHaveBeenNthCalledWith(1, 'http://x/api/rolls', {
-    method: 'GET', headers: { Authorization: 'Bearer xyz' },
+    method: 'GET', credentials: 'include', headers: { Authorization: 'Bearer xyz' },
   });
   expect(fetch).toHaveBeenNthCalledWith(2, 'http://x/api/rolls', {
-    method: 'GET', headers: { Authorization: 'Bearer xyz' },
+    method: 'GET', credentials: 'include', headers: { Authorization: 'Bearer xyz' },
   });
 });
 
@@ -89,7 +89,7 @@ test('header is preserved across sticky failover', async () => {
   api.setAuthToken('xyz');
   await api.http.get('/api/x');
   expect(fetch).toHaveBeenNthCalledWith(2, 'http://backup/api/x', {
-    method: 'GET', headers: { Authorization: 'Bearer xyz' },
+    method: 'GET', credentials: 'include', headers: { Authorization: 'Bearer xyz' },
   });
 });
 
@@ -132,7 +132,7 @@ test('Authorization header is injected on POST', async () => {
   api.setAuthToken('tok');
   await api.http.post('/api/rolls', { name: 'New' });
   expect(fetch).toHaveBeenCalledWith('http://x/api/rolls', {
-    method: 'POST',
+    method: 'POST', credentials: 'include',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer tok' },
     body: JSON.stringify({ name: 'New' }),
   });

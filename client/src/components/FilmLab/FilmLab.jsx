@@ -7,6 +7,7 @@ import FilmLabCanvas from './FilmLabCanvas';
 import PhotoSwitcher from './PhotoSwitcher';
 import { isWebGLAvailable, processImageWebGL, disposeWebGL, _resetWebGLAvailableCache } from './FilmLabWebGL';
 import { useAIPanel } from '../AIPanel/AIPanelContext';
+import { authFetch } from '../../api/core';
 
 // 使用统一渲染核心 (via CRACO alias)
 import {
@@ -783,7 +784,7 @@ export default function FilmLab({
     let active = true;
     (async () => {
       try {
-        const response = await fetch(imageUrl);
+        const response = await authFetch(imageUrl);
         if (!active) return;
         const blob = await response.blob();
         if (!active) return;

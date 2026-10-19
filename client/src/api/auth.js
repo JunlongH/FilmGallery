@@ -1,21 +1,26 @@
 /**
- * Auth API — shared-secret management (replaces the pairing/session flow).
+ * Account/password authentication.
  *
  * Server-side endpoints:
- *   GET    /api/auth/secret             — read the current secret (loopback only)
- *   POST   /api/auth/secret/regenerate  — rotate the secret (loopback only)
- *   GET    /api/auth/check              — report caller auth status
+ *   GET    /api/auth/status             — report account setup status
+ *   POST   /api/auth/setup              — first-run local account setup
+ *   POST   /api/auth/login              — exchange username/password for a session
+ *   POST   /api/auth/logout             — revoke the current session
  */
 import { jsonFetch, postJson } from './core';
 
-export function getServerSecret() {
-  return jsonFetch('/api/auth/secret');
+export function getAuthStatus() {
+  return jsonFetch('/api/auth/status');
 }
 
-export function regenerateSecret() {
-  return postJson('/api/auth/secret/regenerate', {});
+export function setupAccount(username, password) {
+  return postJson('/api/auth/setup', { username, password });
 }
 
-export function checkAuth() {
-  return jsonFetch('/api/auth/check');
+export function login(username, password) {
+  return postJson('/api/auth/login', { username, password });
+}
+
+export function logout() {
+  return postJson('/api/auth/logout', {});
 }

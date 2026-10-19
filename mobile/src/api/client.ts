@@ -53,8 +53,8 @@ function applyAuth(client: ApiClient) {
   if (_onUnauthorizedCb) client.setOnUnauthorized(_onUnauthorizedCb);
 }
 
-// TEST HACK (temp): default to host server via adb reverse. Revert before commit.
-let _client: ApiClient = createApiClient({ baseUrl: 'http://localhost:4001', timeout: 5000, onError: notifyError });
+// App restores the configured server URL before showing screens.
+let _client: ApiClient = createApiClient({ baseUrl: 'https://filmgallery.cloud', timeout: 5000, onError: notifyError });
 
 export function configureApi(
   primaryUrl: string,
@@ -103,6 +103,14 @@ export async function clearAuthToken(): Promise<void> {
   try {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
   } catch { /* best-effort */ }
+}
+
+export function getAuthToken(): string | null {
+  return _pendingToken;
+}
+
+export function authHeaders(headers: Record<string, string> = {}): Record<string, string> {
+  return _pendingToken ? { ...headers, Authorization: `Bearer ${_pendingToken}` } : headers;
 }
 
 export function setApiOnUnauthorized(cb: () => void): void {

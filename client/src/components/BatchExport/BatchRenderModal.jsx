@@ -21,6 +21,7 @@ import {
   getPhotos, // Added for hybrid mode
   getApiBase
 } from '../../api';
+import { authFetch } from '../../api/core';
 import ComputeService from '../../services/ComputeService'; // Added for hybrid mode
 import RemoteFileBrowser from '../common/RemoteFileBrowser'; // Added for remote path selection
 import useIsDarkMode from '../../hooks/useIsDarkMode';
@@ -755,7 +756,7 @@ function LutSelector({ lutFileName, lutIntensity, onLutSelect, onIntensityChange
     
     try {
       const apiBase = getApiBase();
-      const res = await fetch(`${apiBase}/api/luts/upload`, {
+      const res = await authFetch(`${apiBase}/api/luts/upload`, {
         method: 'POST',
         body: formData
       });

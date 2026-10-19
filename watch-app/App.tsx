@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { ActivityIndicator, StatusBar, StyleSheet, View } from 'react-native';
@@ -24,18 +24,24 @@ import RollDetailScreen from './src/screens/RollDetailScreen';
 import PhotoViewerScreen from './src/screens/PhotoViewerScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 function App() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    api.setOnUnauthorized(() => {
+      void api.clearAuthToken();
+      if (navigationRef.isReady()) navigationRef.navigate('Settings');
+    });
     // Load server URL before any screen can fire a request
-    api.loadServerURL().finally(() => setReady(true));
+    api.loadServerURL().then(() => api.loadAuthToken()).finally(() => setReady(true));
 
     // Start location watch in background - so position is ready when user needs it
     startLocationWatch().catch(err => {
       console.log('[App] Location preload failed:', err);
     });
+    return () => api.setOnUnauthorized(() => {});
   }, []);
 
   if (!ready) {
@@ -52,7 +58,7 @@ function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
-      <NavigationContainer>
+      <NavigationContainer ref={navigationRef}>
         <Stack.Navigator
           initialRouteName="Home"
           screenOptions={{

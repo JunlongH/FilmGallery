@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import { getAuthToken } from '../api/client';
 
 const loadedCache = new Set<string>();
 
 export interface CachedImageSource {
   uri: string;
+  headers?: Record<string, string>;
 }
 
 export interface UseCachedImageResult {
@@ -37,8 +39,9 @@ export function useCachedImage(uri: string): UseCachedImageResult {
     }
   }, [uri]);
 
+  const token = getAuthToken();
   return {
-    source: uri ? { uri } : undefined,
+    source: uri ? { uri, ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}) } : undefined,
     loaded,
     error,
     onLoadEnd,

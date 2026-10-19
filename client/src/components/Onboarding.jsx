@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Button, Card, CardBody } from '@heroui/react';
 import { Film, Camera, Layers } from 'lucide-react';
-import { getAppConfig, updateAppConfig, setOnboardingChoice, API_BASE as API } from '../api';
+import { getAppConfig, updateAppConfig, setOnboardingChoice, authFetch, API_BASE as API } from '../api';
 
 const MODE_KEY = 'fg-workspace-mode';
 export const WORKSPACE_EVENT = 'fg-set-workspace-mode';
@@ -49,7 +49,7 @@ export default function Onboarding() {
   // existing data → show the upgrade gate rather than the first-run cards.
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['onboarding-existing-data'],
-    queryFn: () => fetch(`${API}/api/stats/summary`).then(r => r.json()),
+    queryFn: () => authFetch(`${API}/api/stats/summary`).then(r => r.json()),
     enabled: needsOnboarding && healthOk,
     staleTime: 5 * 60 * 1000,
     retry: 1,

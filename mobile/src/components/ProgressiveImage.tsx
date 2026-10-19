@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, ActivityIndicator, type ImageStyle, type StyleProp } from 'react-native';
-import { Image as ExpoImage, type ImageContentFit } from 'expo-image';
+import { type ImageContentFit } from 'expo-image';
 import CachedImage from './CachedImage';
 
 export interface ProgressiveImageProps {
@@ -28,11 +28,10 @@ export default function ProgressiveImage({
           transition={0}
         />
       ) : null}
-      <ExpoImage
-        source={{ uri: fullUri }}
+      <CachedImage
+        uri={fullUri}
         style={StyleSheet.absoluteFill}
         contentFit={contentFit}
-        cachePolicy="disk"
         transition={200}
         onLoad={() => setLoaded(true)}
       />

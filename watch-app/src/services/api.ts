@@ -7,7 +7,7 @@ const SERVER_URL_KEY = '@server_url';
 const AUTH_TOKEN_KEY = '@auth_token';
 // Default to empty - user must configure server URL in settings.
 // This avoids having placeholder IP addresses in production code.
-const DEFAULT_URL = '';
+const DEFAULT_URL = 'https://filmgallery.cloud';
 
 class ApiService {
   // Shared client. Resilience matches the previous axios setup:
@@ -61,7 +61,17 @@ class ApiService {
     return this.baseURL;
   }
 
-  // --- Phase 2B #1: Auth token ---
+  // --- Account login session ---
+
+  async login(username: string, password: string): Promise<void> {
+    const result: any = await this.client.http.post('/api/auth/login', { username, password });
+    if (!result?.token) throw new Error('Server returned no session token');
+    await this.saveAuthToken(result.token);
+  }
+
+  async logout(): Promise<void> {
+    try { await this.client.http.post('/api/auth/logout', {}); } finally { await this.clearAuthToken(); }
+  }
 
   async loadAuthToken(): Promise<void> {
     try {
@@ -88,6 +98,10 @@ class ApiService {
     } catch (error) {
       console.error('Failed to clear auth token:', error);
     }
+  }
+
+  getAuthToken(): string | null {
+    return this.client.getAuthToken();
   }
 
   setOnUnauthorized(cb: () => void): void {

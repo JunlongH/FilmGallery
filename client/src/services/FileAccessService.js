@@ -7,7 +7,7 @@
  * 3. 临时文件下载缓存（带 LRU 淘汰和持久化支持）
  */
 
-import { buildUploadUrl } from '../api';
+import { buildUploadUrl, authFetch } from '../api';
 
 // ========================================
 // Phase 4.1: 增强文件缓存机制
@@ -116,7 +116,7 @@ export async function getFileAsArrayBuffer(pathOrUrl, options = {}) {
   }
   
   try {
-    const res = await fetch(url);
+    const res = await authFetch(url);
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     }

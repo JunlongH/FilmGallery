@@ -61,6 +61,7 @@ const TimelineStack = createNativeStackNavigator();
 const MapStack = createNativeStackNavigator();
 const AlbumsStack = createNativeStackNavigator();
 const LibraryStack = createNativeStackNavigator();
+const DEFAULT_SERVER_URL = 'https://filmgallery.cloud';
 
 const stackScreenOptions = (theme: any) =>
   ({
@@ -315,7 +316,7 @@ function HomeTabs() {
 }
 
 export default function App() {
-  const [baseUrl, setBaseUrl] = useState<string>('');
+  const [baseUrl, setBaseUrl] = useState<string>(DEFAULT_SERVER_URL);
   const [backupUrl, setBackupUrl] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [darkMode, setDarkMode] = useState<boolean>(false);
@@ -336,13 +337,14 @@ export default function App() {
       AsyncStorage.getItem('amap_key'),
       initLanguage(),
     ]).then(async ([url, backup, themeDark, savedProvider, savedAmapKey]) => {
-      configureApi(url || '', backup || '', { retry: { maxRetries: 2, delayMs: 1000, backoff: 'linear' } });
+      const serverUrl = url || DEFAULT_SERVER_URL;
+      configureApi(serverUrl, backup || '', { retry: { maxRetries: 2, delayMs: 1000, backoff: 'linear' } });
       // Phase 2B: restore auth token + wire 401 → pairing screen
       await loadAuthToken();
       setApiOnUnauthorized(() => {
         navigationRef.current?.navigate('Pairing');
       });
-      if (url) setBaseUrl(url);
+      setBaseUrl(serverUrl);
       if (backup) setBackupUrl(backup);
       if (themeDark === 'true') setDarkMode(true);
       if (savedProvider === 'osm' || savedProvider === 'amap') setMapProvider(savedProvider);

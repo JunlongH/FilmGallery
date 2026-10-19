@@ -112,7 +112,7 @@ describe('T.7 — 图像加载单网络请求 (P1-10)', () => {
   test('非 server-decode 路径使用单次 fetch(blob) 而非 new Image() + fetch()', () => {
     const src = readClientSrc('components/FilmLab/FilmLab.jsx');
     // 应有 fetch(imageUrl) → blob → createObjectURL
-    expect(src).toMatch(/fetch\(imageUrl\)/);
+    expect(src).toMatch(/(?:fetch|authFetch)\(imageUrl\)/);
     expect(src).toMatch(/response\.blob/);
     expect(src).toMatch(/URL\.createObjectURL\(blob\)/);
   });

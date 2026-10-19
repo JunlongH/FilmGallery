@@ -7,15 +7,14 @@ import { Image, Heart, BookMarked, Upload, Plus, ArrowRight } from 'lucide-react
 import HeroCarousel from '../Overview/HeroCarousel';
 import AlbumCard from './albums/AlbumCard';
 import ImageViewer from '../common/LazyImageViewer';
-import { getAlbums, getApiBase } from '../../api';
+import { getAlbums, authFetch } from '../../api';
 import { getCacheStrategy } from '../../lib';
 
 async function fetchDigitalStats() {
-  const apiBase = getApiBase();
   const [statsRes, albumsRes, favsRes] = await Promise.all([
-    fetch(`${apiBase}/api/stats/summary?mode=digital`).then(r => r.json()),
-    fetch(`${apiBase}/api/albums`).then(r => r.json()),
-    fetch(`${apiBase}/api/photos?mode=digital&favorite=true&page=1&pageSize=1`).then(r => r.json()),
+    authFetch('/api/stats/summary?mode=digital').then(r => r.json()),
+    authFetch('/api/albums').then(r => r.json()),
+    authFetch('/api/photos?mode=digital&favorite=true&page=1&pageSize=1').then(r => r.json()),
   ]);
   return {
     photos: statsRes?.total_digital_photos || 0,

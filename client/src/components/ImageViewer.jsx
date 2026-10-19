@@ -8,6 +8,7 @@ import ErrorBoundary from './ErrorBoundary';
 import ModalDialog from './ModalDialog';
 import PhotoDetailsSidebar from './PhotoDetailsSidebar.jsx';
 import { useAIPanel } from './AIPanel/AIPanelContext';
+import { authFetch } from '../api/core';
 
 const DigitalDevelop = lazy(() => import('./digital/DigitalDevelop'));
 
@@ -492,7 +493,7 @@ export default function ImageViewer({ images = [], index = 0, onClose, onPhotoUp
       const downloadUrl = getSingleDownloadUrl(img.id, 'positive', true);
       console.log('[DOWNLOAD] Using unified download URL:', downloadUrl);
       
-      const response = await fetch(downloadUrl);
+      const response = await authFetch(downloadUrl);
       
       if (!response.ok) {
         throw new Error(`Server returned ${response.status}`);

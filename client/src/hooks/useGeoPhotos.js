@@ -7,7 +7,7 @@
  * @module hooks/useGeoPhotos
  */
 import { useQuery } from '@tanstack/react-query';
-import { getApiBase } from '../api';
+import { getApiBase, authFetch } from '../api';
 
 /**
  * Fetch geo-tagged photos from the API
@@ -45,7 +45,7 @@ async function fetchGeoPhotos({ rollId, dateRange, limit = 2000, mode }) {
   
   const url = `${apiBase}/api/photos/geo?${params.toString()}`;
   
-  const response = await fetch(url);
+  const response = await authFetch(url);
   
   if (!response.ok) {
     throw new Error(`Failed to fetch geo photos: ${response.statusText}`);

@@ -8,7 +8,7 @@ import {
   format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, 
   eachDayOfInterval, addMonths, subMonths, addYears, subYears, setMonth 
 } from 'date-fns';
-import { getApiBase } from '../../api';
+import { getApiBase, authFetch } from '../../api';
 import { resolveThumbUrl } from '../../utils/thumbResolver';
 
 const LifeLogContext = createContext(null);
@@ -41,7 +41,7 @@ export function LifeLogProvider({ children, mode }) {
       const url = viewMode === 'month'
         ? `${apiBase}/api/photos?year=${year}&month=${month}${modeParam}`
         : `${apiBase}/api/photos?year=${year}${modeParam}`;
-      const res = await fetch(url);
+      const res = await authFetch(url);
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     }

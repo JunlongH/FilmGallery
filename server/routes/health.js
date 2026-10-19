@@ -10,19 +10,12 @@ const db = require('../db');
 
 /**
  * GET /api/health
- * Returns current storage configuration (useful for Settings verification)
+ * Deliberately returns liveness only. Detailed storage diagnostics are
+ * protected by the auth middleware on /database and /checkpoint.
  */
 router.get('/', (req, res, next) => {
-  const dbPath = getDbPath();
   res.json({
     ok: true,
-    storage: {
-      databasePath: dbPath,
-      uploadsDir: uploadsDir,
-      rollsDir: rollsDir,
-      dataRoot: process.env.DATA_ROOT || null,
-      uploadsRoot: process.env.UPLOADS_ROOT || null
-    },
     timestamp: new Date().toISOString()
   });
 });
@@ -45,6 +38,14 @@ router.get('/database', (req, res, next) => {
       exists: fs.existsSync(dbPath),
       size: fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0,
       modified: fs.existsSync(dbPath) ? fs.statSync(dbPath).mtime : null,
+    },
+    // This route is authenticated by the global middleware. Keep the paths
+    // available to the local settings screen without exposing them on the
+    // anonymous liveness endpoint above.
+    storage: {
+      databasePath: dbPath,
+      uploadsDir,
+      rollsDir,
     },
     wal: isWriteThrough ? {
       mode: 'TRUNCATE',

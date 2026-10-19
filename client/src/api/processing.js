@@ -2,7 +2,7 @@
  * RAW Decoding & Edge Detection API
  */
 
-import { getApiBase, jsonFetch, postJson, uploadWithProgress } from './core';
+import { getApiBase, jsonFetch, postJson, uploadWithProgress, authFetch } from './core';
 
 // ========================================
 // RAW DECODING
@@ -46,7 +46,7 @@ export async function previewRawFile(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const resp = await fetch(`${apiBase}/api/raw/preview`, {
+  const resp = await authFetch(`${apiBase}/api/raw/preview`, {
     method: 'POST',
     body: formData
   });
@@ -61,7 +61,7 @@ export async function extractRawMetadata(file) {
   const formData = new FormData();
   formData.append('file', file);
 
-  const resp = await fetch(`${apiBase}/api/raw/metadata`, {
+  const resp = await authFetch(`${apiBase}/api/raw/metadata`, {
     method: 'POST',
     body: formData
   });

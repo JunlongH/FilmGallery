@@ -46,7 +46,7 @@ describe('createApiClient — success / HTTP error', () => {
     const fetch = jest.fn().mockResolvedValue(okRes({ items: [1, 2] }));
     const api = createApiClient({ baseUrl: 'http://x', fetch });
     const res = await api.http.get('/api/rolls', { film: 'Portra' });
-    expect(fetch).toHaveBeenCalledWith('http://x/api/rolls?film=Portra', { method: 'GET' });
+    expect(fetch).toHaveBeenCalledWith('http://x/api/rolls?film=Portra', { method: 'GET', credentials: 'include' });
     expect(res).toEqual({ items: [1, 2] });
   });
 
@@ -82,7 +82,7 @@ describe('createApiClient — retry (same URL, network errors only)', () => {
     const api = createApiClient({ baseUrl: 'http://x', fetch, retry: { maxRetries: 2, delayMs: 1 } });
     await expect(api.http.get('/api/x')).rejects.toThrow('Failed to fetch');
     expect(fetch).toHaveBeenCalledTimes(3); // 1 initial + 2 retries
-    expect(fetch).toHaveBeenLastCalledWith('http://x/api/x', { method: 'GET' });
+    expect(fetch).toHaveBeenLastCalledWith('http://x/api/x', { method: 'GET', credentials: 'include' });
   });
 
   test('succeeds when a later attempt recovers', async () => {
@@ -144,8 +144,8 @@ describe('createApiClient — failover (sticky primary/secondary toggle)', () =>
     const res = await api.http.get('/api/x');
     expect(res).toEqual({ ok: true });
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(fetch).toHaveBeenNthCalledWith(1, 'http://primary/api/x', { method: 'GET' });
-    expect(fetch).toHaveBeenNthCalledWith(2, 'http://backup/api/x', { method: 'GET' });
+    expect(fetch).toHaveBeenNthCalledWith(1, 'http://primary/api/x', { method: 'GET', credentials: 'include' });
+    expect(fetch).toHaveBeenNthCalledWith(2, 'http://backup/api/x', { method: 'GET', credentials: 'include' });
     // Sticky: active base is now the backup.
     expect(api.baseUrl).toBe('http://backup');
   });
@@ -164,7 +164,7 @@ describe('createApiClient — failover (sticky primary/secondary toggle)', () =>
     });
     await api.http.get('/api/a'); // fails over to backup
     await api.http.get('/api/b'); // should go straight to backup
-    expect(fetch).toHaveBeenLastCalledWith('http://backup/api/b', { method: 'GET' });
+    expect(fetch).toHaveBeenLastCalledWith('http://backup/api/b', { method: 'GET', credentials: 'include' });
   });
 
   test('setBaseUrl resets the active base', async () => {

@@ -1,76 +1,89 @@
-/**
- * Auth settings endpoints — shared-secret management.
- *
- *   GET    /api/auth/secret             — return the current secret (loopback only)
- *   POST   /api/auth/secret/regenerate  — rotate the secret (loopback only)
- *   GET    /api/auth/ca-cert            — download the TLS CA cert PEM (loopback only)
- *   GET    /api/auth/check              — report caller auth status
- *
- * These routes sit BEHIND the auth middleware. Loopback callers pass through
- * automatically; remote callers need a valid Bearer secret. /secret,
- * /regenerate, and /ca-cert additionally enforce a loopback gate so a remote
- * client (even one holding the secret) cannot read sensitive material.
- */
-const express = require('express');
-const fs = require('fs');
-const path = require('path');
-const { isLoopback } = require('../utils/network');
-const { getCertDir } = require('../utils/tls');
+'use strict';
 
-function loopbackGate(req, res) {
-  const ip = req.ip || (req.socket && req.socket.remoteAddress) || '';
-  if (!isLoopback(ip)) {
-    res.status(403).json({ ok: false, error: 'Forbidden' });
-    return false;
-  }
-  return true;
+const express = require('express');
+const rateLimit = require('express-rate-limit');
+const { validatePassword } = require('../utils/auth-account');
+
+function isLoopback(value) {
+  return value === 'localhost' || value === '127.0.0.1' || value === '::1';
 }
 
-function createAuthSettingsRouter({ secretStore, db }) {
+function isTrustedSetupRequest(req) {
+  const address = req.socket && req.socket.remoteAddress;
+  if (!isLoopback(address) && address !== '::ffff:127.0.0.1') return false;
+  if (Object.keys(req.headers || {}).some(name => /^(?:forwarded|x-forwarded-|x-real-ip)/i.test(name))) return false;
+  try {
+    const host = new URL(`http://${req.headers.host}`).hostname;
+    if (!isLoopback(host)) return false;
+    // Electron's file:// renderer serializes its opaque origin as either
+    // `null` or `file://`; the socket is already restricted to loopback.
+    if (!req.headers.origin || req.headers.origin === 'null' || req.headers.origin === 'file://') return true;
+    const origin = new URL(req.headers.origin);
+    return ['http:', 'https:'].includes(origin.protocol) && isLoopback(origin.hostname);
+  } catch (_) {
+    return false;
+  }
+}
+
+function createAuthSettingsRouter({ accountStore }) {
+  if (!accountStore) throw new TypeError('accountStore is required');
   const router = express.Router();
+  router.use((req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 
-  // GET /api/auth/check — reachable by anyone who passes auth (loopback,
-  // valid secret, or soft-mode pass-through). Reports whether the caller is
-  // truly authenticated (used by clients to validate an entered secret even
-  // while soft mode is on).
-  router.get('/check', (req, res) => {
-    res.json({ ok: true, authenticated: !!req.authenticated });
+  router.get('/status', (req, res) => {
+    try { return res.json({ ok: true, configured: accountStore.isConfigured() }); }
+    catch (_) { return res.status(503).json({ ok: false, error: 'Authentication unavailable' }); }
   });
 
-  // GET /api/auth/secret — loopback only (host displays the secret for clients).
-  router.get('/secret', (req, res) => {
-    if (!loopbackGate(req, res)) return;
-    res.json({ ok: true, secret: secretStore.getSecret() });
-  });
-
-  // POST /api/auth/secret/regenerate — loopback only. Invalidates all clients;
-  // they must re-enter the new secret.
-  router.post('/secret/regenerate', async (req, res, next) => {
+  router.post('/setup', (req, res) => {
+    if (!isTrustedSetupRequest(req)) return res.status(404).json({ ok: false, error: 'Not found' });
     try {
-      if (!loopbackGate(req, res)) return;
-      const secret = await secretStore.regenerateSecret(db);
-      res.json({ ok: true, secret });
-    } catch (err) {
-      next(err);
+      if (accountStore.isConfigured()) return res.status(404).json({ ok: false, error: 'Not found' });
+      validatePassword(req.body && req.body.password);
+      accountStore.setPassword(req.body.password, req.body.username);
+      return res.status(201).json({ ok: true });
+    } catch (error) {
+      return res.status(400).json({ ok: false, error: error.message });
     }
   });
 
-  // GET /api/auth/ca-cert — loopback only. Serves the self-signed CA cert PEM
-  // so the user can download it and install on mobile devices. The phone must
-  // trust this CA for HTTPS discovery to succeed.
-  router.get('/ca-cert', (req, res) => {
-    if (!loopbackGate(req, res)) return;
-    const certDir = getCertDir();
-    const caPath = path.join(certDir, 'ca-cert.pem');
-    if (!fs.existsSync(caPath)) {
-      return res.status(404).json({ ok: false, error: 'CA cert not found (TLS may be disabled)' });
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { ok: false, error: 'Too many login attempts, please try again later.' }
+  });
+
+  const sessionCookie = (req, token, maxAge) => {
+    const forwardedProto = req.get ? req.get('x-forwarded-proto') : req.headers && req.headers['x-forwarded-proto'];
+    const secure = process.env.FG_COOKIE_SECURE === '1' || req.secure || forwardedProto === 'https';
+    return `fg_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=${secure ? 'None' : 'Lax'}; Max-Age=${Math.floor(maxAge / 1000)}${secure ? '; Secure' : ''}`;
+  };
+
+  router.post('/login', loginLimiter, (req, res) => {
+    let valid = false;
+    try { valid = accountStore.verifyCredentials(req.body && req.body.username, req.body && req.body.password); } catch (_) {
+      return res.status(503).json({ ok: false, error: 'Authentication unavailable' });
     }
-    res.setHeader('Content-Type', 'application/x-pem-file');
-    res.setHeader('Content-Disposition', 'attachment; filename="filmgallery-ca.pem"');
-    res.sendFile(caPath);
+    if (!valid) {
+      return res.status(401).json({ ok: false, error: 'Invalid credentials' });
+    }
+    const session = accountStore.createSession();
+    res.setHeader('Set-Cookie', sessionCookie(req, session.token, session.expiresIn));
+    return res.json({ ok: true, token: session.token, expiresIn: session.expiresIn });
+  });
+
+  router.post('/logout', (req, res) => {
+    const token = req.auth && req.auth.token;
+    if (token) accountStore.revokeSession(token);
+    const forwardedProto = req.get ? req.get('x-forwarded-proto') : req.headers && req.headers['x-forwarded-proto'];
+    const secure = process.env.FG_COOKIE_SECURE === '1' || req.secure || forwardedProto === 'https';
+    res.setHeader('Set-Cookie', `fg_session=; Path=/; HttpOnly; SameSite=${secure ? 'None' : 'Lax'}; Max-Age=0${secure ? '; Secure' : ''}`);
+    return res.json({ ok: true });
   });
 
   return router;
 }
 
-module.exports = { createAuthSettingsRouter };
+module.exports = { createAuthSettingsRouter, isTrustedSetupRequest };

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { buildUploadUrl, getApiBase } from '../api';
+import { buildUploadUrl, getApiBase, authFetch } from '../api';
 import GlassModal from './ui/GlassModal';
 import { Button } from '@heroui/react';
 import { Grid } from 'lucide-react';
@@ -323,7 +323,7 @@ export default function ContactSheetModal({ isOpen, onClose, roll, photos = [] }
 
     try {
       const apiBase = getApiBase();
-      const response = await fetch(`${apiBase}/api/rolls/${roll.id}/contact-sheet`, {
+      const response = await authFetch(`${apiBase}/api/rolls/${roll.id}/contact-sheet`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

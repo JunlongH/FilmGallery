@@ -5,13 +5,12 @@ import { Chip, Text, Snackbar } from 'react-native-paper';
 import { Icon } from '../../components/ui';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
-import { Image as ExpoImage } from 'expo-image';
 import ImageView from 'react-native-image-viewing';
 import TagEditModal from '../../components/TagEditModal';
 import NoteEditModal from '../../components/NoteEditModal';
 import AlbumPickerSheet, { type AlbumPickerAlbum } from '../../components/digital/AlbumPickerSheet';
 import ExifSheet from '../../components/digital/ExifSheet';
-import { api } from '../../api/client';
+import { api, getAuthToken } from '../../api/client';
 import { colors, spacing, radius } from '../../theme';
 import { getPhotoUrl } from '../../utils/urls';
 import { parseLocalDate, isDateOnlyString } from '../../utils/date';
@@ -72,23 +71,12 @@ export default function PhotoViewScreen({ route, navigation }: any) {
   const fullUrlFor = (p: any) =>
     getPhotoUrl(baseUrl, p, viewMode === 'negative' && p.negative_rel_path ? 'negative' : 'full');
 
-  // Prefetch adjacent full-resolution images for smoother swiping
-  useEffect(() => {
-    if (!baseUrl || photos.length < 2) return;
-    const targets = [index - 2, index - 1, index + 1, index + 2]
-      .filter((i) => i >= 0 && i < photos.length)
-      .map((i) => fullUrlFor(photos[i]))
-      .filter(Boolean) as string[];
-    if (targets.length > 0) {
-      ExpoImage.prefetch(targets).catch(() => {});
-    }
-  }, [index, photos, baseUrl, viewMode]);
-
   const images = useMemo(
     () =>
       photos.map((p: any) => ({
         uri: fullUrlFor(p) || '',
         thumbUri: getPhotoUrl(baseUrl, p, 'thumb') || undefined,
+        ...(getAuthToken() ? { headers: { Authorization: `Bearer ${getAuthToken()}` } } : {}),
       })),
     [photos, baseUrl, viewMode],
   );
@@ -246,7 +234,10 @@ export default function PhotoViewScreen({ route, navigation }: any) {
     try {
       const response = await fetch(`${baseUrl}/api/photos/${photo.id}/download-with-exif`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getAuthToken() ? { Authorization: `Bearer ${getAuthToken()}` } : {}),
+        },
       });
 
       if (!response.ok) {

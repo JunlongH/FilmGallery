@@ -14,7 +14,6 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { api } from '../services/api';
 import { Photo } from '../types';
 import type { RootStackParamList } from '../types/navigation';
-import { imageCache } from '../utils/imageCache';
 
 const { width, height } = Dimensions.get('window');
 
@@ -38,19 +37,6 @@ const HomeScreen: React.FC = () => {
         setImageState('thumb');
         setFullImageLoaded(false);
         
-        // 预加载所有缩略图
-        const thumbUrls = result
-          .map(p => api.getImageURL(p.thumb_rel_path || p.full_rel_path))
-          .filter(url => url !== null) as string[];
-        await imageCache.preloadBatch(thumbUrls);
-
-        // 只预加载当前照片的原图
-        const currentFullUrl = api.getImageURL(result[0].full_rel_path);
-        if (currentFullUrl && !imageCache.has(currentFullUrl)) {
-          imageCache.preload(currentFullUrl).catch(err =>
-            console.warn('Background full image preload failed:', err)
-          );
-        }
       } else {
         setError('No photos available');
       }
@@ -66,23 +52,13 @@ const HomeScreen: React.FC = () => {
     fetchRandomPhotos();
   }, []);
 
-  // 当切换照片时，重置图片加载状态并预加载下一张
+  // 当切换照片时，重置图片加载状态
   useEffect(() => {
     if (photos.length === 0) return;
 
     setImageState('thumb');
     setFullImageLoaded(false);
 
-    // 只预加载下一张的原图
-    const nextIndex = (currentIndex + 1) % photos.length;
-    const nextPhoto = photos[nextIndex];
-    const nextUrl = api.getImageURL(nextPhoto?.full_rel_path);
-
-    if (nextUrl && !imageCache.has(nextUrl)) {
-      imageCache.preload(nextUrl).catch(err =>
-        console.warn('Failed to preload next image:', err)
-      );
-    }
   }, [currentIndex, photos]);
 
   const onGestureEvent = (event: any) => {
@@ -143,14 +119,14 @@ const HomeScreen: React.FC = () => {
             <>
               {/* 显示缩略图或原图 */}
               <Image
-                source={{ uri: displayUrl }}
+                source={{ uri: displayUrl, ...(api.getAuthToken() ? { headers: { Authorization: `Bearer ${api.getAuthToken()}` } } : {}) }}
                 style={styles.image}
                 resizeMode="cover"
               />
               {/* 在后台加载原图 */}
               {fullUrl && fullUrl !== displayUrl && (
                 <Image
-                  source={{ uri: fullUrl }}
+                  source={{ uri: fullUrl, ...(api.getAuthToken() ? { headers: { Authorization: `Bearer ${api.getAuthToken()}` } } : {}) }}
                   style={styles.hiddenImage}
                   resizeMode="cover"
                   onLoad={() => {

@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { getApiBase } from '../../api';
+import { getApiBase, authFetch } from '../../api';
 
 // 文件图标
 const ICONS = {
@@ -49,7 +49,7 @@ export default function RemoteFileBrowser({
     setError(null);
     try {
       const apiBase = getApiBase();
-      const res = await fetch(`${apiBase}/api/filesystem/roots`);
+      const res = await authFetch(`${apiBase}/api/filesystem/roots`);
       const data = await res.json();
       if (data.ok) {
         setRoots(data.roots || []);
@@ -79,7 +79,7 @@ export default function RemoteFileBrowser({
       }
       
       const apiBase = getApiBase();
-      const res = await fetch(`${apiBase}/api/filesystem/browse?${params}`);
+      const res = await authFetch(`${apiBase}/api/filesystem/browse?${params}`);
       const data = await res.json();
       
       if (data.ok) {

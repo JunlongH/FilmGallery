@@ -6,8 +6,11 @@
 
 - 在 PC 上启动 FilmGallery 服务（`server/server.js`）。
 - 确认监听地址是 `0.0.0.0`，端口默认为 `4000`。
+- TLS 启用时主服务是 `https://0.0.0.0:4000`，回环 HTTP 镜像是
+  `http://127.0.0.1:4001`；以启动日志中的 `SERVER_PORT` 和
+  `SERVER_HTTP_PORT` 为准。
 - 在 PC 浏览器访问：
-  - `http://127.0.0.1:4000/api/rolls`
+  - `http://127.0.0.1:4001/api/auth/status`
   - 能返回 JSON 即表示后端正常。
 
 ## 2. 获取 PC 的可访问 IP
@@ -34,7 +37,7 @@ ipconfig
 - 在**手机浏览器**访问：
 
   ```text
-  http://<PC-IP>:4000/api/rolls
+  https://<PC-IP>:4000/api/auth/status
   ```
 
   如果能看到 JSON，说明手机 → 服务器 的网络是通的。
@@ -45,10 +48,10 @@ ipconfig
   - 在 `Server URL` 中填入：
 
     ```text
-    http://<PC-IP>:4000
+    https://<PC-IP>:4000
     ```
 
-  - 例如：`http://192.168.1.5:4000`
+  - 例如：`https://192.168.1.5:4000`（直连局域网时仍需信任现有本地 CA）。
 - 点击 **Test Connection**：
   - 成功提示：说明配置正确；
   - 失败时，请先对照上面的“手机浏览器测试”排查。
@@ -74,15 +77,32 @@ ipconfig
   - VPN / 防火墙规则拦截了此 App 的流量。
   - ROM 对第三方 APK 的 HTTP 直连有额外限制。
 - 建议：
-  1. 先确认手机浏览器能访问 `http://<PC-IP>:4000/api/rolls`；
+  1. 先确认手机浏览器能访问 `https://<PC-IP>:4000/api/auth/status`；
   2. 确认已按第 5 节中的系统设置放宽限制；
   3. 必要时，在另一台 Android 设备上安装同一 APK 做对比测试。
 
-## 7. 进阶：使用 HTTPS（可选）
+## 7. 公网访问
 
-如果以后需要在公网或复杂网络环境更稳定地访问服务器，建议：
+Cloudflare Tunnel 或其他反向代理应将公网 HTTPS 转发到本机的
+`http://127.0.0.1:4001`。手机填写 `https://filmgallery.cloud`，无需安装
+FilmGallery Local CA；账户登录后，Bearer 会话也会用于图片请求。不要把令牌
+放进图片 URL 查询参数。当前仓库的桌面、手机和手表登录界面已改为账户密码，
+但必须先在本机设置账户后再开放公网访问。
 
-- 为服务器配置一个 HTTPS 入口（自签或使用 Let\'s Encrypt + 域名）；
-- 在 App 中使用 `https://` 的地址作为 `Server URL`。
+### 7.1 账户与浏览器来源
 
-当前版本主要面向局域网/自用场景，默认使用 HTTP，如遇到不能联网但浏览器正常的极端情况，优先检查网络/系统设置。 
+首次启动前可在本机进程环境中临时设置 `FG_ADMIN_USERNAME` 和
+`FG_ADMIN_PASSWORD`，服务器只会把 scrypt 哈希写入 `auth-account.json`，不会
+记录密码。也可以先启动本机服务，再从 loopback 的 `/api/auth/setup` 完成一次性
+初始化。不要把密码写进仓库、Cloudflare 配置或聊天记录。
+
+服务器默认只允许 Electron `file://`、本机回环和 Capacitor 来源。若另外部署了
+浏览器前端，使用逗号分隔的 `FG_ALLOWED_ORIGINS` 显式列出来源，例如：
+
+```powershell
+$env:FG_ALLOWED_ORIGINS = 'https://filmgallery.cloud'
+```
+
+公网 Cloudflare Tunnel 只转发到 `http://127.0.0.1:4001`；Cloudflare 负责公有
+HTTPS，客户端不再需要 FilmGallery Local CA。图片和 API 均使用登录后的会话，
+不要把令牌放入 URL 查询参数。

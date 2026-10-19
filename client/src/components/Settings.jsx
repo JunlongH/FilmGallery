@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getApiBase } from '../api';
+import { getApiBase, jsonFetch } from '../api';
 import SettingsTabs from './Settings/SettingsTabs';
 import GeneralSettings from './Settings/GeneralSettings';
 import ServerSettings from './Settings/ServerSettings';
@@ -37,11 +37,8 @@ export default function Settings() {
         
         // Fetch actual backend paths for verification
         try {
-          const res = await fetch(`${apiBase}/api/health`);
-          if (res.ok) {
-            const data = await res.json();
-            if (mounted && data.storage) setActualPaths(data.storage);
-          }
+          const data = await jsonFetch('/api/health/database');
+          if (mounted && data.storage) setActualPaths(data.storage);
         } catch {}
 
         // Fetch server info
@@ -90,12 +87,8 @@ export default function Settings() {
         // Refresh actual paths after restart
         setTimeout(async () => {
           try {
-            const apiBase = getApiBase();
-            const healthRes = await fetch(`${apiBase}/api/health`);
-            if (healthRes.ok) {
-              const data = await healthRes.json();
-              if (data.storage) setActualPaths(data.storage);
-            }
+            const data = await jsonFetch('/api/health/database');
+            if (data.storage) setActualPaths(data.storage);
           } catch {}
         }, 1000);
         alert('Data location updated. The server has been restarted.');

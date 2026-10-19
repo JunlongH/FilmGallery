@@ -13,7 +13,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardBody, Skeleton } from '@heroui/react';
 import { motion } from 'framer-motion';
 import { Camera, Image, Heart, MapPin, Film } from 'lucide-react';
-import { getApiBase } from '../../api';
+import { authFetch } from '../../api';
 import { getCacheStrategy } from '../../lib';
 
 const statItems = [
@@ -25,13 +25,12 @@ const statItems = [
 ];
 
 async function fetchStats() {
-  const apiBase = getApiBase();
   const [rollsRes, photosRes, favsRes, locsRes, filmsRes] = await Promise.all([
-    fetch(`${apiBase}/api/rolls`).then(r => r.json()),
-    fetch(`${apiBase}/api/photos?mode=film`).then(r => r.json()),
-    fetch(`${apiBase}/api/photos?favorite=true&mode=film`).then(r => r.json()),
-    fetch(`${apiBase}/api/locations?hasRecords=true`).then(r => r.json()),
-    fetch(`${apiBase}/api/films`).then(r => r.json()),
+    authFetch('/api/rolls').then(r => r.json()),
+    authFetch('/api/photos?mode=film').then(r => r.json()),
+    authFetch('/api/photos?favorite=true&mode=film').then(r => r.json()),
+    authFetch('/api/locations?hasRecords=true').then(r => r.json()),
+    authFetch('/api/films').then(r => r.json()),
   ]);
   
   return {

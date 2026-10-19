@@ -50,6 +50,8 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const app = express();
+const { createAuthMiddleware } = require('./utils/auth');
+const accountStore = require('./utils/auth-account').createAuthStore();
 // Security headers. CSP is managed by the Electron shell; the server is an
 // API + static-image host, so we keep cross-origin resource access open to
 // preserve image loading from file:// (Electron), mobile, and hybrid NAS.
@@ -73,7 +75,7 @@ app.use(computeGuard);
 app.use(bodyParser.json({ limit: '10mb' }));
 // gzip/deflate for API JSON responses (not applied to static uploads)
 app.use(compression({ threshold: 1024 }));
-// CORS: reflect origin (including 'null' from file://) and allow private network
+// CORS: allow native/file origins and an explicit FG_ALLOWED_ORIGINS list.
 // Y.3 (P1-3): restrict Access-Control-Allow-Private-Network to known local
 // origins. Previously this header was set for ALL origins, meaning any public
 // website (https://evil.com) could make requests to the user's FilmGallery
@@ -89,7 +91,20 @@ function isLocalOrigin(origin) {
   return /^capacitor:\/\//.test(origin)
     || /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(origin);
 }
-app.use(cors({ origin: true, credentials: false, preflightContinue: true }));
+const configuredOrigins = new Set(
+  String(process.env.FG_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter((origin) => origin && origin !== '*')
+);
+function corsOrigin(origin, callback) {
+  // Native clients and Electron file:// requests do not carry a normal origin.
+  if (!origin || origin === 'null' || isLocalOrigin(origin) || configuredOrigins.has(origin)) {
+    return callback(null, true);
+  }
+  return callback(null, false);
+}
+app.use(cors({ origin: corsOrigin, credentials: true, preflightContinue: true }));
 app.use((req, res, next) => {
   if (isLocalOrigin(req.headers.origin)) {
     res.setHeader('Access-Control-Allow-Private-Network', 'true');
@@ -104,19 +119,21 @@ app.options('*', (req, res) => {
 });
 
 // --- storage directories ---
-// Thumbs are mutable (regenerated on re-export) — use short cache + revalidate.
-// Originals/full are immutable — safe to cache aggressively.
+// Uploaded media is private to authenticated sessions; disable browser caching
+// so a logged-out client cannot reuse a previously authorized image response.
 const staticOptions = {
-  maxAge: '1y',
-  immutable: true,
-  etag: true,
-  lastModified: true
-};
-const thumbStaticOptions = {
-  maxAge: '0',       // Always revalidate thumbs
+  maxAge: '0',
   immutable: false,
   etag: true,
-  lastModified: true
+  lastModified: true,
+  setHeaders: (res) => res.setHeader('Cache-Control', 'private, no-store')
+};
+const thumbStaticOptions = {
+  maxAge: '0',       // Authenticated media must not remain usable after logout.
+  immutable: false,
+  etag: true,
+  lastModified: true,
+  setHeaders: (res) => res.setHeader('Cache-Control', 'private, no-store')
 };
 
 // Middleware to handle case-insensitive file serving on Windows/Linux mismatch
@@ -180,6 +197,10 @@ const caseInsensitiveStatic = (root, options = {}) => {
   };
 };
 
+// Every uploaded original/thumbnail requires the same bearer session as API data.
+// Mount this before all static handlers so no subpath bypasses authentication.
+app.use('/uploads', createAuthMiddleware({ accountStore, allowPublicRoutes: false, allowLoopback: false }));
+
 // Serve local temp uploads for previews (no long cache). Mount BEFORE /uploads.
 app.use('/uploads/tmp', express.static(localTmpDir));
 
@@ -211,32 +232,23 @@ app.use('/uploads/rolls', express.static(rollsDir, staticOptions));
 
 // --- Routes (mount after schema is ensured just before listen) ---
 const mountRoutes = () => {
-  // --- auth (shared-secret) ---
+  // --- auth (account password + in-memory bearer sessions) ---
   // Mount order:
   //   app.options('*') [preflight short-circuit, top-level]
-  //   → /uploads/* static [top-level, exempt]
+  //   → /uploads/* bearer auth + static files
   //   → /api/shutdown [top-level, has own loopback gate]
   //   → auth middleware (HERE)
-  //   → /api/auth [secret mgmt; /secret + /regenerate are loopback-gated]
+  //   → /api/auth [local setup, login, logout, status]
   //   → remaining /api/* routes
   //   → /api/* 404 catch-all
   //
-  // `/api/discover` + `/api/health*` are whitelisted inside the auth
-  // middleware (regex), so they remain reachable pre-auth.
-  const { createAuthMiddleware } = require('./utils/auth');
+  // `/api/auth/login|setup|status`, `/api/discover`, and exact `/api/health`
+  // remain reachable pre-auth. All business APIs require a bearer session.
   const { createAuthSettingsRouter } = require('./routes/auth-settings');
-  const secretStore = require('./utils/auth-secret');
-  // `db` is lazy-loaded after migrations complete (see line ~506 in the IIFE);
-  // by the time mountRoutes() runs, the module cache is warm so this require
-  // returns the same connection the rest of the server uses.
-  const db = require('./db');
-  // Soft mode default ON: remote requests without a valid Bearer secret pass
-  // through with X-Auth-Soft-Mode: warn. This is the transition window while
-  // clients adopt the shared secret. Set AUTH_SOFT_MODE=0 to hard-enforce 401.
-  // Loopback peers always pass through regardless.
-  const authSoftMode = process.env.AUTH_SOFT_MODE !== '0';
-  app.use(createAuthMiddleware({ secretStore, softMode: authSoftMode }));
-  app.use('/api/auth', createAuthSettingsRouter({ secretStore, db }));
+  // The upstream may be a local tunnel connector, so loopback is not an
+  // authentication boundary. Every business request needs a bearer session.
+  app.use(createAuthMiddleware({ accountStore, allowLoopback: false }));
+  app.use('/api/auth', createAuthSettingsRouter({ accountStore }));
 
   // short-lived response caching for relatively static endpoints
   app.use('/api/films', cacheSeconds(120), require('./routes/films'));
@@ -570,10 +582,9 @@ const seedLocations = async () => {
         await recomputeRollSequence();
         console.log('[SERVER] Roll sequence recomputed.');
 
-        // Ensure the shared auth secret exists (creates + caches on first boot).
-        const secretStore = require('./utils/auth-secret');
-        await secretStore.ensureSecret(db);
-        console.log('[SERVER] Auth secret ensured.');
+        // Configure only from an explicit operator-provided password. With no
+        // env var, the local /api/auth/setup endpoint is the bootstrap path.
+        console.log('[SERVER] Auth account configured:', accountStore.ensureConfigured());
 
         // (Removed old ad-hoc ALTER TABLE blocks as they are now in schema-migration.js)
 
@@ -714,6 +725,31 @@ const seedLocations = async () => {
 				httpLoopbackPort = httpAltPort;
 			} catch (e) {
 				console.warn(`[TLS] could not bind loopback HTTP on ${httpAltPort}: ${e.message}`);
+			}
+		}
+
+		// Plain HTTP listener bound to the LAN IPv4 ONLY (default on; disable
+		// with FG_LAN_HTTP=0). Phones on home Wi-Fi cannot trust the self-signed
+		// TLS cert (mobile apps trust system CAs only), which left the tunnel as
+		// the only mobile path — far too slow for photo uploads. The LAN address
+		// is never publicly routed; every request still needs a bearer session.
+		if (tlsCreds && process.env.FG_LAN_HTTP !== '0') {
+			try {
+				const os = require('os');
+				const lanIp = Object.values(os.networkInterfaces())
+					.flat()
+					.filter(Boolean)
+					.find((it) => !it.internal && (it.family === 'IPv4' || it.family === 4));
+				const lanPort = parseInt(process.env.FG_LAN_HTTP_PORT || '4010', 10);
+				if (lanIp) {
+					await new Promise((resolve, reject) => {
+						const srv = app.listen(lanPort, lanIp.address, () => resolve(srv));
+						srv.once('error', reject);
+					});
+					console.log(`[LAN] plain HTTP for home network on http://${lanIp.address}:${lanPort} (auth required; FG_LAN_HTTP=0 to disable)`);
+				}
+			} catch (e) {
+				console.warn(`[LAN] could not bind LAN HTTP listener: ${e.message}`);
 			}
 		}
 		

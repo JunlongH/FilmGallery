@@ -11,19 +11,49 @@ export const API_BASE = (typeof window !== 'undefined' && window.__electron?.API
   : (process.env.REACT_APP_API_BASE || 'http://127.0.0.1:4000');
 
 // ============================================================================
-// Phase 2B #1 — Auth token (remote mode)
+// Account login session token (remote mode)
 // ============================================================================
 // When the desktop client connects to a REMOTE server (non-loopback), the
-// server's auth middleware requires a Bearer secret. The secret is obtained
-// from the host's settings UI (GET /api/auth/secret) and persisted in
-// localStorage. Loopback connections pass through auth without a secret.
+// The server returns a short-lived bearer session after username/password login.
+// It is persisted locally for convenience and cleared on a 401 response.
 
 let _authToken = (() => {
   try { return localStorage.getItem('__fg_auth_token') || null; }
   catch { return null; }
 })();
 
+// Keep the Electron main process in sync so subresource requests (<img> etc.)
+// to the API origin can carry the bearer session. No-op in plain browsers.
+const syncMainAuthToken = (token) => {
+  try { window.__electron?.setAuthToken?.(token || null); } catch { /* no bridge */ }
+};
+syncMainAuthToken(_authToken);
+
 let _onUnauthorized = null;
+
+// A few legacy UI modules still call window.fetch directly. Install one small
+// same-API guard so those requests cannot bypass the account session. External
+// map/geocoding requests are left untouched, preventing bearer-token leakage.
+if (typeof window !== 'undefined' && !window.__fgAuthFetchInstalled) {
+  const nativeFetch = window.fetch.bind(window);
+  window.fetch = (input, init = {}) => {
+    let requestUrl = '';
+    try {
+      requestUrl = new URL(typeof input === 'string' ? input : input.url, window.location.href).href;
+      const apiOrigin = new URL(getApiBase(), window.location.href).origin;
+      const target = new URL(requestUrl);
+      const isApiRequest = target.origin === apiOrigin &&
+        (target.pathname.startsWith('/api/') || target.pathname.startsWith('/uploads/'));
+      if (!isApiRequest) return nativeFetch(input, init);
+      const headers = new Headers(init.headers || (typeof input !== 'string' ? input.headers : undefined));
+      if (_authToken) headers.set('Authorization', `Bearer ${_authToken}`);
+      return nativeFetch(input, { ...init, credentials: init.credentials || 'include', headers });
+    } catch {
+      return nativeFetch(input, init);
+    }
+  };
+  window.__fgAuthFetchInstalled = true;
+}
 
 export function setAuthToken(token) {
   _authToken = token || null;
@@ -31,6 +61,7 @@ export function setAuthToken(token) {
     if (token) localStorage.setItem('__fg_auth_token', token);
     else localStorage.removeItem('__fg_auth_token');
   } catch { /* sandboxed storage */ }
+  syncMainAuthToken(token);
 }
 
 export function getAuthToken() { return _authToken; }
@@ -43,6 +74,20 @@ export function setOnUnauthorized(fn) {
 function withAuthHeaders(headers = {}) {
   if (!_authToken) return headers;
   return { ...headers, Authorization: `Bearer ${_authToken}` };
+}
+
+export async function authFetch(input, opts = {}) {
+  const absolute = /^[a-z][a-z\d+.-]*:/i.test(input) || input.startsWith('//');
+  const url = absolute ? input : `${getApiBase()}${input}`;
+  const response = await fetch(url, {
+    credentials: 'include',
+    ...opts,
+    headers: withAuthHeaders(opts.headers || {}),
+  });
+  if (response.status === 401 && _onUnauthorized) {
+    try { _onUnauthorized(response); } catch { /* swallow */ }
+  }
+  return response;
 }
 
 export function isRemoteMode() {
@@ -146,12 +191,12 @@ export async function jsonFetch(url, opts = {}) {
   const authedOpts = _authToken
     ? { ...opts, headers: withAuthHeaders(opts.headers) }
     : opts;
-  const r = await fetch(`${apiBase}${url}`, authedOpts);
+  const r = await fetch(`${apiBase}${url}`, { credentials: 'include', ...authedOpts });
   const text = await r.text();
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = undefined; }
   if (!r.ok) {
-    // Phase 2B: fire onUnauthorized for 401 so the UI can prompt re-pair
+    // Phase 2B: fire onUnauthorized for 401 so the UI can prompt login
     if (r.status === 401 && _onUnauthorized) {
       try { _onUnauthorized(r); } catch { /* swallow */ }
     }
@@ -189,7 +234,8 @@ export async function postForBlob(url, data, options = {}) {
     method: 'POST',
     headers: withAuthHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(data),
-    signal
+    signal,
+    credentials: 'include'
   });
   if (!r.ok) {
     if (r.status === 401 && _onUnauthorized) {
@@ -245,6 +291,7 @@ export function uploadWithProgress(url, formData, onProgress, options = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${apiBase}${url}`);
+    xhr.withCredentials = true;
     if (_authToken) xhr.setRequestHeader('Authorization', `Bearer ${_authToken}`);
     xhr.timeout = timeout;
     

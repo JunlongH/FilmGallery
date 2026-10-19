@@ -335,9 +335,12 @@ function stopWalCheckpoint() {
 }
 
 // Start checkpoint scheduler after tables are created (only in WAL mode)
-setTimeout(() => {
-  startWalCheckpoint();
-}, 5000); // Start after 5 seconds
+if (process.env.NODE_ENV !== 'test') {
+  const checkpointStarter = setTimeout(() => {
+    startWalCheckpoint();
+  }, 5000); // Start after 5 seconds
+  checkpointStarter.unref();
+}
 
 // Export additional functions for cleanup
 db.walCheckpoint = () => {

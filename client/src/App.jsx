@@ -12,6 +12,8 @@ import { HeroUIProvider } from './providers';
 import { Sidebar, SidebarProvider } from './components/Sidebar';
 import { AIPanelProvider, useAIPanel } from './components/AIPanel/AIPanelContext';
 import Onboarding, { WORKSPACE_EVENT } from './components/Onboarding';
+import PairingSettings from './components/Settings/PairingSettings';
+import { getAuthToken, clearAuthToken, setOnUnauthorized } from './api/core';
 
 // ============================================================================
 // 路由级代码分割
@@ -222,11 +224,35 @@ function Layout() {
   );
 }
 
+function AuthGate({ children }) {
+  const [authenticated, setAuthenticated] = useState(() => !!getAuthToken());
+
+  useEffect(() => {
+    const showLogin = () => {
+      clearAuthToken();
+      setAuthenticated(false);
+    };
+    const onLogin = () => setAuthenticated(true);
+    setOnUnauthorized(showLogin);
+    window.addEventListener('fg-authenticated', onLogin);
+    if (!getAuthToken()) setAuthenticated(false);
+    return () => {
+      window.removeEventListener('fg-authenticated', onLogin);
+      setOnUnauthorized(null);
+    };
+  }, []);
+
+  if (!authenticated) {
+    return <div className="min-h-screen bg-white dark:bg-zinc-900 p-8"><PairingSettings manageUnauthorized={false} /></div>;
+  }
+  return children;
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <Router>
-        <Layout />
+        <AuthGate><Layout /></AuthGate>
       </Router>
     </QueryClientProvider>
   );

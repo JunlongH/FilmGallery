@@ -16,6 +16,10 @@
   "npmRebuild": false,
   "extraResources": [],
   "asar": true,
+  "extraMetadata": {
+    "filmgalleryClientOnly": true,
+    "filmgalleryDefaultApiBase": "https://filmgallery.cloud"
+  },
   "directories": {
     "buildResources": "assets",
     "output": "dist_v9_client"
@@ -27,7 +31,8 @@
         "arch": ["x64"]
       }
     ],
-    "icon": "assets/icon.png"
+    "icon": "assets/icon.png",
+    "signAndEditExecutable": false
   },
   "mac": {
     "target": [

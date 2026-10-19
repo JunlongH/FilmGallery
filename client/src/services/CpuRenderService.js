@@ -9,7 +9,7 @@
  */
 
 import { RenderCore, processCanvasChunkedSync, processBlock, PREVIEW_MAX_WIDTH_CLIENT, EXPORT_MAX_WIDTH, stableSerializeParams } from '@filmgallery/shared';
-import { getApiBase } from '../api';
+import { getApiBase, authFetch } from '../api';
 
 const _yieldChannel = typeof MessageChannel !== 'undefined' 
   ? new MessageChannel() 
@@ -433,7 +433,7 @@ export async function localCpuExport({ photoId, imageUrl, params, format = 'jpeg
 export async function getPhotoImageUrl(photoId, sourceType = 'original') {
   try {
     const apiBase = getApiBase();
-    const res = await fetch(`${apiBase}/api/photos/${photoId}`);
+    const res = await authFetch(`${apiBase}/api/photos/${photoId}`);
     if (res.ok) {
       const photo = await res.json();
       switch (sourceType) {

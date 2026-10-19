@@ -131,15 +131,49 @@ export default function DigitalImportScreen() {
         setPhase(preview ? 'reviewing' : 'idle');
         return;
       }
-      const form = new FormData();
-      result.assets.forEach((asset, i) => {
-        form.append('files', {
-          uri: asset.uri,
-          name: asset.fileName || `photo_${i + 1}.jpg`,
-          type: asset.mimeType || 'image/jpeg',
-        } as any);
-      });
-      const res: PreviewResponse = await api.digitalImport.preview(form, onUploadProgress);
+      // Upload one photo per request (with one retry each). The remote tunnel
+      // path is slow, and a single batched request easily outlives the client
+      // timeout for a handful of full-quality photos; per-file requests keep
+      // every upload small enough to survive it.
+      const assets = result.assets;
+      const allItems: PreviewItem[] = [];
+      let duplicates = 0;
+      let raws = 0;
+      let lastSummary: ExifSummary | undefined;
+      for (let i = 0; i < assets.length; i++) {
+        const asset = assets[i];
+        const makeForm = () => {
+          const form = new FormData();
+          form.append('files', {
+            uri: asset.uri,
+            name: asset.fileName || `photo_${i + 1}.jpg`,
+            type: asset.mimeType || 'image/jpeg',
+          } as any);
+          return form;
+        };
+        let res: PreviewResponse | null = null;
+        for (let attempt = 0; attempt < 2 && !res; attempt++) {
+          try {
+            res = await api.digitalImport.preview(makeForm(), (pct) => {
+              onUploadProgress(((i + pct / 100) / assets.length) * 100);
+            });
+          } catch (e) {
+            if (attempt === 1) throw e;
+          }
+        }
+        if (!res) throw new Error(t('digital.import.errorPreview'));
+        allItems.push(...res.items);
+        duplicates += res.duplicates;
+        raws += res.raws;
+        if (res.exif_summary) lastSummary = res.exif_summary;
+      }
+      const res: PreviewResponse = {
+        items: allItems,
+        total: allItems.length,
+        duplicates,
+        raws,
+        exif_summary: lastSummary,
+      };
       setPreview(res);
       setPreviewError(null);
       setPhase('reviewing');

@@ -10,7 +10,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardBody, Button, Spinner } from '@heroui/react';
 import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
-import { getApiBase } from '../../api';
+import { getApiBase, authFetch } from '../../api';
 import { resolveFullUrl } from '../../utils/thumbResolver';
 
 
@@ -25,7 +25,7 @@ export default function HeroCarousel({ onPhotoClick, mode }) {
       setIsRefreshing(true);
       const apiBase = getApiBase();
       const modeParam = mode ? `&mode=${mode}` : '';
-      const r = await fetch(`${apiBase}/api/photos/random?limit=8${modeParam}`);
+      const r = await authFetch(`${apiBase}/api/photos/random?limit=8${modeParam}`);
       const data = await r.json();
       if (Array.isArray(data)) {
         // Filter out photos with no path

@@ -12,6 +12,8 @@
  *   import { getRolls, getCameras } from './api';
  */
 
+import { authFetch } from './core';
+
 // Core utilities
 export { 
   API_BASE,
@@ -23,6 +25,7 @@ export {
   postForBlob,
   putJson,
   deleteRequest,
+  authFetch,
   uploadTmpFiles,
   uploadWithProgress,
   buildQueryString
@@ -215,9 +218,9 @@ export async function getExportStats() {
 }
 
 export async function cleanupExportHistory(keepCount = 100) {
-  const { getApiBase } = await import('./core');
+  const { getApiBase, authFetch } = await import('./core');
   const apiBase = getApiBase();
-  const resp = await fetch(`${apiBase}/api/export-history/cleanup?keepCount=${keepCount}`, {
+  const resp = await authFetch(`${apiBase}/api/export-history/cleanup?keepCount=${keepCount}`, {
     method: 'DELETE'
   });
   return resp.json();

@@ -53,6 +53,8 @@ contextBridge.exposeInMainWorld('__electron', {
   close: () => ipcRenderer.invoke('window-close'),
   // Settings/config
   getConfig: () => ipcRenderer.invoke('config-get'),
+  // Renderer → main: current account session token (for media request auth)
+  setAuthToken: (token) => ipcRenderer.send('auth-token', token || null),
   pickUploadsRoot: () => ipcRenderer.invoke('pick-uploads-root'),
   setUploadsRoot: (dir) => ipcRenderer.invoke('config-set-uploads-root', dir),
   pickDataRoot: () => ipcRenderer.invoke('pick-data-root'),

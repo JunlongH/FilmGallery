@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './ConflictBanner.css';
-import { getApiBase } from '../api';
+import { getApiBase, authFetch } from '../api';
 
 const ConflictBanner = () => {
   const [conflicts, setConflicts] = useState(null);
@@ -17,7 +17,7 @@ const ConflictBanner = () => {
   const checkConflicts = async () => {
     try {
       const apiBase = getApiBase();
-      const res = await fetch(`${apiBase}/api/conflicts`);
+      const res = await authFetch(`${apiBase}/api/conflicts`);
       const data = await res.json();
       if (data.hasConflicts && data.conflicts.length > 0) {
         setConflicts(data);
@@ -34,7 +34,7 @@ const ConflictBanner = () => {
     setLoading(true);
     try {
       const apiBase = getApiBase();
-      const res = await fetch(`${apiBase}/api/conflicts/resolve`, {
+      const res = await authFetch(`${apiBase}/api/conflicts/resolve`, {
         method: 'POST'
       });
       const data = await res.json();

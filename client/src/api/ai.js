@@ -1,7 +1,7 @@
 /**
  * AI 助手 API 模块
  */
-import { jsonFetch, putJson, postJson, getApiBase } from './core';
+import { jsonFetch, putJson, postJson, getApiBase, authFetch } from './core';
 
 // ─ 配置 ─
 export const getAIConfig     = ()      => jsonFetch('/api/ai/config');
@@ -56,7 +56,7 @@ export const confirmWriteAction = (confirmationId, decision) =>
  */
 export async function sendChatMessage({ message, conversationId, context, attachments, templateId, modelId }, onEvent) {
   const apiBase = getApiBase();
-  const res = await fetch(`${apiBase}/api/ai/chat`, {
+  const res = await authFetch(`${apiBase}/api/ai/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({

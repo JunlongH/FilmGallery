@@ -15,6 +15,7 @@ jest.mock('../../config/db-config', () => ({
 }));
 
 const fs = require('fs');
+const path = require('path');
 
 describe('digital-mode-migration log() — read-only dir resilience (D-P2-6)', () => {
   let warnSpy;
@@ -85,7 +86,7 @@ describe('digital-mode-migration log() — read-only dir resilience (D-P2-6)', (
     expect(appendSpy).toHaveBeenCalledTimes(1);
     // File-line format unchanged: [${ts}] ${msg}\n
     const [logPath, line] = appendSpy.mock.calls[0];
-    expect(logPath).toBe('/tmp/digital-mode-migration-test/digital-mode-migration.log');
+    expect(logPath).toBe(path.join('/tmp/digital-mode-migration-test', 'digital-mode-migration.log'));
     expect(line).toMatch(/^\[\d{4}-\d{2}-\d{2}T[^\]]+\] Backfill complete\.\n$/);
 
     expect(logSpy).toHaveBeenCalledTimes(1);

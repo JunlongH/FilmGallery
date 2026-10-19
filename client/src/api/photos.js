@@ -2,7 +2,7 @@
  * Photos API - Photo management and processing
  */
 
-import { getApiBase, jsonFetch, putJson, deleteRequest, uploadWithProgress, buildQueryString } from './core';
+import { getApiBase, jsonFetch, putJson, deleteRequest, uploadWithProgress, buildQueryString, authFetch } from './core';
 
 // ========================================
 // PHOTO CRUD
@@ -110,7 +110,7 @@ export async function updatePositiveFromNegative(photoId, blob) {
   const apiBase = getApiBase();
   const fd = new FormData();
   fd.append('positive', blob, 'positive.jpg');
-  const res = await fetch(`${apiBase}/api/photos/${photoId}/update-positive`, {
+  const res = await authFetch(`${apiBase}/api/photos/${photoId}/update-positive`, {
     method: 'POST',
     body: fd
   });
@@ -125,7 +125,7 @@ export async function updatePositiveFromNegative(photoId, blob) {
  */
 export async function exportPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
   const apiBase = getApiBase();
-  const res = await fetch(`${apiBase}/api/filmlab/export`, {
+  const res = await authFetch(`${apiBase}/api/filmlab/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ photoId, params, format, sourceType })
@@ -145,7 +145,7 @@ export async function exportPositive(photoId, params, { format = 'jpeg', sourceT
  */
 export async function renderPositive(photoId, params, { format = 'jpeg', sourceType = 'original' } = {}) {
   const apiBase = getApiBase();
-  const res = await fetch(`${apiBase}/api/filmlab/render`, {
+  const res = await authFetch(`${apiBase}/api/filmlab/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ photoId, params, format, sourceType })
@@ -168,7 +168,7 @@ export async function renderPositive(photoId, params, { format = 'jpeg', sourceT
 export async function filmlabPreview({ photoId, params, maxWidth = 1400, sourceType = 'original' }) {
   const apiBase = getApiBase();
   console.log('[API] filmlabPreview request:', { photoId, params, maxWidth, sourceType, apiBase });
-  const resp = await fetch(`${apiBase}/api/filmlab/preview`, {
+  const resp = await authFetch(`${apiBase}/api/filmlab/preview`, {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',

@@ -43,10 +43,15 @@ server/film.db-shm
 
 # Native build output
 packages/@filmgallery/libraw-native/build/
+packages/@filmgallery/libraw-native/bin/
 
 # Local tooling
 .opencode/
 .visual-test/
+.toolchain/
+.toolset-rcedit/
+.npm-cache-*/
+.gradle-cache/
 
 # Signing
 *.keystore

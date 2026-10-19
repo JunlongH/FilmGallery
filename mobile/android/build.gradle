@@ -2,6 +2,11 @@
 
 buildscript {
   repositories {
+    // CN mirrors first: direct Maven Central/Google access is heavily
+    // throttled on this network; fall back to the canonical repos.
+    maven { url 'https://maven.aliyun.com/repository/google' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
+    maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
     google()
     mavenCentral()
   }
@@ -14,6 +19,9 @@ buildscript {
 
 allprojects {
   repositories {
+    maven { url 'https://maven.aliyun.com/repository/google' }
+    maven { url 'https://maven.aliyun.com/repository/central' }
+    maven { url 'https://maven.aliyun.com/repository/public' }
     google()
     mavenCentral()
     maven { url 'https://www.jitpack.io' }

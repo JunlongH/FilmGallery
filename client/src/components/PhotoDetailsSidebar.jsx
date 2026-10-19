@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import LocationInput from './LocationInput.jsx';
 import GeoSearchInput from './GeoSearchInput.jsx';
-import { getMetadataOptions, getApiBase, getTags, getAlbumsForPhoto } from '../api';
+import { getMetadataOptions, getApiBase, getTags, getAlbumsForPhoto, authFetch } from '../api';
 import { getCacheStrategy } from '../lib';
 import EquipmentSelector from './EquipmentSelector';
 import { lazyModal } from './common/lazyModal';
@@ -278,7 +278,7 @@ export default function PhotoDetailsSidebar({ photo, photos, roll, onClose, onSa
       const apiBase = getApiBase();
       let failed = 0;
       for (const p of targets) {
-        const res = await fetch(`${apiBase}/api/photos/${p.id}`, {
+        const res = await authFetch(`${apiBase}/api/photos/${p.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)

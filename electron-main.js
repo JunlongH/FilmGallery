@@ -37,6 +37,10 @@ let appConfig = {};
 let gpuWindow = null;
 let gpuJobs = new Map();
 let windowState = null;
+// Renderer-reported account session token. Media subresource requests (<img>)
+// cannot carry Authorization headers, so the main process injects them for
+// same-origin API requests (see onBeforeSendHeaders in createWindow).
+let rendererAuthToken = null;
 
 // Dynamic port allocated by the server (default 4000 for dev mode)
 let actualServerPort = 4000;
@@ -141,7 +145,7 @@ async function startServer(forceRestart = false) {
 
   // In dev mode, check if a dev server is already running on the default port
   if (isDev) {
-    const apiProbeUrl = 'http://127.0.0.1:4000/api/rolls';
+    const apiProbeUrl = 'http://127.0.0.1:4000/api/auth/status';
     const backendUp = await probeBackend(apiProbeUrl, 500);
 
     // If not forcing restart and backend is already up, skip spawn
@@ -200,7 +204,7 @@ async function startServer(forceRestart = false) {
     const cmd = process.execPath;
     const args = [serverEntry];
     LOG('attempt spawn', cmd, args.join(' '));
-    const env = { ...process.env, USER_DATA: app.getPath('userData'), ELECTRON_RUN_AS_NODE: '1', AUTH_SOFT_MODE: '1' };
+    const env = { ...process.env, USER_DATA: app.getPath('userData'), ELECTRON_RUN_AS_NODE: '1' };
     if (appConfig && typeof appConfig.dataRoot === 'string' && appConfig.dataRoot.trim()) {
       env.DATA_ROOT = appConfig.dataRoot.trim();
       LOG('startServer: DATA_ROOT set to', env.DATA_ROOT);
@@ -534,6 +538,29 @@ function createWindow() {
     callback({ responseHeaders });
   });
 
+  // Attach the account bearer token to same-origin API subresource requests.
+  // fetch/XHR already carry it via the renderer; this covers <img>/<video>/
+  // CSS media loads, which cannot set headers themselves. The token never
+  // leaves the configured API origin.
+  mainWindow.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
+    const requestHeaders = { ...details.requestHeaders };
+    try {
+      if (rendererAuthToken) {
+        const target = new URL(details.url);
+        const mode = (appConfig && appConfig.serverMode) || 'local';
+        const apiBase = mode === 'local'
+          ? `http://127.0.0.1:${loopbackHttpPort()}`
+          : (appConfig.apiBase || `http://127.0.0.1:${loopbackHttpPort()}`);
+        const apiOrigin = new URL(apiBase).origin;
+        if (target.origin === apiOrigin &&
+            (target.pathname.startsWith('/api/') || target.pathname.startsWith('/uploads/'))) {
+          requestHeaders.Authorization = `Bearer ${rendererAuthToken}`;
+        }
+      }
+    } catch (_) { /* keep request untouched */ }
+    callback({ requestHeaders });
+  });
+
   ipcMain.handle('window-minimize', () => mainWindow?.minimize());
   ipcMain.handle('window-maximize', () => {
     if (mainWindow?.isMaximized()) mainWindow.unmaximize();
@@ -672,7 +699,7 @@ function createWindow() {
         // SERVER_HTTP_PORT marker arrives in a stdout chunk right after
         // SERVER_PORT; give it a moment so loopbackHttpPort() is correct.
         await new Promise(r => setTimeout(r, 300));
-        const apiHealthUrl = `http://127.0.0.1:${loopbackHttpPort()}/api/rolls`;
+        const apiHealthUrl = `http://127.0.0.1:${loopbackHttpPort()}/api/auth/status`;
         LOG('waiting for backend', apiHealthUrl);
         // wait for backend up (15s), if no health endpoint change to a reachable endpoint
         await waitForUrl(apiHealthUrl, 15000).catch(() => {
@@ -684,7 +711,7 @@ function createWindow() {
         const remoteApiBase = appConfig.apiBase;
         if (remoteApiBase) {
           LOG('createWindow: Remote API base configured:', remoteApiBase);
-          const remoteHealthUrl = `${remoteApiBase}/api/rolls`;
+          const remoteHealthUrl = `${remoteApiBase}/api/auth/status`;
           const remoteUp = await waitForUrl(remoteHealthUrl, 5000).catch(() => false);
           if (!remoteUp) {
             LOG('createWindow: Remote server not reachable, UI may not work properly');
@@ -753,10 +780,12 @@ ipcMain.handle('filmlab-gpu:process', async (_e, payload) => {
   ensureDir(exportDir);
 
   // Helper to fetch a URL into a Buffer
-  const fetchBuffer = (url) => new Promise((resolve, reject) => {
+  const fetchBuffer = (url, authToken) => new Promise((resolve, reject) => {
     try {
       const mod = url.startsWith('https') ? https : http;
-      const req = mod.get(url, (res) => {
+      const req = mod.get(url, {
+        headers: authToken ? { Authorization: `Bearer ${authToken}` } : {}
+      }, (res) => {
         if (res.statusCode && res.statusCode >= 400) {
           return reject(new Error(`HTTP ${res.statusCode}`));
         }
@@ -789,7 +818,7 @@ ipcMain.handle('filmlab-gpu:process', async (_e, payload) => {
       if (!reqHost || !allowedHosts.has(reqHost)) {
         return { ok: false, error: 'image_url_host_not_allowed' };
       }
-      imageBuffer = await fetchBuffer(fetchUrl);
+      imageBuffer = await fetchBuffer(fetchUrl, payload && payload.authToken);
       // rudimentary mime by extension (robust check)
       try {
         // Try to parse as URL to handle query params and case sensitivity
@@ -854,7 +883,10 @@ ipcMain.handle('filmlab-gpu:process', async (_e, payload) => {
   }
 
   return new Promise((resolve) => {
-    gpuJobs.set(jobId, { resolve, meta: { photoId: payload && payload.photoId } });
+    gpuJobs.set(jobId, {
+      resolve,
+      meta: { photoId: payload && payload.photoId, authToken: payload && payload.authToken }
+    });
     try {
       gpuWindow.webContents.send('filmlab-gpu:run', { 
         jobId, 
@@ -882,7 +914,7 @@ ipcMain.handle('filmlab-gpu:process', async (_e, payload) => {
 });
 
 // Robust multipart upload helper to avoid fetch/FormData quirks in Node environment
-const uploadBuffer = (url, buffer, filename) => {
+const uploadBuffer = (url, buffer, filename, authToken) => {
   return new Promise((resolve, reject) => {
     LOG('[uploadBuffer] Start upload to', url, 'size=', buffer.length);
     const { URL } = require('url');
@@ -900,11 +932,12 @@ const uploadBuffer = (url, buffer, filename) => {
       path: target.pathname,
       headers: {
         'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        'Content-Length': Buffer.byteLength(header) + buffer.length + Buffer.byteLength(footer)
+        'Content-Length': Buffer.byteLength(header) + buffer.length + Buffer.byteLength(footer),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
       }
     };
     
-    LOG('[uploadBuffer] Request options:', JSON.stringify(options));
+    LOG('[uploadBuffer] Request options:', { ...options, headers: { ...options.headers, ...(authToken ? { Authorization: '[redacted]' } : {}) } });
     
     const req = httpMod.request(options, (res) => {
       LOG('[uploadBuffer] Response status:', res.statusCode);
@@ -983,7 +1016,12 @@ _ipcMainAlias.on('filmlab-gpu:result', async (_e, result) => {
         LOG('[GPU-RESULT] Using API_BASE:', API_BASE);
 
         // Use robust upload instead of fetch+FormData
-        const data = await uploadBuffer(`${API_BASE}/api/photos/${photoId}/ingest-positive`, buf, 'gpu_export.jpg');
+        const data = await uploadBuffer(
+          `${API_BASE}/api/photos/${photoId}/ingest-positive`,
+          buf,
+          'gpu_export.jpg',
+          meta.authToken,
+        );
         
         LOG('[GPU-RESULT] Backend response:', JSON.stringify(data));
         if (data && (data.ok || data.photo)) {
@@ -1045,8 +1083,21 @@ _ipcMainAlias.on('filmlab-gpu:result', async (_e, result) => {
 
 // --- Simple config persistence ---
 const CONFIG_PATH = () => path.join(app.getPath('userData'), 'config.json');
+function clientOnlyDefaults() {
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(app.getAppPath(), 'package.json'), 'utf8'));
+    if (packageJson.filmgalleryClientOnly) {
+      return {
+        serverMode: 'remote',
+        apiBase: packageJson.filmgalleryDefaultApiBase || 'https://filmgallery.cloud',
+      };
+    }
+  } catch (_) {}
+  return {};
+}
 function loadConfig() {
-  try { return JSON.parse(fs.readFileSync(CONFIG_PATH(), 'utf-8')); } catch { return {}; }
+  const defaults = clientOnlyDefaults();
+  try { return { ...defaults, ...JSON.parse(fs.readFileSync(CONFIG_PATH(), 'utf-8')) }; } catch { return defaults; }
 }
 function saveConfig(next) {
   appConfig = { ...(appConfig||{}), ...(next||{}) };
@@ -1068,6 +1119,11 @@ const DEFAULT_API_BASE = 'http://127.0.0.1:4000';
 ipcMain.on('get-server-port-sync', (event) => {
   LOG('get-server-port-sync: returning', loopbackHttpPort());
   event.returnValue = loopbackHttpPort();
+});
+
+// Renderer pushes the current account session token here (login/logout/start)
+ipcMain.on('auth-token', (_event, token) => {
+  rendererAuthToken = (typeof token === 'string' && token) ? token : null;
 });
 
 // Async handler for runtime port retrieval
@@ -1214,26 +1270,10 @@ ipcMain.handle('config-set-write-through', async (e, flag) => {
   return { ok:true, config: appConfig };
 });
 
-// Remote-mode TLS trust: the embedded server uses a self-signed LOCAL CA
-// ("FilmGallery Local CA") whose SAN covers the host's IPs. Electron's
-// Chromium network stack does not use the OS trust store on Linux (and the
-// CA is not a public root anyway), so remote desktop clients would reject
-// every HTTPS call ("Test Connection" fails, pairing unreachable). Accept
-// certificates issued by our CA; reject everything else with default rules.
-// Note: an attacker could mint a CA with the same CN — token auth still
-// gates the API; this trades perfect MITM resistance for zero-config
-// single-user remote access.
-app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-  const issuerCN = certificate && certificate.issuer && certificate.issuer.commonName;
-  if (issuerCN === 'FilmGallery Local CA') {
-    LOG('certificate-error: accepting cert issued by FilmGallery Local CA for', url);
-    event.preventDefault();
-    callback(true);
-  } else {
-    LOG('certificate-error: rejecting', url, 'issuer=', issuerCN, 'error=', error);
-    callback(false);
-  }
-});
+// Leave Chromium's certificate verification enabled. Public/remote access
+// must terminate at a tunnel or reverse proxy with a trusted certificate.
+// The embedded self-signed certificate remains available for local/rollback
+// access and is never silently trusted for remote connections.
 
 app.on('ready', async () => {
   LOG('app ready, isDev=', isDev);

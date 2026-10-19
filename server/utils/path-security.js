@@ -25,6 +25,14 @@ const BLOCKED_PATHS = [
 const isOpenMode = () => process.env.FILESYSTEM_OPEN_MODE === 'true';
 const isAllMountedMode = () => process.env.ALLOW_ALL_MOUNTED_PATHS === 'true';
 
+// Compare paths using a stable slash form. `path.normalize('/etc')` becomes
+// `\\etc` on Windows, which used to let POSIX sensitive paths bypass the
+// block list on the Windows home-host build.
+const normalizeForBlockedPath = (value) => path.normalize(value)
+  .replace(/[\\/]+/g, '/')
+  .replace(/\/$/, '')
+  .toLowerCase();
+
 // Detect /mnt subdirs (Linux mounted shares)
 const getMountedPaths = () => {
   const mountRoot = '/mnt';
@@ -68,10 +76,10 @@ const getAllowedPaths = () => {
 // True if the path is a sensitive system path.
 const isPathBlocked = (targetPath) => {
   if (!targetPath || typeof targetPath !== 'string') return true;
-  const normalized = path.normalize(targetPath).toLowerCase();
+  const normalized = normalizeForBlockedPath(targetPath);
   return BLOCKED_PATHS.some(blocked =>
-    normalized === blocked.toLowerCase() ||
-    normalized.startsWith(blocked.toLowerCase() + path.sep)
+    normalized === normalizeForBlockedPath(blocked) ||
+    normalized.startsWith(normalizeForBlockedPath(blocked) + '/')
   );
 };
 

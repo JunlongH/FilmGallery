@@ -27,6 +27,9 @@ const SettingsScreen: React.FC = () => {
   const [discoveryStatus, setDiscoveryStatus] = useState('');
   const [discoveredServices, setDiscoveredServices] = useState<DiscoveryResult[]>([]);
   const [discoveryMode, setDiscoveryMode] = useState<'auto' | 'mdns' | 'portscan'>('auto');
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('');
+  const [authBusy, setAuthBusy] = useState(false);
 
   useEffect(() => {
     loadSettings();
@@ -115,6 +118,23 @@ const SettingsScreen: React.FC = () => {
       Alert.alert('Error', error.message || 'Failed to save settings');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogin = async () => {
+    if (!username.trim() || password.length < 12) {
+      Alert.alert('Error', 'Enter a username and a password of at least 12 characters');
+      return;
+    }
+    try {
+      setAuthBusy(true);
+      await api.login(username.trim(), password);
+      setPassword('');
+      Alert.alert('Success', 'Signed in successfully');
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Sign in failed');
+    } finally {
+      setAuthBusy(false);
     }
   };
 
@@ -230,6 +250,17 @@ const SettingsScreen: React.FC = () => {
         <Text style={styles.hint}>
           完整服务器地址（自动发现后会自动填入）
         </Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>账户登录</Text>
+        <Text style={styles.label}>用户名</Text>
+        <TextInput style={styles.input} value={username} onChangeText={setUsername} autoCapitalize="none" autoCorrect={false} />
+        <Text style={styles.label}>密码</Text>
+        <TextInput style={styles.input} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} />
+        <TouchableOpacity style={[styles.saveButton, authBusy && styles.saveButtonDisabled]} onPress={handleLogin} disabled={authBusy}>
+          {authBusy ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>登录</Text>}
+        </TouchableOpacity>
       </View>
 
       <TouchableOpacity

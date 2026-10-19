@@ -298,7 +298,7 @@ describe('digital-import-service.execute — cancellation cleanup', () => {
         expect.stringContaining(`${id}_original.jpg`),
       );
       expect(fspSpies.unlink).toHaveBeenCalledWith(
-        expect.stringContaining(`thumb/${id}_thumb.jpg`),
+        expect.stringContaining(path.join('thumb', `${id}_thumb.jpg`)),
       );
     }
 
@@ -394,7 +394,7 @@ describe('digital-import-service.execute — cancellation cleanup', () => {
       expect.stringContaining('1_original.jpg'),
     );
     expect(fspSpies.unlink).toHaveBeenCalledWith(
-      expect.stringContaining('thumb/1_thumb.jpg'),
+      expect.stringContaining(path.join('thumb', '1_thumb.jpg')),
     );
 
     // (c) recordError was called for item 1 with the underlying message.

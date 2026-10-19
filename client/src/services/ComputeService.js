@@ -10,7 +10,8 @@
  * 3. 本地 CPU 渲染（RenderCore 纯 JavaScript）
  */
 
-import { getApiBase } from '../api';
+import { getApiBase, authFetch } from '../api';
+import { getAuthToken } from '../api/core';
 import CpuRenderService from './CpuRenderService';
 
 // 缓存服务器能力
@@ -84,7 +85,7 @@ export async function getServerCapabilities() {
   
   try {
     const apiBase = getApiBase();
-    const res = await fetch(`${apiBase}/api/discover`);
+    const res = await authFetch(`${apiBase}/api/discover`);
     if (res.ok) {
       const data = await res.json();
       serverCapabilities = {
@@ -156,7 +157,7 @@ export async function smartFilmlabPreview({ photoId, params, maxWidth = 1400, so
   // 如果服务器有计算能力，使用服务器
   if (hasCompute) {
     const apiBase = getApiBase();
-    const resp = await fetch(`${apiBase}/api/filmlab/preview`, {
+    const resp = await authFetch(`${apiBase}/api/filmlab/preview`, {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
@@ -214,6 +215,7 @@ async function localGpuPreview({ photoId, params, maxWidth, sourceType = 'origin
         params, 
         photoId, 
         imageUrl,
+        authToken: getAuthToken(),
         previewMode: true,
         maxWidth,
         sourceType 
@@ -259,7 +261,7 @@ export async function smartRenderPositive(photoId, params, { format = 'jpeg', so
   if (hasCompute) {
     // 使用服务器渲染
     const apiBase = getApiBase();
-    const resp = await fetch(`${apiBase}/api/photos/${photoId}/render-positive`, {
+    const resp = await authFetch(`${apiBase}/api/photos/${photoId}/render-positive`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ params, format, sourceType })
@@ -312,6 +314,7 @@ async function localRenderPositive(photoId, params, { format = 'jpeg', sourceTyp
         params, 
         photoId, 
         imageUrl,
+        authToken: getAuthToken(),
         previewMode: false,
         outputFormat: format,
         sourceType
@@ -362,7 +365,7 @@ export async function smartExportPositive(photoId, params, { format = 'jpeg', so
     // 服务器有计算能力，使用服务器导出
     const apiBase = getApiBase();
     try {
-      const resp = await fetch(`${apiBase}/api/filmlab/export`, {
+      const resp = await authFetch(`${apiBase}/api/filmlab/export`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ photoId, params, format, sourceType })
@@ -422,6 +425,7 @@ async function localExportPositive(photoId, params, { format = 'jpeg', sourceTyp
         params, 
         photoId, 
         imageUrl,
+        authToken: getAuthToken(),
         previewMode: false,
         outputFormat: format,
         sourceType

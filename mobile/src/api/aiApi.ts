@@ -1,4 +1,5 @@
 import { fetchEventSource } from '@microsoft/fetch-event-source';
+import { authHeaders } from './client';
 
 export interface AIConfig {
   [key: string]: unknown;
@@ -17,7 +18,7 @@ export interface SendChatOptions {
 export type ChatEvent = Record<string, unknown>;
 
 export async function getAIConfig(apiBase: string): Promise<AIConfig> {
-  const res = await fetch(`${apiBase}/api/ai/config`);
+  const res = await fetch(`${apiBase}/api/ai/config`, { headers: authHeaders(), credentials: 'include' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -25,7 +26,8 @@ export async function getAIConfig(apiBase: string): Promise<AIConfig> {
 export async function updateAIConfig(apiBase: string, patch: AIConfig): Promise<AIConfig> {
   const res = await fetch(`${apiBase}/api/ai/config`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
     body: JSON.stringify(patch),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -35,7 +37,8 @@ export async function updateAIConfig(apiBase: string, patch: AIConfig): Promise<
 export async function testAIConnection(apiBase: string): Promise<any> {
   const res = await fetch(`${apiBase}/api/ai/config/test`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
     body: JSON.stringify({}),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -43,19 +46,19 @@ export async function testAIConnection(apiBase: string): Promise<any> {
 }
 
 export async function getAIModels(apiBase: string): Promise<any> {
-  const res = await fetch(`${apiBase}/api/ai/config/models`);
+  const res = await fetch(`${apiBase}/api/ai/config/models`, { headers: authHeaders(), credentials: 'include' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 export async function getConversations(apiBase: string): Promise<any[]> {
-  const res = await fetch(`${apiBase}/api/ai/conversations`);
+  const res = await fetch(`${apiBase}/api/ai/conversations`, { headers: authHeaders(), credentials: 'include' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
 
 export async function deleteConversation(apiBase: string, id: number | string): Promise<any> {
-  const res = await fetch(`${apiBase}/api/ai/conversations/${id}`, { method: 'DELETE' });
+  const res = await fetch(`${apiBase}/api/ai/conversations/${id}`, { method: 'DELETE', headers: authHeaders(), credentials: 'include' });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -68,7 +71,8 @@ export async function sendChatMessage(
 ): Promise<void> {
   await fetchEventSource(`${apiBase}/api/ai/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    credentials: 'include',
     body: JSON.stringify({
       message,
       conversation_id: conversationId,

@@ -51,7 +51,7 @@ const PhotoViewerScreen: React.FC = () => {
         <View style={styles.content}>
           {imageUrl ? (
             <Image
-              source={{ uri: imageUrl }}
+              source={{ uri: imageUrl, ...(api.getAuthToken() ? { headers: { Authorization: `Bearer ${api.getAuthToken()}` } } : {}) }}
               style={styles.image}
               resizeMode="contain"
             />

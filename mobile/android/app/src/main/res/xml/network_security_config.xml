@@ -3,6 +3,8 @@
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
+            <!-- 信任用户 CA：手机安装一次 FilmGallery Local CA 后，
+                 即可用自签名证书直连家中服务器（LAN / IPv6 直连）。 -->
             <certificates src="user" />
         </trust-anchors>
     </base-config>
