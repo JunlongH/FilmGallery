@@ -16,6 +16,7 @@
   "npmRebuild": false,
   "extraResources": [],
   "asar": true,
+  "afterPack": "tools/adhoc-sign-mac.js",
   "extraMetadata": {
     "filmgalleryClientOnly": true,
     "filmgalleryDefaultApiBase": "https://filmgallery.cloud"
